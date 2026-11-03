@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Fisica">
+  <meta name="theme-color" content="#f6f3ea">
+  <link rel="manifest" href="manifest.webmanifest">
+  <title>Sandbox di Fisica</title>
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="vendor/katex/katex.min.css">
+  <link rel="stylesheet" href="css/style.css">
+  <script defer src="vendor/katex/katex.min.js"></script>
+  <script defer src="vendor/katex/contrib/auto-render.min.js"></script>
+  <script>
+    try {
+      const t = localStorage.getItem('fs.theme');
+      document.documentElement.dataset.theme = t ? JSON.parse(t)
+        : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    } catch { document.documentElement.dataset.theme = 'light'; }
+  </script>
+</head>
+<body>
+  <canvas id="stage"></canvas>
+
+  <header class="topbar">
+    <div class="group">
+      <button class="icon-btn" id="menuBtn" data-icon="menu" title="Esperimenti"></button>
+      <div class="crumb"><span id="crumbArea"></span><span class="sep">›</span><strong id="crumbExp"></strong></div>
+    </div>
+
+    <div class="group sim">
+      <button class="icon-btn" id="resetBtn" data-icon="reset" title="Ricomincia (R)"></button>
+      <button class="icon-btn primary" id="playBtn" data-icon="play" title="Avvia / pausa (spazio)"></button>
+      <button class="icon-btn" id="stepBtn" data-icon="step" title="Avanza di un fotogramma"></button>
+      <div class="seg" id="speedSeg">
+        <button data-speed="0.25">¼×</button><button data-speed="0.5">½×</button><button data-speed="1" class="on">1×</button><button data-speed="2">2×</button>
+      </div>
+      <span class="clock" id="clock">t = 0,00 s</span>
+    </div>
+
+    <div class="group tools">
+      <div class="seg" id="toolSeg">
+        <button data-tool="hand" data-icon="hand" title="Mano: sposta e manipola (H)"></button>
+        <button data-tool="pen" data-icon="pen" title="Penna (P)"></button>
+        <button data-tool="eraser" data-icon="eraser" title="Gomma (E)"></button>
+      </div>
+      <div class="swatches" id="swatches">
+        <button data-color="ink" title="Inchiostro"></button>
+        <button data-color="inkRed" title="Rosso"></button>
+        <button data-color="inkBlue" title="Blu"></button>
+        <button data-color="inkGreen" title="Verde"></button>
+      </div>
+      <button class="icon-btn" id="undoBtn" data-icon="undo" title="Annulla tratto"></button>
+      <button class="icon-btn" id="clearBtn" data-icon="trash" title="Cancella tutti gli appunti"></button>
+      <span class="divider"></span>
+      <button class="icon-btn" id="theoryBtn" data-icon="book" title="Scheda di teoria"></button>
+      <button class="icon-btn" id="fitBtn" data-icon="target" title="Inquadra la scena"></button>
+      <button class="icon-btn" id="themeBtn" data-icon="theme" title="Tema chiaro / scuro"></button>
+    </div>
+  </header>
+
+  <div class="timeline" id="timeline">
+    <button class="icon-btn" id="tlStart" data-icon="skipBack" title="Torna all'inizio"></button>
+    <input type="range" id="tlRange" min="0" max="1" step="1" value="0" aria-label="Moviola">
+    <button class="icon-btn" id="tlEnd" data-icon="skipFwd" title="Torna all'istante attuale"></button>
+    <span class="tl-label" id="tlLabel">0,00 s</span>
+  </div>
+
+  <div id="scrim"></div>
+  <nav id="drawer" aria-label="Esperimenti"></nav>
+  <div id="panels"></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
