@@ -112,6 +112,35 @@ export class Painter {
     ctx.restore();
   }
 
+  // Contorno tratteggiato di un oggetto selezionato (coordinate schermo).
+  ringS(a, b, r) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.strokeStyle = this.c.handle; ctx.lineWidth = 2; ctx.setLineDash([6, 5]);
+    ctx.beginPath(); ctx.arc(a, b, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+
+  // Maniglia quadrata per ingrandire/rimpicciolire, con le due frecce diagonali (coordinate schermo).
+  sizeHandleS(a, b, active = false) {
+    const ctx = this.ctx, h = active ? 12 : 10;
+    ctx.save();
+    ctx.fillStyle = this.c.bg; ctx.strokeStyle = this.c.handle; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(a - h, b - h, 2 * h, 2 * h, 4) : ctx.rect(a - h, b - h, 2 * h, 2 * h);
+    ctx.fill(); ctx.stroke();
+    ctx.lineWidth = 1.8; ctx.lineCap = 'round';
+    const q = h * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(a - q, b - q); ctx.lineTo(a + q, b + q);
+    ctx.moveTo(a - q, b - q); ctx.lineTo(a - q + 4, b - q); ctx.moveTo(a - q, b - q); ctx.lineTo(a - q, b - q + 4);
+    ctx.moveTo(a + q, b + q); ctx.lineTo(a + q - 4, b + q); ctx.moveTo(a + q, b + q); ctx.lineTo(a + q, b + q - 4);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Maniglia di ridimensionamento in coordinate mondo.
+  sizeHandle(x, y, active) { const [a, b] = this.S(x, y); this.sizeHandleS(a, b, active); }
+
   // Maniglia trascinabile (anello).
   handle(x, y, active = false) {
     this.circle(x, y, active ? 13 : 10, { fill: this.c.bg, stroke: 'handle', width: 2.5, alpha: 0.95 });

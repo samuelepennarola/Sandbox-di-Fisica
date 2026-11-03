@@ -98,6 +98,11 @@ export default {
       { key: 'Q', label: 'calore Q (J)', color: 'weight' }, { key: 'E', label: 'K+U+Q (J)', color: 'friction', dash: [5, 4] }] },
   ],
 
+  resizables(s, p, { scale, size }) {
+    const g = geom(p), k = size('block'), h = BH * k / 2;
+    return [{ key: 'block', x: g.T[0] + g.d[0] * s.s + g.n[0] * h, y: g.T[1] + g.d[1] * s.s + g.n[1] * h, rPx: Math.hypot(BW, BH) * k * scale / 2 }];
+  },
+
   handles(s, p) {
     const g = geom(p);
     const C = [g.T[0] + g.d[0] * s.s + g.n[0] * BH / 2, g.T[1] + g.d[1] * s.s + g.n[1] * BH / 2];
@@ -124,7 +129,9 @@ export default {
 
     // Blocco.
     const C = at(st.s, BH / 2);
-    crate(P, C[0], C[1], { w: BW, h: BH, angle: -g.a, minPx: 0, color: 'blue' });
+    // La cassa disegnata si può ingrandire (solo estetica): resta appoggiata al piano.
+    const kb = ui.size('block'), Cd = at(st.s, BH * kb / 2);
+    crate(P, Cd[0], Cd[1], { w: BW * kb, h: BH * kb, angle: -g.a, minPx: 0, color: 'blue' });
     P.circle(C[0], C[1], 3, { fill: 'bg' });
     // Polvere mentre striscia con attrito dinamico.
     if (st.regime === 'dinamico' && Math.abs(st.v) > 0.05 && p.muk > 0) {

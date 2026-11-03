@@ -82,7 +82,7 @@ const TOOLS = [
   ['pulleyRope', 'pulley', 'Fune + carr.'], ['force', 'force', 'Forza'],
 ];
 
-const B = { spec: null, sel: null, tool: 'select', pending: null, hover: null, api: null };
+const B = { spec: null, sel: null, tool: 'select', pending: null, hover: null, api: null, resizing: null };
 
 /* ---------------- Spec ---------------- */
 
@@ -568,7 +568,79 @@ function pulleyAngle(st, p) {
   return (Math.hypot(A[0] - g.ga[0], A[1] - g.ga[1]) - g.la0) / p.r;
 }
 
-function draw(P, st) {
+/* ---------------- Ridimensionamento con le maniglie ---------------- */
+
+// Maniglie dell'oggetto selezionato: cambiano le misure vere (quelle usate dalla fisica).
+function resizeHandles(st) {
+  const o = objOf(B.spec, B.sel);
+  if (!o) return [];
+  const T = xf(st, o.id);
+  if (!T) return [];
+  const D = Math.SQRT1_2;
+  switch (o.type) {
+    case 'block': { const [x, y] = toW(T, o.w / 2, o.h / 2); return [{ id: 'corner', x, y }]; }
+    case 'ball': return [{ id: 'radius', x: T.x + o.r * D, y: T.y - o.r * D }];
+    case 'pulley': return [{ id: 'radius', x: o.x + o.r * D, y: o.y - o.r * D }];
+    case 'incline': { const top = inclineVerts(o)[2]; return [{ id: 'top', x: top[0] + o.x, y: top[1] + o.y }]; }
+    case 'surface': return [-1, 1].map(sg => { const [x, y] = toW(T, sg * o.L / 2, 0); return { id: sg < 0 ? 'endA' : 'endB', x, y }; });
+  }
+  return [];
+}
+
+const r2 = v => Math.round(v * 100) / 100;
+
+function resizeGesture(st, h) {
+  const o = objOf(B.spec, B.sel), T = xf(st, o.id);
+  const start = { x: o.x, y: o.y, L: o.L, alpha: o.alpha };
+  // Per piano e superficie resta fermo il punto opposto a quello trascinato.
+  const foot = o.type === 'incline' ? (o.dir === -1 ? [o.x + o.L * Math.cos(o.alpha * deg), o.y] : [o.x, o.y]) : null;
+  const other = o.type === 'surface' ? toW(T, (h.id === 'endA' ? 1 : -1) * o.L / 2, 0) : null;
+  // Corpi che all'inizio del gesto sono appoggiati sulla faccia di questo oggetto.
+  const resting = [];
+  if (o.type === 'incline' || o.type === 'surface') {
+    const f = faces({ objects: [o] })[1];
+    for (const b of B.spec.objects) {
+      if (!DYNAMIC.has(b.type)) continue;
+      const half = b.type === 'block' ? b.h / 2 : b.r, rx = b.x - f.p[0], ry = b.y - f.p[1];
+      const t = rx * f.u[0] + ry * f.u[1], d = rx * f.n[0] + ry * f.n[1];
+      if (t >= 0 && t <= f.len && Math.abs(d - half) < 0.05) resting.push(b.id);
+    }
+  }
+  B.resizing = h.id;
+  return {
+    move: ({ wx, wy }) => {
+      if (o.type === 'block') {
+        const [lx, ly] = toL(T, wx, wy);
+        o.w = clamp(r2(2 * Math.abs(lx)), 0.1, 5); o.h = clamp(r2(2 * Math.abs(ly)), 0.1, 5);
+        o.x = T.x; o.y = T.y;
+        snapBody(B.spec, o);
+      } else if (o.type === 'ball' || o.type === 'pulley') {
+        const cx = o.type === 'ball' ? T.x : start.x, cy = o.type === 'ball' ? T.y : start.y;
+        o.r = clamp(r2(Math.hypot(wx - cx, wy - cy)), 0.05, o.type === 'ball' ? 2 : 1);
+        if (o.type === 'ball') { o.x = cx; o.y = cy; snapBody(B.spec, o); }
+      } else if (o.type === 'incline') {
+        const vx = (wx - foot[0]) * (o.dir === -1 ? -1 : 1), vy = wy - foot[1];
+        o.L = clamp(r2(Math.hypot(vx, vy)), 1, 20);
+        o.alpha = clamp(Math.round(Math.atan2(vy, vx) / deg), 5, 75);
+        if (o.dir === -1) o.x = foot[0] - o.L * Math.cos(o.alpha * deg);
+      } else if (o.type === 'surface') {
+        const dx = wx - other[0], dy = wy - other[1];
+        o.L = clamp(r2(Math.hypot(dx, dy)), 0.5, 30);
+        let a = Math.atan2(dy, dx) / deg;
+        if (a > 90) a -= 180; if (a < -90) a += 180;
+        o.angle = Math.round(a);
+        o.x = r2(other[0] + dx / 2); o.y = r2(other[1] + dy / 2);
+      }
+      // I corpi appoggiati su un piano o su una superficie ne seguono la nuova forma.
+      if (o.type === 'incline' || o.type === 'surface') for (const id of resting) snapBody(B.spec, objOf(B.spec, id));
+      B.api.reset();
+    },
+    up: () => { B.resizing = null; save(); B.api.refresh(); },
+    cancel: () => { B.resizing = null; },
+  };
+}
+
+function draw(P, st, ui = {}) {
   const spec = st.spec, sel = B.sel, show = B.spec.show;
   P.ground(0);
 
@@ -652,6 +724,9 @@ function draw(P, st) {
       P.arrow(f.at[0], f.at[1], f.at[0] + kf * f.F[0], f.at[1] + kf * f.F[1], { color: f.c, label: f.l });
     }
   }
+
+  // Maniglie di ridimensionamento dell'oggetto selezionato (solo a simulazione ferma).
+  if (!ui.api?.running && B.tool === 'select') for (const h of resizeHandles(st)) P.sizeHandle(h.x, h.y, B.resizing === h.id);
 
   // Anteprima del collegamento in costruzione.
   const p = B.pending;
@@ -960,7 +1035,7 @@ export default {
     return { xmin: x0, xmax: x1, ymin: y0, ymax: y1 };
   },
 
-  draw(P, st) { draw(P, st); },
+  draw(P, st, p, ui) { draw(P, st, ui); },
   formulas,
   graphs,
   buildPanel,
@@ -1023,6 +1098,14 @@ export default {
       const l = addLink(spec, { type: 'force', o: hit.id, F: 10, angle: 0 });
       finishEdit(l.id);
       return {};
+    }
+
+    // Maniglie di ridimensionamento dell'oggetto selezionato.
+    if (B.sel && !api.running) {
+      for (const h of resizeHandles(st)) {
+        const [hx, hy] = api.cam.toScreen(h.x, h.y), [px, py] = api.cam.toScreen(wx, wy);
+        if (Math.hypot(hx - px, hy - py) < 24) return resizeGesture(st, h);
+      }
     }
 
     // Selezione e trascinamento.

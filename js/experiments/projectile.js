@@ -77,6 +77,14 @@ export default {
     { title: 'Energia', series: [{ key: 'K', label: 'K cinetica (J)', color: 'vel' }, { key: 'U', label: 'U potenziale (J)', color: 'normal' }, { key: 'E', label: 'E meccanica (J)', color: 'friction' }] },
   ],
 
+  // Oggetti che si possono ingrandire per vederli meglio (non cambia la fisica).
+  resizables(s, p, { scale, size }) {
+    return [
+      { key: 'ball', x: s.x, y: s.y, rPx: Math.max(0.18 * scale, 10) * size('ball') },
+      { key: 'cannon', x: 0.35 * size('cannon') * Math.max(1, 34 / 1.2 / scale), y: p.h0, rPx: 0.5 * 1.2 * Math.max(scale, 34 / 1.2) * size('cannon') },
+    ];
+  },
+
   handles(s, p) {
     const th = p.theta * deg;
     return [
@@ -100,9 +108,11 @@ export default {
     P.ground(0);
 
     // Torre di lancio in mattoni e cannone, con il perno della canna nel punto di lancio.
-    const CL = 1.2, cu = Math.max(P.cam.scale, 34 / CL) / P.cam.scale, cr = 0.28 * CL * cu;
-    if (p.h0 > 0) bricks(P, -1.4, 0.6, 0, Math.max(0, p.h0 - cr));
-    cannon(P, 0, p.h0 - cr, { angle: th, len: CL });
+    // Dimensioni disegnate (solo estetiche, regolabili con la maniglia): ui.size(chiave) è il fattore di scala.
+    const kc = ui.size('cannon'), kb = ui.size('ball');
+    const CL = 1.2 * kc, cu = Math.max(P.cam.scale, 34 / 1.2) / P.cam.scale, cr = 0.28 * CL * cu;
+    if (p.h0 > 0) bricks(P, -1.4 * Math.max(1, kc), 0.6 * Math.max(1, kc), 0, Math.max(0, p.h0 - cr));
+    cannon(P, 0, p.h0 - cr, { angle: th, len: CL, minPx: 34 * kc });
 
     // Traiettoria ideale (senza attrito) con vertice e gittata.
     if (p.showIdeal) {
@@ -124,7 +134,7 @@ export default {
 
     // Scia e posizioni stroboscopiche.
     trail(P, s.trail, 'vel', 3);
-    if (p.strobe) for (const [x, y] of s.strobe) ball(P, x, y, { r: 0.12, minPx: 6, color: 'red' });
+    if (p.strobe) for (const [x, y] of s.strobe) ball(P, x, y, { r: 0.12 * kb, minPx: 6 * kb, color: 'red' });
 
     // Vettore v₀ di lancio con angolo (trascinabile).
     const tipx = KV * p.v0 * Math.cos(th), tipy = p.h0 + KV * p.v0 * Math.sin(th);
@@ -136,7 +146,7 @@ export default {
     P.handle(tipx, tipy, ui.active === 'v0');
 
     // Corpo e vettori istantanei.
-    ball(P, s.x, s.y, { r: 0.18, minPx: 10, color: 'red', spin: -s.t * 8 });
+    ball(P, s.x, s.y, { r: 0.18 * kb, minPx: 10 * kb, color: 'red', spin: -s.t * 8 });
     if (!fresh) {
       if (p.showComp) {
         P.arrow(s.x, s.y, s.x + KV * s.vx, s.y, { color: 'vel', width: 2, dash: [4, 4], label: 'vx', alpha: 0.85 });

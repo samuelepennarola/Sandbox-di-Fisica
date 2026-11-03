@@ -34,6 +34,7 @@ const app = {
   syncs: [],                        // funzioni che riallineano i controlli ai valori
   tool: store.get('tool', 'hand'), inkColor: store.get('inkColor', 'ink'), penSeen: false,
   graphIdx: 0, formulasDirty: true, activeHandle: null,
+  sizes: {}, sizeSel: null,         // scala solo estetica degli oggetti disegnati negli esperimenti pronti
 };
 
 /* ---------------- Pannelli ---------------- */
@@ -201,6 +202,8 @@ function loadExperiment(id) {
   const { exp, area } = findExperiment(id);
   app.exp = exp; app.area = area;
   app.params = { ...defaults(exp), ...store.get('params.' + exp.id, {}) };
+  app.sizes = store.get('sizes.' + exp.id, {});
+  app.sizeSel = null;
   app.graphIdx = 0;
   store.set('lastExp', exp.id);
   $('crumbArea').textContent = area.title;
@@ -373,7 +376,13 @@ function render() {
   drawSky(ctx, cam, colors);
   drawGrid(ctx, cam, colors);
   const P = new Painter(ctx, cam, colors);
-  app.exp.draw(P, viewSim(), app.params, { active: app.activeHandle, api });
+  app.exp.draw(P, viewSim(), app.params, { active: app.activeHandle, api, size: sizeOf });
+  const sel = selectedResizable();
+  if (sel) {
+    const [a, b] = cam.toScreen(sel.x, sel.y);
+    P.ringS(a, b, sel.rPx + 7);
+    P.sizeHandleS(...sizeHandlePos(sel), app.activeHandle === 'size');
+  }
   drawParticles(P);
   ink.draw(ctx, cam, colors);
 }
@@ -415,6 +424,35 @@ function frame(ts) {
 
 const touches = new Map();
 let gesture = null;
+
+/* --- Scala estetica degli oggetti (esperimenti pronti) --- */
+// Un esperimento dichiara con resizables(s, p, { scale, size }) gli oggetti che si possono ingrandire:
+// [{ key, x, y, rPx }] con centro in metri e raggio d'ingombro in px. La scala cambia solo il disegno.
+
+function sizeOf(key) { return app.sizes[key] ?? 1; }
+
+function resizables() {
+  return app.exp.resizables?.(viewSim(), app.params, { scale: cam.scale, size: sizeOf }) ?? [];
+}
+
+function selectedResizable() {
+  return app.sizeSel ? resizables().find(r => r.key === app.sizeSel) ?? null : null;
+}
+
+// La maniglia sta in basso a destra dell'oggetto, a 45°.
+function sizeHandlePos(r) {
+  const [a, b] = cam.toScreen(r.x, r.y), d = (r.rPx + 7) * Math.SQRT1_2;
+  return [a + d, b + d];
+}
+
+function hitResizable(sx, sy) {
+  let best = null, bestD = Infinity;
+  for (const r of resizables()) {
+    const [a, b] = cam.toScreen(r.x, r.y), d = Math.hypot(a - sx, b - sy);
+    if (d < r.rPx + 10 && d < bestD) { best = r; bestD = d; }
+  }
+  return best;
+}
 
 function hitHandle(sx, sy) {
   let best = null, bestD = Infinity;
@@ -480,14 +518,27 @@ canvas.addEventListener('pointerdown', e => {
     return;
   }
 
+  const sel = selectedResizable();
+  if (sel) {
+    const [hx, hy] = sizeHandlePos(sel);
+    if (Math.hypot(hx - x, hy - y) < HIT_PX) {
+      const [cx, cy] = cam.toScreen(sel.x, sel.y);
+      app.activeHandle = 'size';
+      gesture = { type: 'size', id: e.pointerId, key: sel.key, k0: sizeOf(sel.key), d0: Math.max(8, Math.hypot(x - cx, y - cy)) };
+      return;
+    }
+  }
+
   const h = hitHandle(x, y);
   if (h) {
     stopSweep();
     app.activeHandle = h.id;
-    gesture = { type: 'drag', id: e.pointerId, handle: h.id };
-  } else {
-    gesture = { type: 'pan', id: e.pointerId, lx: x, ly: y };
+    gesture = { type: 'drag', id: e.pointerId, handle: h.id, sx: x, sy: y, moved: false };
+    return;
   }
+  // Un tocco su un oggetto ridimensionabile lo seleziona (compare la maniglia); altrove deseleziona.
+  app.sizeSel = hitResizable(x, y)?.key ?? null;
+  gesture = { type: 'pan', id: e.pointerId, lx: x, ly: y };
 });
 
 canvas.addEventListener('pointermove', e => {
@@ -527,7 +578,16 @@ canvas.addEventListener('pointermove', e => {
   } else if (gesture.type === 'custom') {
     if (gesture.custom.pan) { cam.panBy(x - gesture.lx, y - gesture.ly); gesture.lx = x; gesture.ly = y; }
     gesture.custom.move?.({ wx, wy, sx: x, sy: y });
+  } else if (gesture.type === 'size') {
+    const r = resizables().find(o => o.key === gesture.key);
+    if (r) {
+      const [cx, cy] = cam.toScreen(r.x, r.y);
+      const k = gesture.k0 * Math.hypot(x - cx, y - cy) / gesture.d0;
+      app.sizes[gesture.key] = Math.round(Math.min(5, Math.max(0.3, k)) * 20) / 20;
+    }
   } else if (gesture.type === 'drag') {
+    if (!gesture.moved && Math.hypot(x - gesture.sx, y - gesture.sy) < 6) return;
+    gesture.moved = true;
     app.exp.drag(gesture.handle, wx, wy, app.params);
     syncParams();
     resetSim();
@@ -543,6 +603,9 @@ function endPointer(e) {
   if (gesture.type === 'pinch') { if (touches.size < 2) gesture = null; return; }
   if (e.pointerId !== gesture.id) return;
   if (gesture.type === 'ink') ink.end();
+  if (gesture.type === 'size') store.set('sizes.' + app.exp.id, app.sizes);
+  // Tocco senza trascinare su una maniglia che coincide con un oggetto: lo seleziona per ridimensionarlo.
+  if (gesture.type === 'drag' && !gesture.moved) app.sizeSel = hitResizable(gesture.sx, gesture.sy)?.key ?? null;
   if (gesture.type === 'custom') {
     const [sx, sy] = pos(e), [wx, wy] = cam.toWorld(sx, sy);
     gesture.custom.up?.({ wx, wy, sx, sy, cancelled: e.type === 'pointercancel' });
@@ -670,6 +733,8 @@ addEventListener('orientationchange', () => setTimeout(resize, 300));
 
 // Diagnostica dei tocchi (aprire l'app con ?debug nell'indirizzo): mostra gli ultimi eventi ricevuti.
 if (new URLSearchParams(location.search).has('debug')) {
+  // Accesso allo stato dalla console del browser, per le prove.
+  window.fisica = { app, cam, api, ink };
   const box = document.createElement('div');
   box.id = 'debug';
   document.body.appendChild(box);

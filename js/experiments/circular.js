@@ -28,6 +28,14 @@ function scales(p, k) {
   return { KV: 0.7 * p.R / vRef, KA: 0.6 * p.R / aRef, cap: 1.6 * p.R };
 }
 
+// Aspetto del corpo per ambientazione; k è la scala estetica scelta con la maniglia.
+function bodyLook(p, k) {
+  const R = p.R;
+  if (p.scene === 'road') return { len: 4.2 * k, minPx: 30 * k, size: 4.2 * k };
+  const [f, color, minPx] = p.scene === 'carousel' ? [0.07, 'blue', 12] : p.scene === 'wheel' ? [0.06, 'yellow', 9] : [0.05, 'red', 11];
+  return { r: R * f * k, color, minPx: minPx * k, size: 2 * R * f * k };
+}
+
 function arrowTo(P, x, y, dx, dy, cap, opts) {
   const L = Math.hypot(dx, dy);
   const f = L > cap ? cap / L : 1;
@@ -93,6 +101,11 @@ export default {
     { title: 'Proiezioni', series: [{ key: 'x', label: 'x = R cos θ (m)', color: 'vel' }, { key: 'y', label: 'y = R sin θ (m)', color: 'weight' }] },
     { title: 'Accelerazioni', series: [{ key: 'ac', label: 'a꜀ centripeta (m/s²)', color: 'acc' }, { key: 'at', label: 'aₜ tangenziale (m/s²)', color: 'friction' }] },
   ],
+
+  resizables(s, p, { scale, size }) {
+    const b = bodyLook(p, size('body'));
+    return [{ key: 'body', x: p.R * Math.cos(s.th), y: p.R * Math.sin(s.th), rPx: Math.max(b.size * scale, b.minPx) / 2 }];
+  },
 
   handles(s, p) {
     const k = kin(p), { KV } = scales(p, k);
@@ -176,12 +189,11 @@ export default {
     }
 
     // Corpo e vettori istantanei.
+    const b = bodyLook(p, ui.size('body'));
     if (p.scene === 'road') {
       const dir = Math.sign(s.v || p.v0 || p.at || 1);
-      carTop(P, x, y, { angle: s.th + dir * Math.PI / 2, minPx: 30 });
-    } else if (p.scene === 'carousel') ball(P, x, y, { r: R * 0.07, color: 'blue', minPx: 12 });
-    else if (p.scene === 'wheel') ball(P, x, y, { r: R * 0.06, color: 'yellow', minPx: 9 });
-    else ball(P, x, y, { r: R * 0.05, color: 'red', minPx: 11 });
+      carTop(P, x, y, { angle: s.th + dir * Math.PI / 2, len: b.len, minPx: b.minPx });
+    } else ball(P, x, y, { r: b.r, color: b.color, minPx: b.minPx });
     if (s.t === 0) P.handle(x, y, ui.active === 'pos');
     const lab = (n, val, unit) => `${n} = ${fmt(Math.abs(val), Math.abs(val) < 10 ? 2 : 1)} ${unit}`;
     if (s.t > 0 && Math.abs(s.v) > 1e-9) arrowTo(P, x, y, tx * KV * s.v, ty * KV * s.v, cap, { color: 'vel', label: lab('v', s.v, 'm/s'), width: 4 });

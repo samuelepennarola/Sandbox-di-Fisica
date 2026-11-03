@@ -104,6 +104,13 @@ export default {
     { title: 'Posizione y', series: [{ key: 'y', label: 'y = y′ (m)', color: 'normal' }] },
   ],
 
+  // Il corpo (barca o pallina) si può ingrandire per vederlo meglio: non cambia la fisica.
+  resizables(s, p, { scale, size }) {
+    const k = size('body'), off = p.view === 'Sp' ? s.X : 0;
+    const rPx = p.scene === 'river' ? Math.max(Math.max(2, p.L * 0.09) * scale, 34) * k / 2 : Math.max(0.13 * scale, 10) * k;
+    return [{ key: 'body', x: s.x - off, y: s.y, rPx }];
+  },
+
   handles(s, p) {
     const [x0, y0] = start(p), m = model(p), kv = kvOf(p);
     return [{ id: 'vp', x: x0 + kv * m.vpx, y: y0 + kv * m.vpy }];
@@ -168,9 +175,11 @@ export default {
     const [bx, by] = inS([s.x, s.y]);
     if (river) {
       // La prua è orientata come v′ (dove punta la barca), non come v.
-      boatTop(P, bx, by, { len: Math.max(2, p.L * 0.09), angle: Math.atan2(s.vpy, s.vpx) });
+      const k = ui.size('body');
+      boatTop(P, bx, by, { len: Math.max(2, p.L * 0.09) * k, angle: Math.atan2(s.vpy, s.vpx), minPx: 34 * k });
     } else {
-      ball(P, bx, by, { r: 0.13, color: 'red', minPx: 10, spin: s.t * 6 });
+      const k = ui.size('body');
+      ball(P, bx, by, { r: 0.13 * k, color: 'red', minPx: 10 * k, spin: s.t * 6 });
     }
     const lab = (n, vx, vy) => `${n} = ${fmt(Math.hypot(vx, vy), 1)} m/s`;
     if (s.t > 0) {
