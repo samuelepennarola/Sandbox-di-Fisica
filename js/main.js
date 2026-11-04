@@ -16,7 +16,6 @@ const H = 1 / 480;            // passo di integrazione predefinito (s); un esper
 const SAMPLE_DT = 1 / 60;     // intervallo di campionamento per grafici e moviola (s)
 const MAX_T = 300;            // oltre questo tempo la simulazione si ferma
 const SWEEP_PERIOD = 6;       // durata di un'andata e ritorno dell'animazione di un parametro (s)
-const INK_WIDTH_PX = 2.6;     // spessore base del tratto, in px allo zoom corrente
 const HIT_PX = 26;            // tolleranza per afferrare una maniglia
 
 const canvas = document.getElementById('stage');
@@ -35,7 +34,9 @@ const app = {
   sweep: null,                      // animazione di un parametro in corso
   syncs: [],                        // funzioni che riallineano i controlli ai valori
   tool: store.get('tool', 'hand'), inkColor: store.get('inkColor', 'ink'), penSeen: store.get('penSeen', false),
-  eraserMode: store.get('eraserMode', 'stroke'),   // 'stroke' = tratti interi, 'part' = gomma precisa
+  eraserMode: store.get('eraserMode', 'stroke'),
+  penType: store.get('penType', 'pen'),                                       // 'pen' (penna) o 'brush' (pennello)
+  penSizes: { pen: 2.6, brush: 7, ...store.get('penSizes', {}) },             // spessore base in px allo zoom corrente   // 'stroke' = tratti interi, 'part' = gomma precisa
   graphIdx: 0, formulasDirty: true, activeHandle: null,
   sizes: {}, sizeSel: null,         // scala solo estetica degli oggetti disegnati negli esperimenti pronti
 };
@@ -606,7 +607,7 @@ function onPointerDown(e) {
   const tool = inkTool(e);
   const [wx, wy] = cam.toWorld(x, y);
   if (tool === 'pen') {
-    ink.begin(wx, wy, pressureOf(e), INK_WIDTH_PX / cam.scale, app.inkColor);
+    ink.begin(wx, wy, pressureOf(e), app.penSizes[app.penType] / cam.scale, app.inkColor, app.penType);
     gesture = { type: 'ink', id: e.pointerId, pen: e.pointerType === 'pen' };
     return;
   }
@@ -798,7 +799,78 @@ for (const type of ['touchstart', 'touchend']) canvas.addEventListener(type, e =
 
 /* ---------------- Barra superiore e moviola ---------------- */
 
+/* --- Pannello della penna: tipo di tratto e spessore (si apre toccando di nuovo la penna) --- */
+const PEN = {
+  pen: { label: 'Penna', min: 0.8, max: 10, presets: [1.6, 2.6, 4.5] },
+  brush: { label: 'Pennello', min: 2, max: 28, presets: [3.5, 7, 14] },
+};
+const penPop = $('penPop'), penRange = $('penSizeRange'), penPreview = $('penPreview');
+
+function syncPenPop() {
+  const type = app.penType, cfg = PEN[type], size = app.penSizes[type];
+  penPop.querySelectorAll('[data-type]').forEach(b => b.classList.toggle('on', b.dataset.type === type));
+  const row = $('penPresets');
+  row.innerHTML = '';
+  for (const v of cfg.presets) {
+    const b = document.createElement('button');
+    b.className = Math.abs(v - size) < 0.05 ? 'on' : '';
+    b.title = `${fmt(v, 1)} px`;
+    b.innerHTML = `<span style="width:${Math.min(26, v * (type === 'brush' ? 1.4 : 2.4))}px;height:${Math.min(26, v * (type === 'brush' ? 1.4 : 2.4))}px"></span>`;
+    b.onclick = () => setPenSize(v);
+    row.appendChild(b);
+  }
+  penRange.min = cfg.min; penRange.max = cfg.max; penRange.value = size;
+  $('penSizeLabel').textContent = `${fmt(size, 1)} px`;
+  drawPenPreview();
+  const pb = document.querySelector('#toolSeg [data-tool=pen]');
+  pb.innerHTML = icons[type === 'brush' ? 'brush' : 'pen'];
+  pb.title = `${cfg.label} (P; tocca di nuovo per tipo e spessore)`;
+}
+
+// Anteprima: una S scritta con pressione crescente e poi calante, con il tipo, lo spessore e il colore scelti.
+function drawPenPreview() {
+  const w = penPreview.clientWidth || 240, h = penPreview.clientHeight || 64, k = devicePixelRatio || 1;
+  penPreview.width = Math.round(w * k); penPreview.height = Math.round(h * k);
+  const c2 = penPreview.getContext('2d');
+  c2.setTransform(k, 0, 0, k, 0, 0);
+  c2.clearRect(0, 0, w, h);
+  const pc = new Camera(); pc.setViewport(w, h); pc.scale = 1;
+  const pts = [];
+  for (let i = 0; i <= 60; i++) {
+    const t = i / 60;
+    pts.push([(t - 0.5) * (w - 40), Math.sin(t * Math.PI * 2) * (h / 2 - 16), 0.15 + 0.8 * Math.sin(t * Math.PI)]);
+  }
+  const demo = new Ink();
+  demo.strokes = [{ c: app.inkColor, w: app.penSizes[app.penType], k: app.penType, pts }];
+  demo.draw(c2, pc, colors);
+}
+
+function setPenSize(v) {
+  app.penSizes[app.penType] = Math.round(v * 10) / 10;
+  store.set('penSizes', app.penSizes);
+  syncPenPop();
+}
+
+function togglePenPop(open = penPop.classList.contains('hidden')) {
+  penPop.classList.toggle('hidden', !open);
+  if (!open) return;
+  const r = document.querySelector('#toolSeg [data-tool=pen]').getBoundingClientRect(), pw = penPop.offsetWidth || 270;
+  penPop.style.left = Math.max(8, Math.min(innerWidth - pw - 8, r.left + r.width / 2 - pw / 2)) + 'px';
+  penPop.style.top = r.bottom + 10 + 'px';
+  syncPenPop();
+}
+
+penPop.querySelectorAll('[data-type]').forEach(b => b.onclick = () => { app.penType = b.dataset.type; store.set('penType', app.penType); syncPenPop(); });
+penRange.oninput = () => setPenSize(parseFloat(penRange.value));
+// Un tocco fuori dal pannello (e fuori dal pulsante della penna) lo chiude.
+document.addEventListener('pointerdown', e => {
+  if (!penPop.classList.contains('hidden') && !e.target.closest('#penPop, #toolSeg [data-tool=pen]')) togglePenPop(false);
+}, true);
+
 function setTool(t, startup = false) {
+  // Un secondo tocco sulla penna apre il pannello di tipo e spessore.
+  if (!startup && t === 'pen' && app.tool === 'pen') togglePenPop();
+  else if (t !== 'pen') togglePenPop(false);
   // Un secondo tocco sulla gomma passa da "tratti interi" a "precisa" e viceversa.
   if (!startup && t === 'eraser' && app.tool === 'eraser') {
     app.eraserMode = app.eraserMode === 'part' ? 'stroke' : 'part';
@@ -814,6 +886,7 @@ function setTool(t, startup = false) {
 function setInkColor(c) {
   app.inkColor = c; store.set('inkColor', c);
   document.querySelectorAll('#swatches button').forEach(b => b.classList.toggle('on', b.dataset.color === c));
+  if (!penPop.classList.contains('hidden')) drawPenPreview();
   if (app.tool === 'eraser') setTool('pen');
 }
 function setSpeed(s) {
@@ -921,6 +994,7 @@ if (new URLSearchParams(location.search).has('debug')) {
 
 applyIcons();
 setTool(app.tool, true);
+syncPenPop();
 setInkColor(app.inkColor);
 resize();
 loadExperiment(store.get('lastExp', 'projectile'));

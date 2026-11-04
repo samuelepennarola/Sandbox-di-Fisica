@@ -72,6 +72,14 @@
     <span class="tl-label" id="tlLabel">0,00 s</span>
   </div>
 
+  <div class="popover hidden" id="penPop">
+    <div class="seg wide"><button data-type="pen">Penna</button><button data-type="brush">Pennello</button></div>
+    <div class="sub">Spessore <span id="penSizeLabel"></span></div>
+    <div class="pen-presets" id="penPresets"></div>
+    <input type="range" id="penSizeRange" step="0.1" aria-label="Spessore della penna">
+    <canvas id="penPreview" class="pen-preview"></canvas>
+  </div>
+
   <div class="selbar hidden" id="selbar">
     <button id="selCopy">Copia</button>
     <button id="selDelete" class="danger">Elimina</button>
