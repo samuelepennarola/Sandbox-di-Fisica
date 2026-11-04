@@ -9,6 +9,7 @@ import { fmt } from './core/math.js';
 import { paramControl } from './core/ui.js';
 import { look, updateLook, drawSky, drawParticles } from './core/look.js';
 import './core/pwa.js';
+import { Lasso } from './core/lasso.js';
 import { AREAS, findExperiment } from './experiments/registry.js';
 
 const H = 1 / 480;            // passo di integrazione predefinito (s); un esperimento può dichiarare il suo (exp.dt)
@@ -22,6 +23,7 @@ const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
 const cam = new Camera();
 const ink = new Ink();
+const lasso = new Lasso(ink);
 let colors = readColors();
 const $ = id => document.getElementById(id);
 
@@ -33,6 +35,7 @@ const app = {
   sweep: null,                      // animazione di un parametro in corso
   syncs: [],                        // funzioni che riallineano i controlli ai valori
   tool: store.get('tool', 'hand'), inkColor: store.get('inkColor', 'ink'), penSeen: false,
+  eraserMode: store.get('eraserMode', 'stroke'),   // 'stroke' = tratti interi, 'part' = gomma precisa
   graphIdx: 0, formulasDirty: true, activeHandle: null,
   sizes: {}, sizeSel: null,         // scala solo estetica degli oggetti disegnati negli esperimenti pronti
 };
@@ -193,7 +196,32 @@ const api = {
   view: () => viewSim(),
   isFresh: () => app.sim.t === 0 && app.view == null,
   get running() { return app.running; },
+  ink, areas: AREAS,
+  snapshot: (exp, w, h) => expSnapshot(exp, w, h),
+  lassoClear: () => lasso.clear(),
 };
+
+// Istantanea di un esperimento (stato iniziale con i parametri salvati) su un canvas w × h px.
+function expSnapshot(exp, w, h) {
+  const cv = document.createElement('canvas'), k = 2;
+  cv.width = w * k; cv.height = h * k;
+  const c2 = cv.getContext('2d');
+  c2.scale(k, k);
+  const cm = new Camera();
+  cm.setViewport(w, h);
+  if (exp !== app.exp) exp.mount?.(api);
+  const params = { ...defaults(exp), ...store.get('params.' + exp.id, {}) };
+  const sim = exp.init(params);
+  cm.fit(exp.view(params, sim), { top: 16, right: 16, bottom: 16, left: 16 });
+  drawSky(c2, cm, colors);
+  drawGrid(c2, cm, colors);
+  const sizes = store.get('sizes.' + exp.id, {});
+  const P = new Painter(c2, cm, colors);
+  // Nelle istantanee niente maniglie né vettori (frecce con le loro etichette): i vettori li disegnano i ragazzi.
+  P.handle = P.sizeHandle = P.arrow = () => {};
+  exp.draw(P, sim, params, { active: null, api: { ...api, running: false }, size: key => sizes[key] ?? 1 });
+  return cv;
+}
 
 function loadExperiment(id) {
   ink.end();
@@ -209,7 +237,11 @@ function loadExperiment(id) {
   $('crumbArea').textContent = area.title;
   $('crumbExp').textContent = exp.title;
   ink.load(exp.id);
+  lasso.clear();
   exp.mount?.(api);
+  // La Lavagna non ha simulazione: niente comandi di play, moviola, grafici e formule.
+  document.body.classList.toggle('no-sim', !!exp.noSim);
+  for (const p of [graphPanel, formulaPanel]) exp.noSim ? p.hide() : p.show();
   resetSim();
   buildParams(); buildGraphTabs(); buildDrawer(); renderTheory();
   fitView();
@@ -307,7 +339,7 @@ function updatePlayBtn() {
   $('playBtn').innerHTML = app.running ? icons.pause : icons.play;
 }
 
-function fitView() { cam.fit(app.exp.view(app.params, app.sim)); }
+function fitView() { app.exp.fit ? app.exp.fit(cam, api) : cam.fit(app.exp.view(app.params, app.sim)); }
 
 /* --- Animazione di un parametro: il valore oscilla tra min e max e il moto viene ricalcolato --- */
 
@@ -373,8 +405,8 @@ const pressureOf = e => (e.pointerType === 'pen' ? (e.pressure > 0 ? e.pressure 
 
 function render() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  drawSky(ctx, cam, colors);
-  drawGrid(ctx, cam, colors);
+  if (app.exp.drawBackground) app.exp.drawBackground(ctx, cam, colors);
+  else { drawSky(ctx, cam, colors); drawGrid(ctx, cam, colors); }
   const P = new Painter(ctx, cam, colors);
   app.exp.draw(P, viewSim(), app.params, { active: app.activeHandle, api, size: sizeOf });
   const sel = selectedResizable();
@@ -385,6 +417,19 @@ function render() {
   }
   drawParticles(P);
   ink.draw(ctx, cam, colors);
+  lasso.draw(P, app.exp, app.activeHandle === 'lassoScale');
+  updateSelbar();
+}
+
+// Barretta Copia / Elimina sopra la selezione del lazo.
+const selbar = $('selbar');
+function updateSelbar() {
+  const r = lasso.screenBox(cam, app.exp);
+  selbar.classList.toggle('hidden', !r || gesture?.type === 'lasso');
+  if (!r) return;
+  const w = selbar.offsetWidth || 160;
+  selbar.style.left = Math.min(innerWidth - w - 8, Math.max(8, (r.x0 + r.x1) / 2 - w / 2)) + 'px';
+  selbar.style.top = Math.max(64, r.y0 - 48) + 'px';
 }
 
 const tlRange = $('tlRange'), tlLabel = $('tlLabel');
@@ -464,8 +509,13 @@ function hitHandle(sx, sy) {
   return best;
 }
 
+function erase(wx, wy) {
+  if (app.eraserMode === 'part') ink.erasePartAt(wx, wy, 9 / cam.scale);
+  else ink.eraseAt(wx, wy, 12 / cam.scale);
+}
+
 function inkTool(e) {
-  if (e.pointerType === 'pen') return app.tool === 'eraser' ? 'eraser' : 'pen';
+  if (e.pointerType === 'pen') return app.tool === 'eraser' || app.tool === 'lasso' ? app.tool : 'pen';
   if (e.pointerType === 'touch' && app.penSeen) return null; // con la Pencil il dito non scrive mai
   return app.tool === 'hand' ? null : app.tool;
 }
@@ -506,8 +556,25 @@ canvas.addEventListener('pointerdown', e => {
     return;
   }
   if (tool === 'eraser') {
-    ink.eraseAt(wx, wy, 12 / cam.scale);
+    erase(wx, wy);
     gesture = { type: 'erase', id: e.pointerId };
+    return;
+  }
+  if (tool === 'lasso') {
+    const r = lasso.screenBox(cam, app.exp);
+    if (r && Math.hypot(x - r.x1, y - r.y1) < HIT_PX) {
+      // Maniglia: ingrandisce attorno all'angolo opposto (in alto a sinistra) del riquadro.
+      const [ax, ay] = cam.toWorld(r.x0, r.y0);
+      app.activeHandle = 'lassoScale';
+      gesture = { type: 'lassoScale', id: e.pointerId, ax, ay, d0: Math.max(10, Math.hypot(x - r.x0, y - r.y0)), k: 1 };
+      return;
+    }
+    if (r && x > r.x0 && x < r.x1 && y > r.y0 && y < r.y1) {
+      gesture = { type: 'lassoMove', id: e.pointerId, lx: wx, ly: wy };
+      return;
+    }
+    lasso.start(wx, wy);
+    gesture = { type: 'lasso', id: e.pointerId };
     return;
   }
 
@@ -574,7 +641,17 @@ canvas.addEventListener('pointermove', e => {
       ink.add(px, py, pressureOf(ev));
     }
   } else if (gesture.type === 'erase') {
-    ink.eraseAt(wx, wy, 12 / cam.scale);
+    erase(wx, wy);
+  } else if (gesture.type === 'lasso') {
+    lasso.add(wx, wy, 3 / cam.scale);
+  } else if (gesture.type === 'lassoMove') {
+    lasso.move(app.exp, wx - gesture.lx, wy - gesture.ly);
+    gesture.lx = wx; gesture.ly = wy;
+  } else if (gesture.type === 'lassoScale') {
+    const [ax, ay] = cam.toScreen(gesture.ax, gesture.ay);
+    const k = Math.max(0.1, Math.hypot(x - ax, y - ay) / gesture.d0);
+    lasso.scale(app.exp, k / gesture.k, gesture.ax, gesture.ay);
+    gesture.k = k;
   } else if (gesture.type === 'custom') {
     if (gesture.custom.pan) { cam.panBy(x - gesture.lx, y - gesture.ly); gesture.lx = x; gesture.ly = y; }
     gesture.custom.move?.({ wx, wy, sx: x, sy: y });
@@ -603,6 +680,8 @@ function endPointer(e) {
   if (gesture.type === 'pinch') { if (touches.size < 2) gesture = null; return; }
   if (e.pointerId !== gesture.id) return;
   if (gesture.type === 'ink') ink.end();
+  if (gesture.type === 'lasso') lasso.finish(app.exp);
+  if (gesture.type === 'lassoMove' || gesture.type === 'lassoScale') lasso.save(app.exp);
   if (gesture.type === 'size') store.set('sizes.' + app.exp.id, app.sizes);
   // Tocco senza trascinare su una maniglia che coincide con un oggetto: lo seleziona per ridimensionarlo.
   if (gesture.type === 'drag' && !gesture.moved) app.sizeSel = hitResizable(gesture.sx, gesture.sy)?.key ?? null;
@@ -657,7 +736,16 @@ for (const type of ['touchstart', 'touchend']) canvas.addEventListener(type, e =
 
 /* ---------------- Barra superiore e moviola ---------------- */
 
-function setTool(t) {
+function setTool(t, startup = false) {
+  // Un secondo tocco sulla gomma passa da "tratti interi" a "precisa" e viceversa.
+  if (!startup && t === 'eraser' && app.tool === 'eraser') {
+    app.eraserMode = app.eraserMode === 'part' ? 'stroke' : 'part';
+    store.set('eraserMode', app.eraserMode);
+  }
+  if (t !== 'lasso') lasso.clear();
+  const eb = document.querySelector('#toolSeg [data-tool=eraser]');
+  eb.innerHTML = icons[app.eraserMode === 'part' ? 'eraserPart' : 'eraser'];
+  eb.title = app.eraserMode === 'part' ? 'Gomma precisa: cancella solo la parte toccata (E; tocca di nuovo per i tratti interi)' : 'Gomma: cancella tratti interi (E; tocca di nuovo per la gomma precisa)';
   app.tool = t; store.set('tool', t);
   document.querySelectorAll('#toolSeg button').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
 }
@@ -702,8 +790,10 @@ $('stepBtn').onclick = stepFrame;
 $('fitBtn').onclick = fitView;
 $('themeBtn').onclick = toggleTheme;
 $('theoryBtn').onclick = () => theoryPanel.toggle();
-$('undoBtn').onclick = () => ink.undo();
-$('clearBtn').onclick = () => { if (ink.strokes.length && confirm('Cancellare tutti gli appunti di questo esperimento?')) ink.clear(); };
+$('undoBtn').onclick = () => { lasso.clear(); ink.undo(); };
+$('clearBtn').onclick = () => { if (ink.strokes.length && confirm('Cancellare tutti gli appunti di questo esperimento?')) { lasso.clear(); ink.clear(); } };
+$('selCopy').onclick = () => lasso.copy(app.exp, 24 / cam.scale, -24 / cam.scale);
+$('selDelete').onclick = () => lasso.remove(app.exp);
 tlRange.oninput = () => scrubTo(+tlRange.value);
 $('tlStart').onclick = () => scrubTo(0);
 $('tlEnd').onclick = () => { stopSweep(); app.view = null; app.viewCache = null; };
@@ -718,6 +808,8 @@ addEventListener('keydown', e => {
   else if (e.key === 'h') setTool('hand');
   else if (e.key === 'p') setTool('pen');
   else if (e.key === 'e') setTool('eraser');
+  else if (e.key === 'l') setTool('lasso');
+  else if ((e.key === 'Backspace' || e.key === 'Delete') && lasso.active) lasso.remove(app.exp);
   else if (e.key === 'ArrowLeft') scrubTo((app.view ?? app.history.length - 1) - 1);
   else if (e.key === 'ArrowRight') stepFrame();
   else if (e.key === 'z' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); ink.undo(); }
@@ -766,7 +858,7 @@ if (new URLSearchParams(location.search).has('debug')) {
 /* ---------------- Avvio ---------------- */
 
 applyIcons();
-setTool(app.tool);
+setTool(app.tool, true);
 setInkColor(app.inkColor);
 resize();
 loadExperiment(store.get('lastExp', 'projectile'));

@@ -1,12 +1,13 @@
 import projectile from './projectile.js';
 import incline from './incline.js';
 import builder from './builder.js';
+import board from './board.js';
 import circular from './circular.js';
 import relative from './relative.js';
 
 // Mappa dei moduli. Le voci senza esperimenti compaiono come "in arrivo".
 export const AREAS = [
-  { id: 'lab', title: 'Laboratorio', experiments: [builder], soon: [] },
+  { id: 'lab', title: 'Laboratorio', experiments: [board, builder], soon: [] },
   { id: 'meccanica', title: 'Meccanica del punto', experiments: [projectile, incline, circular, relative], soon: [] },
   { id: 'sistemi', title: 'Sistemi e urti', experiments: [], soon: ['Urti 1D e 2D', 'Centro di massa', 'Carrucole e funi'] },
   { id: 'rigido', title: 'Corpo rigido', experiments: [], soon: ['Momenti e leve', 'Rotolamento'] },

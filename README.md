@@ -4,7 +4,8 @@ App interattiva per le ripetizioni di fisica classica, pensata per iPad con Appl
 
 - **Esperimenti pronti**: moto parabolico, piano inclinato, moto circolare, moti relativi, con formule live, grafici e schede di teoria.
 - **Costruttore libero**: blocchi, piani, molle, funi, carrucole e forze da collegare a piacere, con diagramma di corpo libero e bilancio energetico.
-- **Lavagna**: la Pencil scrive sulla scena, il dito la manipola.
+- **Lavagna**: foglio infinito a quadretti o bianco; la Pencil scrive, il dito sposta e fa zoom. Lazo per spostare, ingrandire, copiare ed eliminare; gomma a tratti interi o precisa; istantanee degli esperimenti da annotare.
+- **Appunti sugli esperimenti**: la Pencil scrive anche sopra ogni scena, e gli appunti restano ancorati agli oggetti.
 - **Offline**: una volta aperta, l'app resta salvata sul dispositivo.
 
 ## Usarla

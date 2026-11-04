@@ -16,9 +16,9 @@ export class Camera {
   }
 
   // Inquadra un rettangolo del mondo lasciando spazio per la barra in alto e i pannelli.
-  fit({ xmin, xmax, ymin, ymax }, pad = { top: 80, right: 380, bottom: 30, left: 300 }) {
-    // Su schermi stretti i pannelli si sovrappongono comunque: riduciamo i margini.
-    if (this.w < 900) pad = { top: 80, right: 20, bottom: 20, left: 20 };
+  fit({ xmin, xmax, ymin, ymax }, pad) {
+    // Margini predefiniti per barra e pannelli; su schermi stretti i pannelli si sovrappongono comunque.
+    pad ??= this.w < 900 ? { top: 80, right: 20, bottom: 20, left: 20 } : { top: 80, right: 380, bottom: 30, left: 300 };
     const aw = Math.max(100, this.w - pad.left - pad.right);
     const ah = Math.max(100, this.h - pad.top - pad.bottom);
     this.scale = Math.min(aw / (xmax - xmin), ah / (ymax - ymin));

@@ -57,6 +57,28 @@ export class Ink {
   undo() { this.strokes.pop(); this.save(); }
   clear() { this.strokes = []; this.save(); }
 
+  // Gomma precisa: toglie solo la parte di tratto entro r dal punto, spezzando il tratto se serve.
+  erasePartAt(x, y, r) {
+    let changed = false;
+    const out = [];
+    for (const s of this.strokes) {
+      const rr = r + s.w / 2, [x0, y0, x1, y1] = strokeBox(s);
+      if (x < x0 - rr || x > x1 + rr || y < y0 - rr || y > y1 + rr || !touches(s.pts, x, y, rr)) { out.push(s); continue; }
+      changed = true;
+      if (s.pts.length === 1) continue;
+      // Infittisce i punti (i tratti veloci ne hanno pochi), poi tiene solo i pezzi fuori dalla gomma.
+      let run = [];
+      for (const p of densify(s.pts, rr / 2)) {
+        if (Math.hypot(p[0] - x, p[1] - y) < rr) { if (run.length > 1) out.push({ ...s, pts: run }); run = []; } else run.push(p);
+      }
+      if (run.length > 1) out.push({ ...s, pts: run });
+    }
+    if (changed) { this.strokes = out; this.save(); }
+  }
+
+  // Il tratto è stato spostato o ridimensionato (lazo): la curva in cache va ricalcolata.
+  touch(s) { CACHE.delete(s); }
+
   // Gomma a tratti interi: rimuove ogni tratto che passa entro r (metri) dal punto.
   eraseAt(x, y, r) {
     const before = this.strokes.length;
@@ -84,6 +106,34 @@ export class Ink {
     }
     ctx.restore();
   }
+}
+
+// Riquadro [x0, y0, x1, y1] di un tratto in coordinate mondo.
+export function strokeBox(s) {
+  let c = CACHE.get(s);
+  if (!c) CACHE.set(s, c = build(s));
+  return c.bb;
+}
+
+// Il tratto passa entro r dal punto (controllando i segmenti, non solo i punti campionati)?
+function touches(P, x, y, r) {
+  if (P.length === 1) return Math.hypot(P[0][0] - x, P[0][1] - y) < r;
+  for (let i = 1; i < P.length; i++) {
+    const [ax, ay] = P[i - 1], [bx, by] = P[i], dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy || 1e-12;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / L2));
+    if (Math.hypot(ax + t * dx - x, ay + t * dy - y) < r) return true;
+  }
+  return false;
+}
+
+// Aggiunge punti intermedi in modo che due punti consecutivi distino al più `step`.
+function densify(P, step) {
+  const out = [P[0]];
+  for (let i = 1; i < P.length; i++) {
+    const a = P[i - 1], b = P[i], n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / step);
+    for (let k = 1; k <= n; k++) { const t = k / n; out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]); }
+  }
+  return out;
 }
 
 // Spessore in metri per una data pressione.

@@ -5,7 +5,7 @@
 // (avvio istantaneo, anche senza connessione). Quando si pubblica una nuova versione, il nuovo service worker
 // scarica i file aggiornati in sottofondo e aspetta che l'utente tocchi «Aggiorna».
 
-const VERSION = '1905f019a4';
+const VERSION = 'dc271e49dd';
 const FILES = [
   "./",
   "css/style.css",
@@ -13,9 +13,11 @@ const FILES = [
   "icons/icon-512.png",
   "icons/icon.svg",
   "index.html",
+  "js/core/blobs.js",
   "js/core/camera.js",
   "js/core/icons.js",
   "js/core/ink.js",
+  "js/core/lasso.js",
   "js/core/look.js",
   "js/core/math.js",
   "js/core/panels.js",
@@ -25,6 +27,7 @@ const FILES = [
   "js/core/shapes.js",
   "js/core/store.js",
   "js/core/ui.js",
+  "js/experiments/board.js",
   "js/experiments/builder.js",
   "js/experiments/circular.js",
   "js/experiments/incline.js",
