@@ -150,6 +150,8 @@ export default {
   // Oggetti della lavagna per il lazo: le immagini si spostano, si ingrandiscono, si copiano, si eliminano.
   lasso: {
     items: () => B.items.map(it => ({ ref: it, bbox: [it.x, it.y, it.x + it.w, it.y + it.h] })),
+    // Immagine sotto il punto (quella più in alto, cioè l'ultima inserita).
+    hit: (x, y) => B.items.findLast(it => x >= it.x && x <= it.x + it.w && y >= it.y && y <= it.y + it.h) ?? null,
     transform(refs, f, k) {
       for (const it of refs) { const [x, y] = f(it.x, it.y); it.x = x; it.y = y; it.w *= k; it.h *= k; }
     },

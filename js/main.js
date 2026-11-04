@@ -34,7 +34,7 @@ const app = {
   view: null, viewCache: null,      // moviola: indice del campione mostrato (null = istante corrente)
   sweep: null,                      // animazione di un parametro in corso
   syncs: [],                        // funzioni che riallineano i controlli ai valori
-  tool: store.get('tool', 'hand'), inkColor: store.get('inkColor', 'ink'), penSeen: false,
+  tool: store.get('tool', 'hand'), inkColor: store.get('inkColor', 'ink'), penSeen: store.get('penSeen', false),
   eraserMode: store.get('eraserMode', 'stroke'),   // 'stroke' = tratti interi, 'part' = gomma precisa
   graphIdx: 0, formulasDirty: true, activeHandle: null,
   sizes: {}, sizeSel: null,         // scala solo estetica degli oggetti disegnati negli esperimenti pronti
@@ -525,7 +525,51 @@ function startPinch() {
   gesture = { type: 'pinch', cx: (p1.x + p2.x) / 2, cy: (p1.y + p2.y) / 2, d: Math.hypot(p1.x - p2.x, p1.y - p2.y) };
 }
 
+/* --- Esclusione del palmo (attiva da quando su questo dispositivo è stata usata la Pencil) --- */
+const PALM_AFTER_PEN_MS = 500;   // dopo aver alzato la Pencil il polso resta spesso appoggiato
+const PALM_REVERT_MS = 800;      // un tocco iniziato poco prima della Pencil era quasi certamente il polso
+const PALM_SIZE_PX = 38;         // contatti più larghi di così sono un palmo, non un dito
+const palm = { penDown: false, penUpAt: -Infinity, ignored: new Set() };
+
+// La Pencil è arrivata mentre un tocco del dito era in corso: era il polso. Annulla quello che ha fatto.
+function revertTouchGesture() {
+  const g = gesture;
+  if (performance.now() - g.t0 < PALM_REVERT_MS) {
+    Object.assign(cam, g.cam0);
+    if (g.type === 'lassoMove' && g.total) lasso.move(app.exp, -g.total[0], -g.total[1]);
+    if (g.type === 'lassoScale' && g.k !== 1) lasso.scale(app.exp, 1 / g.k, g.ax, g.ay);
+  }
+  if (g.type === 'ink') ink.cancel();
+  g.custom?.cancel?.();
+  app.activeHandle = null;
+  gesture = null;
+}
+
+// Selezione attiva (lazo o immagine): la maniglia la ridimensiona, un trascinamento dentro la sposta.
+function selectionGesture(x, y, wx, wy, id) {
+  const r = lasso.screenBox(cam, app.exp);
+  if (!r) return null;
+  if (Math.hypot(x - r.x1, y - r.y1) < HIT_PX) {
+    // Ingrandisce attorno all'angolo opposto (in alto a sinistra) del riquadro.
+    const [ax, ay] = cam.toWorld(r.x0, r.y0);
+    app.activeHandle = 'lassoScale';
+    return { type: 'lassoScale', id, ax, ay, d0: Math.max(10, Math.hypot(x - r.x0, y - r.y0)), k: 1 };
+  }
+  if (x > r.x0 && x < r.x1 && y > r.y0 && y < r.y1) return { type: 'lassoMove', id, lx: wx, ly: wy, total: [0, 0] };
+  return null;
+}
+
 canvas.addEventListener('pointerdown', e => {
+  const before = gesture;
+  onPointerDown(e);
+  // Ricorda come era la vista quando è iniziato un gesto col dito, per poterlo annullare se era il polso.
+  if (e.pointerType === 'touch' && gesture && gesture !== before) {
+    const prev = before?.touch ? before : null;
+    Object.assign(gesture, { touch: true, t0: prev?.t0 ?? performance.now(), cam0: prev?.cam0 ?? { cx: cam.cx, cy: cam.cy, scale: cam.scale } });
+  }
+});
+
+function onPointerDown(e) {
   // Se l'evento arriva in ritardo (Pencil già sollevata), la cattura fallisce: il tocco va comunque gestito.
   try { canvas.setPointerCapture(e.pointerId); } catch { /* puntatore già rilasciato */ }
   // I touch della scena sono annullati, quindi un tocco qui non toglie più il fuoco a un campo in modifica:
@@ -533,7 +577,18 @@ canvas.addEventListener('pointerdown', e => {
   document.querySelector('.num-edit')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
   if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
   const [x, y] = pos(e);
-  if (e.pointerType === 'pen') app.penSeen = true;
+  if (e.pointerType === 'pen') {
+    if (!app.penSeen) { app.penSeen = true; store.set('penSeen', true); }
+    palm.penDown = true;
+    if (gesture?.touch) revertTouchGesture();
+    for (const id of touches.keys()) palm.ignored.add(id);
+    touches.clear();
+  }
+  if (e.pointerType === 'touch' && app.penSeen) {
+    const recent = performance.now() - palm.penUpAt < PALM_AFTER_PEN_MS;
+    const big = Math.max(e.width || 0, e.height || 0) > PALM_SIZE_PX;
+    if (palm.penDown || recent || big) { palm.ignored.add(e.pointerId); return; }
+  }
 
   if (e.pointerType === 'touch') {
     touches.set(e.pointerId, { x, y });
@@ -561,20 +616,23 @@ canvas.addEventListener('pointerdown', e => {
     return;
   }
   if (tool === 'lasso') {
-    const r = lasso.screenBox(cam, app.exp);
-    if (r && Math.hypot(x - r.x1, y - r.y1) < HIT_PX) {
-      // Maniglia: ingrandisce attorno all'angolo opposto (in alto a sinistra) del riquadro.
-      const [ax, ay] = cam.toWorld(r.x0, r.y0);
-      app.activeHandle = 'lassoScale';
-      gesture = { type: 'lassoScale', id: e.pointerId, ax, ay, d0: Math.max(10, Math.hypot(x - r.x0, y - r.y0)), k: 1 };
-      return;
-    }
-    if (r && x > r.x0 && x < r.x1 && y > r.y0 && y < r.y1) {
-      gesture = { type: 'lassoMove', id: e.pointerId, lx: wx, ly: wy };
-      return;
-    }
+    const g = selectionGesture(x, y, wx, wy, e.pointerId);
+    if (g) { gesture = g; return; }
     lasso.start(wx, wy);
     gesture = { type: 'lasso', id: e.pointerId };
+    return;
+  }
+
+  // Con la mano: una selezione già fatta si sposta e si ridimensiona; toccare un'immagine la seleziona e la trascina.
+  if (lasso.active) {
+    const g = selectionGesture(x, y, wx, wy, e.pointerId);
+    if (g) { gesture = g; return; }
+    lasso.clear();
+  }
+  const item = app.exp.lasso?.hit?.(wx, wy);
+  if (item) {
+    lasso.select([], [item]);
+    gesture = { type: 'lassoMove', id: e.pointerId, lx: wx, ly: wy, total: [0, 0] };
     return;
   }
 
@@ -606,9 +664,10 @@ canvas.addEventListener('pointerdown', e => {
   // Un tocco su un oggetto ridimensionabile lo seleziona (compare la maniglia); altrove deseleziona.
   app.sizeSel = hitResizable(x, y)?.key ?? null;
   gesture = { type: 'pan', id: e.pointerId, lx: x, ly: y };
-});
+}
 
 canvas.addEventListener('pointermove', e => {
+  if (palm.ignored.has(e.pointerId)) return;
   const [x, y] = pos(e);
   if (e.pointerType === 'touch' && touches.has(e.pointerId)) touches.set(e.pointerId, { x, y });
 
@@ -646,6 +705,7 @@ canvas.addEventListener('pointermove', e => {
     lasso.add(wx, wy, 3 / cam.scale);
   } else if (gesture.type === 'lassoMove') {
     lasso.move(app.exp, wx - gesture.lx, wy - gesture.ly);
+    if (gesture.total) { gesture.total[0] += wx - gesture.lx; gesture.total[1] += wy - gesture.ly; }
     gesture.lx = wx; gesture.ly = wy;
   } else if (gesture.type === 'lassoScale') {
     const [ax, ay] = cam.toScreen(gesture.ax, gesture.ay);
@@ -675,6 +735,8 @@ canvas.addEventListener('pointermove', e => {
 });
 
 function endPointer(e) {
+  if (e.pointerType === 'pen') { palm.penDown = false; palm.penUpAt = performance.now(); }
+  if (palm.ignored.delete(e.pointerId)) return;
   touches.delete(e.pointerId);
   if (!gesture) return;
   if (gesture.type === 'pinch') { if (touches.size < 2) gesture = null; return; }

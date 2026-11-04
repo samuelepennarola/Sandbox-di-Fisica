@@ -21,6 +21,9 @@ export class Lasso {
 
   start(x, y) { this.sel = null; this.path = [[x, y]]; }
 
+  // Selezione diretta (per esempio toccando un'immagine della lavagna).
+  select(strokes, items) { this.path = null; this.sel = { strokes, items }; }
+
   add(x, y, minStep) {
     const last = this.path?.[this.path.length - 1];
     if (last && Math.hypot(x - last[0], y - last[1]) >= minStep) this.path.push([x, y]);

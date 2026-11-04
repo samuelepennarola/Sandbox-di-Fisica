@@ -27,6 +27,12 @@ if ('serviceWorker' in navigator) {
   } else {
     const firstInstall = !navigator.serviceWorker.controller;
     navigator.serviceWorker.register('sw.js').then(reg => {
+      // Dalla schermata Home iOS riprende l'app dalla memoria senza ricaricarla, quindi non cercherebbe mai
+      // aggiornamenti: li cerchiamo noi all'avvio, ogni volta che l'app torna in primo piano e ogni mezz'ora.
+      const check = () => { if (navigator.onLine !== false) reg.update().catch(() => {}); };
+      check();
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+      setInterval(check, 30 * 60 * 1000);
       const offer = w => toast('È disponibile una nuova versione.', 'Aggiorna', () => w.postMessage('aggiorna'));
       if (reg.waiting && navigator.serviceWorker.controller) offer(reg.waiting);
       reg.addEventListener('updatefound', () => {
