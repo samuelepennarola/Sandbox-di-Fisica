@@ -2,7 +2,7 @@ import { clamp, fmt, tn, deg } from '../core/math.js';
 import { icons } from '../core/icons.js';
 import { store } from '../core/store.js';
 import { el } from '../core/ui.js';
-import { drawGrid } from '../core/render.js';
+import { drawGrid, drawAxes } from '../core/render.js';
 import { K, MU, pointField, drawFieldLines, drawFieldGrid, chargeSphere } from '../core/electric.js';
 
 // Cariche e campo elettrico (elettrostatica, livello liceo).
@@ -373,6 +373,7 @@ export default {
   title: 'Cariche e campo elettrico',
   subtitle: 'Coulomb, linee di campo, barre e lastre cariche',
   panelTitle: 'Cariche',
+  axes: true,
   noSim: true,
   keepPanels: ['formulas'],
   params: [],
@@ -401,11 +402,12 @@ export default {
   drawBackground(ctx, cam, c) {
     ctx.fillStyle = c.bg;
     ctx.fillRect(0, 0, cam.w, cam.h);
-    drawGrid(ctx, cam, c);
+    drawGrid(ctx, cam, c, false);
   },
 
-  draw(P) {
+  draw(P, s, p, ui) {
     const show = B.spec.show;
+    if (!ui?.snapshot) drawAxes(P, { unit: 'cm', k: 100 });
     if (show.lines) drawFieldLines(P, fieldLines());
     if (show.E) drawFieldVectors(P);
     for (const s of B.spec.sources) if (s.type !== 'point') drawBar(P, s, s.id === B.sel);
@@ -469,36 +471,29 @@ export default {
 
   buildPanel(body, api) {
     body.innerHTML = '';
-    const grid = el('div', 'toolgrid');
-    for (const [t, ic, label] of TOOLS) {
-      const b = el('button', B.tool === t ? 'on' : '', `${icons[ic]}<span>${label}</span>`);
-      b.onclick = () => { B.tool = B.tool === t ? 'select' : t; api.rebuildPanel(); };
-      grid.appendChild(b);
-    }
-    body.append(grid, el('div', 'hint', B.tool === 'select'
-      ? 'Trascina cariche, barre, lastre e sonda (col dito o con la Pencil). Tocca una carica per vederne le forze e cambiarne valore e posizione.'
-      : 'Tocca il foglio per aggiungere.'));
+    api.setRail([{ title: 'Sorgenti', items: TOOLS }], B.tool, t => { B.tool = B.tool === t && t !== 'select' ? 'select' : t; api.rebuildPanel(); });
+    if (B.tool !== 'select') body.appendChild(el('div', 'hint', 'Tocca la scena per aggiungere.'));
 
     const s = srcOf(B.sel);
     if (s) {
-      body.append(el('div', 'sub', 'Selezione'), el('div', 'sel-title', `<span class="dot"></span>${nameOf(s)}`));
+      body.append(el('div', 'sel-title', `<span class="dot"></span>${nameOf(s)}`));
       for (const def of PROPS[s.type]) {
         body.appendChild(api.control({ ...def, pinLabel: `${nameOf(s)} · ${def.label}` }, () => s[def.key], v => { s[def.key] = v; changed(); }, `${s.id}.${def.key}`));
       }
-      body.appendChild(el('div', 'sub', 'Posizione'));
+      const posBox = api.section(body, 'Posizione', 'c.pos', true);
       const ref = refCharge();
       if (s.type === 'point' && ref && ref !== s) {
         // Coordinate polari rispetto a q₁: distanza r e angolo θ dall'asse x (positivo in senso antiorario).
         const polar = () => ({ r: Math.hypot(s.x - ref.x, s.y - ref.y), th: Math.atan2(s.y - ref.y, s.x - ref.x) / deg });
         const place = (r, th) => { s.x = ref.x + r * Math.cos(th * deg); s.y = ref.y + r * Math.sin(th * deg); changed(); };
-        body.appendChild(el('div', 'hint', `Rispetto a ${nameOf(ref)}: distanza r e angolo θ misurato dall'asse x.`));
-        body.appendChild(api.control({ key: 'r', label: `Distanza da ${nameOf(ref)}`, pinLabel: `${nameOf(s)} · distanza da ${nameOf(ref)}`, unit: 'cm', min: 1, max: 80, step: 0.5, hardMin: 0.5 },
+        posBox.appendChild(el('div', 'hint', `Rispetto a ${nameOf(ref)}: distanza r e angolo θ misurato dall'asse x.`));
+        posBox.appendChild(api.control({ key: 'r', label: `Distanza da ${nameOf(ref)}`, pinLabel: `${nameOf(s)} · distanza da ${nameOf(ref)}`, unit: 'cm', min: 1, max: 80, step: 0.5, hardMin: 0.5 },
           () => polar().r * 100, v => place(v / 100, polar().th), `${s.id}.r`));
-        body.appendChild(api.control({ key: 'th', label: 'Angolo θ', pinLabel: `${nameOf(s)} · angolo θ`, unit: '°', min: -180, max: 180, step: 1, hardMin: -360, hardMax: 360 },
+        posBox.appendChild(api.control({ key: 'th', label: 'Angolo θ', pinLabel: `${nameOf(s)} · angolo θ`, unit: '°', min: -180, max: 180, step: 1, hardMin: -360, hardMax: 360 },
           () => polar().th, v => place(polar().r, v), `${s.id}.th`));
       } else {
         for (const [k, label] of [['x', 'Posizione x'], ['y', 'Posizione y']]) {
-          body.appendChild(api.control({ key: k, label, pinLabel: `${nameOf(s)} · ${k}`, unit: 'cm', min: -100, max: 100, step: 0.5, hardMin: -1000, hardMax: 1000 },
+          posBox.appendChild(api.control({ key: k, label, pinLabel: `${nameOf(s)} · ${k}`, unit: 'cm', min: -100, max: 100, step: 0.5, hardMin: -1000, hardMax: 1000 },
             () => s[k] * 100, v => { s[k] = v / 100; changed(); }, `${s.id}.${k}`));
         }
       }
@@ -510,8 +505,9 @@ export default {
       return;
     }
 
+    if (B.tool === 'select') body.appendChild(el('div', 'hint', 'Aggiungi cariche dalla barra a sinistra; trascinale col dito o con la Pencil. Toccane una per vederne forze, valore e posizione.'));
     if (B.spec.sources.length) {
-      body.appendChild(el('div', 'sub', 'In scena (tocca per modificare)'));
+      const inScene = api.section(body, 'In scena', 'c.list', true);
       const list = el('div', 'chips');
       for (const o of B.spec.sources) {
         const v = o.type === 'point' ? `${fmt(o.q, 1)} µC` : o.type === 'rod' ? `${fmt(o.Q, 1)} µC` : `${fmt(o.sigma, 1)} µC/m²`;
@@ -519,13 +515,13 @@ export default {
         b.onclick = () => select(o.id);
         list.appendChild(b);
       }
-      body.appendChild(list);
+      inScene.appendChild(list);
     }
-    body.appendChild(el('div', 'sub', 'Mostra'));
+    const showBox = api.section(body, 'Mostra', 'c.show', true);
     for (const [k, label] of [['lines', 'Linee di campo'], ['E', 'Vettori del campo E'], ['F', 'Forze sulle cariche'], ['comp', 'Componenti x e y delle forze'], ['probe', 'Sonda']]) {
-      body.appendChild(api.control({ key: k, type: 'toggle', label }, () => B.spec.show[k], v => { B.spec.show[k] = v; changed(); }, 'charges.show.' + k));
+      showBox.appendChild(api.control({ key: k, type: 'toggle', label }, () => B.spec.show[k], v => { B.spec.show[k] = v; changed(); }, 'charges.show.' + k));
     }
-    body.appendChild(el('div', 'sub', 'Situazioni tipiche'));
+    const presets = api.section(body, 'Situazioni tipiche', 'c.presets', true);
     const chips = el('div', 'chips');
     for (const p of PRESETS) {
       const b = el('button', '', p.label);
@@ -535,12 +531,13 @@ export default {
     const clear = el('button', '', 'Scena vuota');
     clear.onclick = () => { B.spec = { ...newSpec(), show: B.spec.show }; B.sel = null; changed(); api.rebuildPanel(); };
     chips.appendChild(clear);
-    body.appendChild(chips);
+    presets.appendChild(chips);
   },
 
   pointerDown({ wx, wy, api }) {
     const tol = 12 / api.cam.scale, t = B.tool;
     if (t !== 'select') {
+      wx = snap(wx); wy = snap(wy);
       const s = t === 'plus' ? { type: 'point', x: wx, y: wy, q: 2 }
         : t === 'minus' ? { type: 'point', x: wx, y: wy, q: -2 }
         : t === 'rod' ? { type: 'rod', x: wx, y: wy, Q: 4, L: 0.3, angle: 0 }

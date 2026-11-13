@@ -1,5 +1,6 @@
 import * as pl from '../../vendor/planck/planck.mjs';
 import { deg, clamp, fmt } from '../core/math.js';
+import { drawAxes } from '../core/render.js';
 import { icons } from '../core/icons.js';
 import { store } from '../core/store.js';
 import { el } from '../core/ui.js';
@@ -369,12 +370,13 @@ function drawElectricForces(P, st, sel, skip) {
   }
   for (const a of list) for (const b of list) if (a !== b) dmin = Math.min(dmin, Math.hypot(a.x - b.x, a.y - b.y));
   if (maxF <= 0) return;
-  const kf = clamp(0.6 * (Number.isFinite(dmin) ? dmin : 2), 0.4, 2) / maxF;
+  const kf = clamp(0.35 * (Number.isFinite(dmin) ? dmin : 2), 0.3, 1.5) / maxF;
   const name = id => id === 'E' ? 'E' : nameOf(st.spec, objOf(st.spec, id));
   for (const d of data) {
     const { c } = d;
     if (skip.has(c.id)) continue;
-    if (c.id === sel) for (const f of d.rows) {
+    // Con un solo contributo la freccia tratteggiata coinciderebbe con la risultante.
+    if (c.id === sel && d.rows.length > 1) for (const f of d.rows) {
       P.arrow(c.x, c.y, c.x + kf * f.F[0], c.y + kf * f.F[1], { color: 'acc', width: 2.2, dash: [5, 4], alpha: 0.75, label: f.from === 'E' ? 'qE' : 'F←' + shortName(name(f.from)) });
     }
     P.arrow(c.x, c.y, c.x + kf * d.R[0], c.y + kf * d.R[1], { color: 'acc', width: 3.5, label: 'Fe' });
@@ -689,7 +691,7 @@ function pullGesture(st, o, wx, wy) {
 function hint() {
   const p = B.pending;
   switch (B.tool) {
-    case 'select': return 'Tocca un oggetto per modificarlo, trascinalo per spostarlo. Durante la simulazione puoi tirare i corpi col dito.';
+    case 'select': return 'Tocca un oggetto per modificarlo, trascinalo per spostarlo. Durante la simulazione puoi tirare i corpi.';
     case 'block': case 'ball': return 'Tocca la scena per posizionarlo: vicino a un piano si appoggia da solo.';
     case 'spring': case 'rope': return p ? 'Ora tocca il secondo estremo.' : 'Tocca il primo estremo: un corpo, un punto fisso o uno spazio vuoto (crea un punto fisso).';
     case 'pulleyRope': return !p ? 'Tocca una carrucola (o uno spazio vuoto per crearla).' : !p.a ? 'Tocca il primo corpo.' : 'Tocca il secondo corpo.';
@@ -819,6 +821,7 @@ function resizeGesture(st, h) {
 function draw(P, st, ui = {}) {
   const spec = st.spec, sel = B.sel, show = B.spec.show;
   P.ground(0);
+  if (!ui.snapshot) drawAxes(P);
   if (show.field ?? true) {
     const { x0, y0, x1, y1 } = P.cam.bounds(), m = 0.2 * (x1 - x0);
     drawFieldLines(P, fieldLines(st, [x0 - m, y0 - m, x1 + m, y1 + m]), { alpha: 0.35 });
@@ -827,7 +830,7 @@ function draw(P, st, ui = {}) {
     const list = chargesOf(st);
     if (list.length || spec.E) drawFieldGrid(P, (x, y) => fieldAt(st, x, y, list), (x, y) => y < 0 || list.some(c => Math.hypot(x - c.x, y - c.y) < c.r * 1.6));
   }
-  if (show.dist) drawDistances(P, st);
+  if (show.dist ?? true) drawDistances(P, st);
 
   for (const o of spec.objects) {
     if (o.type === 'incline') {
@@ -1054,36 +1057,34 @@ function graphs(st) {
   return list;
 }
 
+// Proprietà principali di ogni oggetto; le altre (attrito, elasticità, velocità iniziali) stanno in "Altre proprietà".
+const PRIMARY = { block: ['m', 'w', 'h', 'angle', 'q'], ball: ['m', 'r', 'q'] };
+
 function buildPanel(body, api) {
   body.innerHTML = '';
-  for (const [title, tools] of TOOL_GROUPS) {
-    const grid = el('div', 'toolgrid');
-    for (const [t, ic, label] of tools) {
-      const b = el('button', B.tool === t ? 'on' : '', `${icons[ic]}<span>${label}</span>`);
-      b.onclick = () => setTool(B.tool === t ? 'select' : t);
-      grid.appendChild(b);
-    }
-    body.append(el('div', 'sub', title), grid);
-  }
-  body.append(el('div', 'hint', hint()));
+  api.setRail(TOOL_GROUPS.map(([title, items]) => ({ title, items })), B.tool, t => setTool(B.tool === t && t !== 'select' ? 'select' : t));
+  if (B.tool !== 'select') body.appendChild(el('div', 'hint', hint()));
 
   const spec = B.spec, item = selected(spec);
   if (item) {
-    const title = el('div', 'sel-title', `<span class="dot"></span>${nameOf(spec, item)}`);
-    body.append(el('div', 'sub', 'Selezione'), title);
-    for (const def of PROPS[item.type]) {
-      body.appendChild(api.control({ ...def, pinLabel: `${nameOf(spec, item)} · ${def.label}` }, () => item[def.key] ?? 0, v => {
-        item[def.key] = v;
-        if (DYNAMIC.has(item.type) && (def.key === 'h' || def.key === 'r')) snapBody(spec, item);
-        save(); api.reset();
-      }, `${item.id}.${def.key}`));
-    }
+    body.appendChild(el('div', 'sel-title', `<span class="dot"></span>${nameOf(spec, item)}`));
+    const ctl = (parent, def) => parent.appendChild(api.control({ ...def, pinLabel: `${nameOf(spec, item)} · ${def.label}` }, () => item[def.key] ?? 0, v => {
+      item[def.key] = v;
+      if (DYNAMIC.has(item.type) && (def.key === 'h' || def.key === 'r')) snapBody(spec, item);
+      save(); api.reset();
+    }, `${item.id}.${def.key}`));
+    const prim = PRIMARY[item.type], defs = PROPS[item.type];
+    for (const def of defs) if (!prim || prim.includes(def.key)) ctl(body, def);
     if ('x' in item && item.type !== 'incline') {
-      body.appendChild(el('div', 'sub', 'Posizione'));
+      const pos = api.section(body, 'Posizione', 'b.pos', true);
       for (const k of ['x', 'y']) {
-        body.appendChild(api.control({ key: k, label: `Posizione ${k}`, pinLabel: `${nameOf(spec, item)} · ${k}`, unit: 'm', min: k === 'x' ? -20 : 0, max: 20, step: 0.01, hardMin: -1e3, hardMax: 1e3 },
+        pos.appendChild(api.control({ key: k, label: `Posizione ${k}`, pinLabel: `${nameOf(spec, item)} · ${k}`, unit: 'm', min: k === 'x' ? -20 : 0, max: 20, step: 0.01, hardMin: -1e3, hardMax: 1e3 },
           () => item[k], v => { item[k] = v; save(); api.reset(); }, `${item.id}.${k}`));
       }
+    }
+    if (prim) {
+      const more = api.section(body, 'Altre proprietà', 'b.more', false);
+      for (const def of defs) if (!prim.includes(def.key)) ctl(more, def);
     }
     const row = el('div', 'btn-row');
     const del = el('button', 'btn danger', 'Elimina');
@@ -1095,21 +1096,23 @@ function buildPanel(body, api) {
     return;
   }
 
-  body.appendChild(el('div', 'sub', 'Scena'));
-  body.appendChild(api.control({ key: 'g', label: 'Gravità g', unit: 'm/s²', min: 0, max: 25, step: 0.01 }, () => spec.g, v => { spec.g = v; save(); api.reset(); }, 'scene.g'));
-  body.appendChild(api.control({ key: 'muFloor', label: 'Attrito μ del suolo', unit: '', min: 0, max: 1.5, step: 0.01 }, () => spec.muFloor, v => { spec.muFloor = v; save(); api.reset(); }, 'scene.mu'));
-  const toggles = [['fbd', 'Diagramma di corpo libero'], ['all', '…su tutti i corpi'], ['vel', 'Vettori velocità'], ['trail', 'Scie']];
-  for (const [k, label] of toggles) {
-    body.appendChild(api.control({ key: k, type: 'toggle', label }, () => spec.show[k], v => { spec.show[k] = v; save(); api.refresh(); }, 'show.' + k));
+  if (B.tool === 'select') body.appendChild(el('div', 'hint', 'Scegli un oggetto nella barra a sinistra e tocca la scena. Tocca un oggetto per modificarlo.'));
+  const scene = api.section(body, 'Scena', 'b.scene', true);
+  scene.appendChild(api.control({ key: 'g', label: 'Gravità g', unit: 'm/s²', min: 0, max: 25, step: 0.01 }, () => spec.g, v => { spec.g = v; save(); api.reset(); }, 'scene.g'));
+  scene.appendChild(api.control({ key: 'muFloor', label: 'Attrito μ del suolo', unit: '', min: 0, max: 1.5, step: 0.01 }, () => spec.muFloor, v => { spec.muFloor = v; save(); api.reset(); }, 'scene.mu'));
+  const show = api.section(body, 'Mostra', 'b.show', true);
+  for (const [k, label] of [['fbd', 'Diagramma di corpo libero'], ['all', '…su tutti i corpi'], ['vel', 'Vettori velocità'], ['trail', 'Scie']]) {
+    show.appendChild(api.control({ key: k, type: 'toggle', label }, () => spec.show[k], v => { spec.show[k] = v; save(); api.refresh(); }, 'show.' + k));
   }
-  body.appendChild(el('div', 'sub', 'Elettromagnetismo'));
-  body.appendChild(api.control({ key: 'E', label: 'Campo elettrico uniforme E', unit: 'kN/C', min: 0, max: 2000, step: 5 }, () => spec.E ?? 0, v => { spec.E = v; save(); api.reset(); }, 'scene.E'));
-  body.appendChild(api.control({ key: 'Eangle', label: 'Direzione del campo', unit: '°', min: -180, max: 180, step: 1 }, () => spec.Eangle ?? 0, v => { spec.Eangle = v; save(); api.reset(); }, 'scene.Ea'));
+  const hasEM = spec.E || spec.objects.some(o => o.q);
+  const em = api.section(body, 'Elettromagnetismo', 'b.em', !!hasEM);
+  em.appendChild(api.control({ key: 'E', label: 'Campo elettrico uniforme E', unit: 'kN/C', min: 0, max: 2000, step: 5 }, () => spec.E ?? 0, v => { spec.E = v; save(); api.reset(); }, 'scene.E'));
+  em.appendChild(api.control({ key: 'Eangle', label: 'Direzione del campo', unit: '°', min: -180, max: 180, step: 1 }, () => spec.Eangle ?? 0, v => { spec.Eangle = v; save(); api.reset(); }, 'scene.Ea'));
   for (const [k, label, def] of [['field', 'Linee di campo elettrico', true], ['Evec', 'Vettori del campo E', false], ['Fe', 'Forze elettriche sulle cariche', true], ['dist', 'Distanze tra le cariche', true]]) {
-    body.appendChild(api.control({ key: k, type: 'toggle', label }, () => spec.show[k] ?? def, v => { spec.show[k] = v; save(); api.refresh(); }, 'show.' + k));
+    em.appendChild(api.control({ key: k, type: 'toggle', label }, () => spec.show[k] ?? def, v => { spec.show[k] = v; save(); api.refresh(); }, 'show.' + k));
   }
-  body.appendChild(el('div', 'hint', 'Dai una carica q a blocchi e sfere selezionandoli, oppure aggiungi cariche fisse.'));
-  body.appendChild(el('div', 'sub', 'Esempi'));
+  em.appendChild(el('div', 'hint', 'Per caricare un blocco o una sfera, selezionalo e cambia la sua carica q.'));
+  const exs = api.section(body, 'Esempi', 'b.examples', false);
   const chips = el('div', 'chips');
   for (const ex of EXAMPLES) {
     const b = el('button', '', ex.label);
@@ -1119,7 +1122,7 @@ function buildPanel(body, api) {
   const clear = el('button', '', 'Scena vuota');
   clear.onclick = () => { if (!spec.objects.length || confirm('Svuotare la scena?')) loadScene(newSpec()); };
   chips.appendChild(clear);
-  body.appendChild(chips);
+  exs.appendChild(chips);
 }
 
 function loadScene(spec) {
@@ -1227,6 +1230,7 @@ export default {
   title: 'Costruttore libero',
   subtitle: 'Componi blocchi, piani, molle, funi, carrucole e cariche',
   panelTitle: 'Costruttore',
+  axes: true,
   params: [],
   dt: DT,
   sweepHorizon: 4,
@@ -1324,7 +1328,9 @@ export default {
     B.hover = [wx, wy];
 
     if (MAKE[t]) {
-      const o = addObj(spec, MAKE[t](wx, wy));
+      // Il punto toccato scatta sulla griglia: le cariche e gli oggetti fissi finiscono su coordinate tonde.
+      const g = t === 'block' || t === 'ball' ? 0.01 : 0.05, sn = v => Math.round(v / g) * g;
+      const o = addObj(spec, MAKE[t](sn(wx), sn(wy)));
       if (DYNAMIC.has(o.type)) snapBody(spec, o);
       finishEdit(o.id);
       return moveGesture(o, wx, wy);
@@ -1405,7 +1411,7 @@ export default {
 
 <h3>Come si usa</h3>
 <ul>
-  <li><b>Aggiungere</b>: scegli un oggetto nel pannello e tocca la scena. Un blocco vicino a un piano ci si appoggia da solo, allineato alla pendenza.</li>
+  <li><b>Aggiungere</b>: scegli un oggetto nella barra a sinistra e tocca la scena. Un blocco vicino a un piano ci si appoggia da solo, allineato alla pendenza.</li>
   <li><b>Collegare</b>: con <i>Molla</i> o <i>Fune</i> tocca i due estremi (un corpo, un punto fisso, una superficie o uno spazio vuoto). Con <i>Fune + carrucola</i> tocca la carrucola e poi i due corpi.</li>
   <li><b>Modificare</b>: tocca un oggetto per selezionarlo; i suoi parametri compaiono nel pannello. Tocca un valore per scriverlo esattamente, oppure ▸ per animarlo.</li>
   <li><b>Interagire</b>: a simulazione ferma trascini gli oggetti; mentre gira puoi tirare i corpi con il dito.</li>

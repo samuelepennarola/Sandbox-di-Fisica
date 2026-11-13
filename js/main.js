@@ -23,7 +23,7 @@ const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
 const cam = new Camera();
 // Margini dell'inquadratura: barra in alto, ispettore a destra (se occupa spazio), moviola in basso.
-cam.padFn = () => ({ top: 76, right: 24 + (insp?.reserved ?? 0), bottom: document.body.classList.contains('no-sim') ? 24 : 72, left: 24 });
+cam.padFn = () => ({ top: 76, right: 24 + (insp?.reserved ?? 0), bottom: document.body.classList.contains('no-sim') ? 24 : 72, left: 24 + (document.body.classList.contains('has-rail') && !document.body.classList.contains('lesson') ? 76 : 0) });
 const ink = new Ink();
 const lasso = new Lasso(ink);
 let colors = readColors();
@@ -55,6 +55,51 @@ formulaBody.innerHTML = '<div class="formulas"></div>';
 theoryBody.innerHTML = '<div class="theory"></div>';
 // Aprendo o chiudendo l'ispettore la scena scorre di metà della sua larghezza: resta centrata nello spazio libero.
 insp.onChange = (before, after) => cam.panBy((before - after) / 2, 0);
+
+/* ---------------- Barra degli strumenti a sinistra ---------------- */
+// Gli strumenti per creare oggetti (costruttore, cariche) stanno in una colonna a sinistra, separati
+// dalle proprietà nel pannello di destra. groups: [{ title, items: [[id, icona, etichetta]] }].
+const rail = document.getElementById('rail');
+function setRail(groups, active, onPick) {
+  rail.dataset.used = '1';
+  rail.innerHTML = '';
+  groups.forEach((g, i) => {
+    if (i) rail.appendChild(Object.assign(document.createElement('div'), { className: 'rail-sep', title: g.title }));
+    for (const [id, ic, label] of g.items) {
+      const b = document.createElement('button');
+      b.className = id === active ? 'on' : '';
+      b.title = label;
+      b.innerHTML = `${icons[ic]}<span>${label}</span>`;
+      b.onclick = () => onPick(id);
+      rail.appendChild(b);
+    }
+  });
+  showRail(groups.length > 0);
+}
+function showRail(v) {
+  const was = !rail.classList.contains('hidden');
+  rail.classList.toggle('hidden', !v);
+  document.body.classList.toggle('has-rail', v);
+  if (was !== v) cam.panBy((v ? 1 : -1) * RAIL_W / 2, 0);
+}
+const RAIL_W = 76;
+
+// Sezione richiudibile del pannello: si mostra solo l'essenziale, il resto si apre a richiesta.
+function section(parent, title, key, open = true) {
+  const box = document.createElement('div');
+  box.className = 'sec';
+  const state = store.get('sec.' + key, null);
+  if (!(state ?? open)) box.classList.add('closed');
+  const head = document.createElement('button');
+  head.className = 'sec-head';
+  head.innerHTML = `<span>${title}</span>${icons.chevron}`;
+  head.onclick = () => { box.classList.toggle('closed'); store.set('sec.' + key, !box.classList.contains('closed')); };
+  const body = document.createElement('div');
+  body.className = 'sec-body';
+  box.append(head, body);
+  parent.appendChild(box);
+  return body;
+}
 
 /* ---------------- Valori fissati sulla scena ---------------- */
 // Ogni controllo numerico ha una puntina: il suo valore resta visibile in alto a sinistra,
@@ -115,7 +160,13 @@ function buildParams() {
   body.innerHTML = '';
   app.syncs = [];
   insp.setTitle(exp.panelTitle ?? 'Parametri');
-  if (exp.buildPanel) { exp.buildPanel(body, api); buildPins(); return; }
+  if (exp.buildPanel) {
+    rail.dataset.used = '';
+    exp.buildPanel(body, api);
+    if (rail.dataset.used !== '1') showRail(false);
+    buildPins(); return;
+  }
+  showRail(false);
 
   for (const def of exp.params) {
     body.appendChild(control(def, () => app.params[def.key], v => setParam(def, v)));
@@ -247,6 +298,8 @@ const api = {
   get running() { return app.running; },
   ink, areas: AREAS,
   snapshot: (exp, w, h) => expSnapshot(exp, w, h),
+  setRail: (groups, active, onPick) => setRail(groups, active, onPick),
+  section: (parent, title, key, open) => section(parent, title, key, open),
   lassoClear: () => lasso.clear(),
 };
 
@@ -268,7 +321,7 @@ function expSnapshot(exp, w, h) {
   const P = new Painter(c2, cm, colors);
   // Nelle istantanee niente maniglie né vettori (frecce con le loro etichette): i vettori li disegnano i ragazzi.
   P.handle = P.sizeHandle = P.arrow = () => {};
-  exp.draw(P, sim, params, { active: null, api: { ...api, running: false }, size: key => sizes[key] ?? 1 });
+  exp.draw(P, sim, params, { active: null, api: { ...api, running: false }, size: key => sizes[key] ?? 1, snapshot: true });
   return cv;
 }
 
@@ -457,7 +510,7 @@ const pressureOf = e => (e.pointerType === 'pen' ? (e.pressure > 0 ? e.pressure 
 function render() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (app.exp.drawBackground) app.exp.drawBackground(ctx, cam, colors);
-  else { drawSky(ctx, cam, colors); drawGrid(ctx, cam, colors); }
+  else { drawSky(ctx, cam, colors); drawGrid(ctx, cam, colors, !app.exp.axes); }
   const P = new Painter(ctx, cam, colors);
   app.exp.draw(P, viewSim(), app.params, { active: app.activeHandle, api, size: sizeOf });
   const sel = selectedResizable();
@@ -994,6 +1047,7 @@ function stepFrame() {
 }
 
 $('menuBtn').onclick = () => toggleDrawer(true);
+$('crumbBtn').onclick = () => toggleDrawer(true);
 $('scrim').onclick = () => toggleDrawer(false);
 $('playBtn').onclick = togglePlay;
 $('resetBtn').onclick = () => { stopSweep(); resetSim(); };

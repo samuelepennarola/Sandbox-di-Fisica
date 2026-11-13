@@ -151,7 +151,7 @@ export class Painter {
   ground(y0 = 0) { drawGround(this, y0); }
 }
 
-export function drawGrid(ctx, cam, c) {
+export function drawGrid(ctx, cam, c, labels = true) {
   const step = niceStep(44 / cam.scale);
   const major = step * 5;
   const { x0, y0, x1, y1 } = cam.bounds();
@@ -166,6 +166,7 @@ export function drawGrid(ctx, cam, c) {
   lines(step, c.grid, 1);
   lines(major, c.gridMajor, 1);
 
+  if (!labels) { ctx.restore(); return; }
   // Etichette delle linee principali, lungo i bordi sinistro e inferiore.
   ctx.font = '500 11px -apple-system, BlinkMacSystemFont, sans-serif';
   ctx.fillStyle = c.muted;
@@ -182,5 +183,49 @@ export function drawGrid(ctx, cam, c) {
     if (b < 70 || b > cam.h - 24) continue;
     ctx.fillText(lab(y) + ' m', 6, b - 8);
   }
+  ctx.restore();
+}
+
+// Assi cartesiani con l'origine in (0, 0), tacche numerate e frecce con il nome dell'asse.
+// Se l'origine esce dall'area visibile, l'asse resta appoggiato al bordo (come nei grafici).
+// k converte i metri nell'unità mostrata (100 per i centimetri).
+export function drawAxes(P, { unit = 'm', k = 1 } = {}) {
+  const { ctx, cam } = P, c = P.c;
+  const pad = cam.padFn?.() ?? { top: 70, right: 20, bottom: 20, left: 20 };
+  const L = pad.left + 8, R = cam.w - pad.right - 8, T = pad.top - 6, Bm = cam.h - pad.bottom + 6;
+  let [ox, oy] = cam.toScreen(0, 0);
+  const pinX = ox < L + 30 || ox > R - 30, pinY = oy < T + 30 || oy > Bm - 20;
+  ox = Math.min(Math.max(ox, L + 30), R - 30);
+  oy = Math.min(Math.max(oy, T + 30), Bm - 20);
+  const step = niceStep(80 / cam.scale);
+  const dec = Math.max(0, -Math.floor(Math.log10(step * k) + 1e-9));
+  const lab = v => { const u = Math.abs(v) < 1e-9 ? 0 : v * k; return u.toFixed(dec).replace('.', ','); };
+  ctx.save();
+  ctx.strokeStyle = ctx.fillStyle = c.axis; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.moveTo(L, oy); ctx.lineTo(R, oy); ctx.moveTo(ox, Bm); ctx.lineTo(ox, T); ctx.stroke();
+  const head = (x, y, dx, dy) => { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - dx * 9 - dy * 4, y - dy * 9 + dx * 4); ctx.lineTo(x - dx * 9 + dy * 4, y - dy * 9 - dx * 4); ctx.closePath(); ctx.fill(); };
+  head(R, oy, 1, 0); head(ox, T, 0, -1);
+  ctx.font = '500 11px -apple-system, BlinkMacSystemFont, sans-serif'; ctx.fillStyle = c.muted;
+  const { x0, y0, x1, y1 } = cam.bounds();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.beginPath();
+  for (let x = Math.ceil(x0 / step) * step; x <= x1; x += step) {
+    const [a] = cam.toScreen(x, 0);
+    if (a < L + 4 || a > R - 18 || Math.abs(a - ox) < 3) continue;
+    ctx.moveTo(a, oy - 4); ctx.lineTo(a, oy + 4);
+    ctx.fillText(lab(x), a, oy + 7);
+  }
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (let y = Math.ceil(y0 / step) * step; y <= y1; y += step) {
+    const [, b] = cam.toScreen(0, y);
+    if (b < T + 18 || b > Bm - 4 || Math.abs(b - oy) < 3) continue;
+    ctx.moveTo(ox - 4, b); ctx.lineTo(ox + 4, b);
+    ctx.fillText(lab(y), ox - 7, b);
+  }
+  ctx.strokeStyle = c.axis; ctx.lineWidth = 1.2; ctx.stroke();
+  ctx.font = 'italic 600 14px Georgia, "Times New Roman", serif'; ctx.fillStyle = c.text;
+  ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.fillText(`x (${unit})`, R - 4, oy - 6);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(`y (${unit})`, ox + 8, T + 2);
+  if (!pinX && !pinY) { ctx.textAlign = 'right'; ctx.textBaseline = 'top'; ctx.font = '500 11px -apple-system, sans-serif'; ctx.fillStyle = c.muted; ctx.fillText('0', ox - 5, oy + 5); }
   ctx.restore();
 }

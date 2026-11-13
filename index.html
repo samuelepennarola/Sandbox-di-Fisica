@@ -30,7 +30,7 @@
   <header class="topbar">
     <div class="group nav">
       <button class="icon-btn" id="menuBtn" data-icon="menu" title="Esperimenti"></button>
-      <div class="crumb"><span id="crumbArea"></span><span class="sep">›</span><strong id="crumbExp"></strong></div>
+      <button class="crumb" id="crumbBtn" title="Scegli un esperimento"><span id="crumbArea"></span><span class="sep">›</span><strong id="crumbExp"></strong><span class="crumb-chev" data-icon="chevron"></span></button>
     </div>
 
     <div class="group sim">
@@ -68,6 +68,7 @@
     </div>
   </header>
 
+  <nav id="rail" class="hidden" aria-label="Strumenti"></nav>
   <div id="pins" class="hidden"></div>
 
   <div class="timeline" id="timeline">

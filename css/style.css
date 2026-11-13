@@ -130,7 +130,9 @@ svg.i { width: 20px; height: 20px; display: block; }
 .seg.mode button.on { background: var(--panel-bg); color: var(--accent); box-shadow: 0 1px 3px rgba(0,0,0,.14); }
 #inspBtn.on { color: var(--accent); background: var(--ui-active); }
 body.lesson #inspBtn { display: none; }
-.crumb { padding: 0 10px 0 4px; white-space: nowrap; font-size: 14px; color: var(--c-muted); }
+.crumb { padding: 0 8px 0 6px; height: 40px; white-space: nowrap; font-size: 14px; color: var(--c-muted); border: 0; background: transparent; border-radius: 10px; cursor: pointer; display: flex; align-items: center; }
+.crumb:hover { background: var(--ui-hover); }
+.crumb-chev svg { width: 15px; height: 15px; margin-left: 4px; color: var(--c-muted); }
 .crumb strong { color: var(--c-text); font-weight: 600; }
 .crumb .sep { margin: 0 6px; }
 .icon-btn, .seg button {
@@ -436,3 +438,37 @@ body.lesson .pin-val { font-size: 18px; }
 
 /* Tema nel cassetto */
 #drawer .drawer-theme { display: flex; align-items: center; gap: 10px; color: var(--c-muted); font-size: 14px; }
+
+/* ---------- Barra degli strumenti a sinistra ---------- */
+#rail {
+  position: fixed; z-index: 16; left: 10px; top: calc(var(--bar-h) + 10px); max-height: calc(100vh - var(--bar-h) - 20px);
+  width: 66px; display: flex; flex-direction: column; gap: 2px; padding: 5px; overflow-y: auto; touch-action: pan-y;
+  background: var(--panel-bg); border: 1px solid var(--panel-border); box-shadow: var(--panel-shadow); border-radius: 16px;
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+#rail.hidden, body.lesson #rail { display: none; }
+#rail button {
+  flex: none; border: 0; background: transparent; border-radius: 11px; padding: 6px 0 4px; cursor: pointer; color: var(--c-text);
+  display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 10px; line-height: 1.1; text-align: center;
+}
+#rail button svg { width: 21px; height: 21px; }
+#rail button:hover { background: var(--ui-hover); }
+#rail button.on { background: var(--ui-active); color: var(--accent); }
+#rail .rail-sep { flex: none; height: 1px; margin: 3px 8px; background: var(--panel-border); }
+body.has-rail:not(.lesson) #pins { left: 88px; }
+
+/* ---------- Sezioni richiudibili del pannello ---------- */
+.sec { border-top: 1px solid var(--panel-border); margin: 6px -16px 0; padding: 0 16px; }
+.sec:first-child { border-top: 0; margin-top: 0; }
+.sec-head {
+  display: flex; align-items: center; justify-content: space-between; width: 100%; border: 0; background: transparent; cursor: pointer;
+  padding: 11px 0 6px; font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--c-muted); font-weight: 700;
+}
+.sec-head svg { width: 16px; height: 16px; transition: transform .2s; }
+.sec.closed .sec-head svg { transform: rotate(-90deg); }
+.sec.closed .sec-body { display: none; }
+.sec-body { padding-bottom: 8px; }
+.sec-body > .sub:first-child { margin-top: 2px; }
+
+.insp-more { display: none; font-size: 12px; font-weight: 600; color: var(--accent); }
+#inspector.params-collapsed .insp-more { display: inline; }

@@ -15,7 +15,7 @@ export class Inspector {
     el.id = 'inspector';
     el.innerHTML = `
       <section class="insp-sec insp-params">
-        <button class="insp-head" data-sec="params"><span class="title"></span>${icons.chevron}</button>
+        <button class="insp-head" data-sec="params"><span class="title"></span><span class="insp-more">mostra</span>${icons.chevron}</button>
         <div class="insp-body"></div>
       </section>
       <section class="insp-sec insp-data">
