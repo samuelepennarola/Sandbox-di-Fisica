@@ -262,6 +262,7 @@ function endpoint(s, ep) {
 
 // Un passo di integrazione: forze elastiche e applicate, poi il risolutore di Box2D.
 function physStep(s, dt) {
+  const work = [];   // forze esterne del passo: il loro lavoro si integra con la velocità media (prima e dopo il passo)
   for (const l of s.spec.links) {
     if (l.type === 'spring') {
       const A = endpoint(s, l.a), Bp = endpoint(s, l.b);
@@ -278,16 +279,17 @@ function physStep(s, dt) {
       const F = V2(l.F * Math.cos(l.angle * deg), l.F * Math.sin(l.angle * deg));
       b.applyForceToCenter(F, true);
       const v = b.getLinearVelocity();
-      s.Wext += (F.x * v.x + F.y * v.y) * dt;
+      work.push({ b, F: [F.x, F.y], v0: [v.x, v.y] });
     }
   }
   for (const [id, F] of Object.entries(electricForces(s))) s.bodies.get(id).applyForceToCenter(V2(F[0], F[1]), true);
   if (s.mouse) {
     const f = s.mouse.j.getReactionForce(1 / dt), v = s.mouse.b.getLinearVelocity();
-    s.Wext += (f.x * v.x + f.y * v.y) * dt;
+    work.push({ b: s.mouse.b, F: [f.x, f.y], v0: [v.x, v.y] });
   }
   for (const [id, b] of s.bodies) if (b.isDynamic()) { const v = b.getLinearVelocity(); s.prevV[id] = [v.x, v.y]; }
   s.world.step(dt, 10, 8);
+  for (const { b, F, v0 } of work) { const v = b.getLinearVelocity(); s.Wext += (F[0] * (v0[0] + v.x) + F[1] * (v0[1] + v.y)) / 2 * dt; }
   for (const [id, b] of s.bodies) if (b.isDynamic()) {
     const v = b.getLinearVelocity(), p = s.prevV[id];
     s.accel[id] = [(v.x - p[0]) / dt, (v.y - p[1]) / dt];
@@ -1087,10 +1089,12 @@ function formulas(st) {
       ['<span class="sw" style="background:var(--c-normal)"></span>Potenziale gravitazionale U<sub>g</sub>', `${n2(E.Ug)} J`],
       ['<span class="sw" style="background:var(--c-spring)"></span>Potenziale elastica U<sub>el</sub>', `${n2(E.Uel)} J`],
       ...(E.Ue ? [['<span class="sw" style="background:var(--c-acc)"></span>Potenziale elettrica U<sub>e</sub>', `${n2(E.Ue)} J`]] : []),
-      ['<span class="sw" style="background:var(--c-weight)"></span>Dissipata Q (attriti, urti)', `${n2(E.Q)} J`],
       ['Lavoro delle forze esterne W', `${n2(E.W)} J`],
-      ['K + U + Q − W', `${n2(E.Em + E.Q - E.W)} J`],
+      // Q non si misura direttamente: è ciò che manca al bilancio E₀ + W − (K + U). Valori piccoli e
+      // negativi (centesimi di joule) sono l'errore numerico della simulazione, non energia "creata".
+      ['<span class="sw" style="background:var(--c-weight)"></span>Dissipata Q = E<sub>0</sub> + W − (K + U)', `${n2(Math.abs(E.Q) < 0.1 && E.Q < 0 ? 0 : E.Q)} J`],
     ]) });
+    if (E.Q < -0.1) out.push({ html: '<div class="hint">Q negativa: la simulazione sta accumulando un errore numerico (passo troppo grande o corpi che si compenetrano).</div>' });
   }
   return out;
 }
@@ -1428,6 +1432,17 @@ export default {
 
   draw(P, st, p, ui) { draw(P, st, ui); },
   formulas,
+  // Valore di una puntina dalla scena corrente (vedi pinValue in main.js).
+  pinInfo(key) {
+    const spec = B.spec;
+    if (!spec) return undefined;
+    const SCENE = { 'scene.g': () => spec.g, 'scene.mu': () => spec.muFloor, 'scene.E': () => spec.E ?? 0, 'scene.Ea': () => spec.Eangle ?? 0 };
+    if (SCENE[key]) return { value: SCENE[key](), name: null };
+    const i = key.lastIndexOf('.'), id = key.slice(0, i), prop = key.slice(i + 1);
+    const item = objOf(spec, id) || linkOf(spec, id);
+    if (!item) return null;
+    return { value: item[prop] ?? 0, name: nameOf(spec, item) };
+  },
   graphs,
   buildPanel,
 

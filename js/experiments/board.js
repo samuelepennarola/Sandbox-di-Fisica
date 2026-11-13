@@ -1,6 +1,7 @@
 import { store } from '../core/store.js';
 import { el } from '../core/ui.js';
 import { putBlob, getBlob, delBlob } from '../core/blobs.js';
+import { SceneHistory } from '../core/history.js';
 
 // Lavagna: foglio infinito (a quadretti o bianco) per scrivere con la Pencil.
 // Si possono inserire istantanee fisse degli esperimenti, scelte da un elenco con anteprima, da annotare.
@@ -17,7 +18,7 @@ const B = {
   api: null, picker: null,
 };
 
-const saveItems = () => store.set('board.items', B.items);
+const saveItems = () => { store.set('board.items', B.items); B.hist?.record(); };
 
 function imageOf(blobId) {
   let e = B.images.get(blobId);
@@ -29,9 +30,17 @@ function imageOf(blobId) {
   return e;
 }
 
-// Elimina dall'archivio le immagini che nessun oggetto usa più.
+// Immagini che nessun oggetto usa più: non si cancellano subito, perché Annulla può riportarle sul foglio.
+// Si eliminano dall'archivio alla prossima apertura della Lavagna, quando la cronologia riparte da zero.
 function dropUnused(blobIds) {
-  for (const id of blobIds) if (!B.items.some(it => it.blob === id)) { delBlob(id).catch(() => {}); B.images.delete(id); }
+  const orphans = new Set(store.get('board.orphans', []));
+  for (const id of blobIds) orphans.add(id);
+  store.set('board.orphans', [...orphans]);
+}
+function pruneOrphans() {
+  const orphans = store.get('board.orphans', []);
+  for (const id of orphans) if (!B.items.some(it => it.blob === id)) { delBlob(id).catch(() => {}); B.images.delete(id); }
+  store.set('board.orphans', []);
 }
 
 function contentBox(api) {
@@ -45,8 +54,10 @@ function contentBox(api) {
 
 function openPicker(api) {
   if (!B.picker) {
-    const w = Math.min(780, innerWidth - 24);
-    B.picker = new api.Panel({ id: 'picker', title: 'Inserisci un esperimento', x: (innerWidth - w) / 2, y: 76, width: w, closable: true });
+    // Centrata nello spazio libero a sinistra dell'ispettore, che altrimenti ne coprirebbe i pulsanti.
+    const insp = document.getElementById('inspector'), iw = insp && document.body.classList.contains('insp-open') && !document.body.classList.contains('insp-overlay') ? insp.offsetWidth : 0;
+    const w = Math.min(780, innerWidth - iw - 24);
+    B.picker = new api.Panel({ id: 'picker', title: 'Inserisci un esperimento', x: (innerWidth - iw - w) / 2, y: 76, width: w, closable: true });
     B.picker.el.querySelector('.panel-body').style.maxHeight = '74vh';
   }
   const body = B.picker.body;
@@ -95,7 +106,17 @@ export default {
   params: [],
   graphs: [],
 
-  mount(api) { B.api = api; },
+  mount(api) {
+    B.api = api;
+    pruneOrphans();
+    // Annulla/ripeti anche per le istantanee: inserite, spostate, ingrandite, copiate o eliminate.
+    B.hist ??= new SceneHistory(() => B.items, items => {
+      B.items = items;
+      store.set('board.items', items);
+      api.lassoClear?.();
+    }, () => B.api.recordChange());
+  },
+  get history() { return B.hist; },
   unmount() { B.picker?.hide(); },
 
   init: () => ({ t: 0 }),
@@ -108,10 +129,14 @@ export default {
   // Zoom iniziale fisso (quadretti di circa 5 mm), centrato sul contenuto se c'è.
   fit(cam, api) {
     const b = contentBox(api);
-    if (b && (b.xmax - b.xmin) * START_SCALE > cam.w * 0.9) { cam.fit(b); return; }
+    // Area libera tra barra in alto, ispettore e barra a sinistra (cam.padFn), come negli esperimenti.
+    const pad = cam.padFn?.() ?? { top: 70, right: 20, bottom: 20, left: 20 };
+    const aw = cam.w - pad.left - pad.right;
+    if (b && (b.xmax - b.xmin) * START_SCALE > aw * 0.9) { cam.fit(b); return; }
     cam.scale = START_SCALE;
-    cam.cx = b ? (b.xmin + b.xmax) / 2 : 0;
-    cam.cy = b ? (b.ymin + b.ymax) / 2 : 0;
+    const sx = pad.left + aw / 2, sy = pad.top + (cam.h - pad.top - pad.bottom) / 2;
+    cam.cx = (b ? (b.xmin + b.xmax) / 2 : 0) - (sx - cam.w / 2) / cam.scale;
+    cam.cy = (b ? (b.ymin + b.ymax) / 2 : 0) + (sy - cam.h / 2) / cam.scale;
   },
 
   drawBackground(ctx, cam, c) {

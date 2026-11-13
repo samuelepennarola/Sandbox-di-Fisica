@@ -18,7 +18,8 @@ function geom(p) {
 function dynamics(v, p, g) {
   const N = p.m * p.g * g.c, Fpar = p.m * p.g * g.sn;
   if (Math.abs(v) < 1e-9) {
-    if (Fpar <= p.mus * N) return { a: 0, f: -Fpar, N, regime: 'statico' };
+    // Se anche l'attrito dinamico basta a trattenerlo (μd ≥ μs, caso limite), il blocco resta fermo.
+    if (Fpar <= p.mus * N || Fpar <= p.muk * N) return { a: 0, f: -Fpar, N, regime: 'statico' };
     const f = -p.muk * N;
     return { a: (Fpar + f) / p.m, f, N, regime: 'dinamico' };
   }
@@ -172,10 +173,11 @@ export default {
       { h: 'Scomposizione del peso' },
       { tex: `P=mg=${tn(W)}${u('N')}` },
       { tex: `P_{\\parallel}=mg\\sin\\alpha=${tn(W * g.sn)}${u('N')}` },
-      { tex: `P_{\\perp}=mg\\cos\\alpha=${tn(N)}${u('N')}=N` },
+      { tex: `P_{\\perp}=mg\\cos\\alpha=${tn(N)}${u('N')}\\quad(=N\\text{, la normale})` },
       { h: 'Equilibrio statico (da fermo)' },
       { tex: `\\tan\\alpha=${tn(tan, 3)}\\ ${slides ? '>' : '\\le'}\\ \\mu_s=${tn(p.mus)}`, cls: slides ? 'warn' : 'ok' },
       { tex: slides ? `\\Rightarrow\\ \\text{scivola}` : `\\Rightarrow\\ \\text{resta fermo}`, cls: slides ? 'warn' : 'ok' },
+      slides && p.muk >= tan && { tex: `\\text{ma }\\mu_d=${tn(p.muk)}\\ \\ge\\ \\tan\\alpha:\\ \\text{si riferma subito (di solito }\\mu_d<\\mu_s)`, cls: 'ok' },
       { tex: `f_{s,\\max}=\\mu_s N=${tn(p.mus * N)}${u('N')}` },
       { h: 'Dinamica (asse lungo il piano, + verso il basso)' },
       { tex: `\\text{discesa: } a=g(\\sin\\alpha-\\mu_d\\cos\\alpha)=${tn(aDown)}${u('m/s^2')}` },

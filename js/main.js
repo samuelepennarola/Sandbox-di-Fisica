@@ -63,7 +63,13 @@ const undoLog = [], redoLog = [];
 let inkSnap = [];
 const cloneStrokes = list => list.map(st => ({ ...st, pts: st.pts.map(p => p.slice()) }));
 function resetHistory() { undoLog.length = 0; redoLog.length = 0; inkSnap = cloneStrokes(ink.strokes); syncUndoBtns(); }
+// Confronto rapido: gli stessi tratti con le stesse estremità (il lazo che sposta solo immagini non li tocca).
+const sameInk = (a, b) => a.length === b.length && a.every((st, i) => {
+  const o = b[i], p = st.pts, q = o.pts;
+  return p.length === q.length && p[0]?.[0] === q[0]?.[0] && p[0]?.[1] === q[0]?.[1] && p.at(-1)?.[0] === q.at(-1)?.[0] && p.at(-1)?.[1] === q.at(-1)?.[1];
+});
 function recordInk() {
+  if (sameInk(ink.strokes, inkSnap)) return;
   undoLog.push({ kind: 'ink', strokes: inkSnap });
   if (undoLog.length > 100) undoLog.shift();
   inkSnap = cloneStrokes(ink.strokes);
@@ -103,7 +109,8 @@ function setRail(groups, active, onPick) {
       b.className = id === active ? 'on' : '';
       b.title = label;
       b.innerHTML = `${icons[ic]}<span>${label}</span>`;
-      b.onclick = () => onPick(id);
+      // Scegliere un oggetto da creare riporta il mouse e il dito alla Mano (con la Penna attiva il clic disegnerebbe).
+      b.onclick = () => { if (app.tool !== 'hand') setTool('hand'); onPick(id); };
       // Si può anche trascinare lo strumento sulla scena: l'oggetto nasce dove lo si lascia.
       if (id !== 'select') b.addEventListener('pointerdown', e => startRailDrag(e, b, id, onPick, ic));
       rail.appendChild(b);
@@ -147,6 +154,7 @@ const endRailDrag = e => {
   if (!d.ghost) return;
   d.ghost.remove();
   if (e.type !== 'pointerup' || document.elementFromPoint(e.clientX, e.clientY) !== canvas) return;
+  if (app.tool !== 'hand') setTool('hand');
   d.onPick(d.tool, true);                          // sceglie lo strumento (true: anche se era già attivo)
   const [x, y] = pos(e), [wx, wy] = cam.toWorld(x, y);
   const g = app.exp.pointerDown?.({ wx, wy, sx: x, sy: y, api });
@@ -187,8 +195,21 @@ function togglePin(key, def) {
   store.set('pins.' + app.exp.id, list);
   buildPins(); syncParams();
 }
+// Valore attuale di una puntina, o null se l'oggetto a cui si riferisce non c'è più.
+// L'esperimento può risolverlo dalla scena corrente (exp.pinInfo): così resta giusto dopo annulla/ripeti
+// e dopo una ricarica, anche se il pannello di quell'oggetto non è mai stato aperto.
+// pinInfo restituisce undefined (chiave non sua), null (oggetto sparito) o { value, name }: se il nome
+// non è più quello salvato nell'etichetta, l'id è stato riusato da un altro oggetto e la puntina si nasconde.
+function pinValue(p) {
+  const info = app.exp.pinInfo?.(p.key);
+  if (info !== undefined) return info && (!info.name || p.label.startsWith(info.name + ' · ')) ? info.value : null;
+  const g = pinGetters.get(pinKey(p.key));
+  return g ? g.get() : null;
+}
+let pinsShown = '';
 function buildPins() {
-  const list = pinList().filter(p => pinGetters.has(pinKey(p.key)));
+  const list = pinList().filter(p => pinValue(p) != null);
+  pinsShown = list.map(p => p.key).join('|');
   pinsBox.innerHTML = '';
   pinsBox.classList.toggle('hidden', !list.length);
   for (const p of list) {
@@ -200,14 +221,16 @@ function buildPins() {
     row.querySelector('.pin-x').onclick = () => togglePin(p.key, p);
     pinsBox.appendChild(row);
   }
-  updatePins();
+  updatePins(false);
 }
-function updatePins() {
+function updatePins(check = true) {
+  // Se sono comparsi o spariti degli oggetti (annulla, elimina, svuota) l'elenco va ricostruito.
+  if (check && pinList().filter(p => pinValue(p) != null).map(p => p.key).join('|') !== pinsShown) { buildPins(); return; }
   for (const row of pinsBox.children) {
-    const p = pinList().find(q => q.key === row.dataset.key), g = pinGetters.get(pinKey(row.dataset.key));
-    if (!p || !g) continue;
+    const p = pinList().find(q => q.key === row.dataset.key), v = p && pinValue(p);
+    if (v == null) continue;
     const d = Math.max(0, -Math.floor(Math.log10(p.step || 1) + 1e-9));
-    row.querySelector('.pin-val').textContent = `${fmt(g.get(), d)}${p.unit ? ' ' + p.unit : ''}`;
+    row.querySelector('.pin-val').textContent = `${fmt(v, d)}${p.unit ? ' ' + p.unit : ''}`;
   }
 }
 
@@ -302,7 +325,7 @@ function renderFormulas() {
   const box = formulaBody.firstChild;
   if (typeof out === 'string') { box.innerHTML = out; return; }
   const k = window.katex;
-  box.innerHTML = out.map(f => {
+  box.innerHTML = out.filter(Boolean).map(f => {
     if (f.h) return `<div class="fh">${f.h}</div>`;
     if (f.html) return f.html;
     const html = k ? k.renderToString(f.tex, { throwOnError: false }) : f.tex;
@@ -666,7 +689,7 @@ function frame(ts) {
   if (app.formulasDirty && ts - lastFormulaTs > 120 && insp.showing('formulas')) {
     renderFormulas(); lastFormulaTs = ts; app.formulasDirty = false;
   }
-  if (ts - lastPinTs > 150 && pinsBox.children.length) { updatePins(); lastPinTs = ts; }
+  if (ts - lastPinTs > 150 && (pinsBox.children.length || pinList().length)) { updatePins(); lastPinTs = ts; }
   requestAnimationFrame(frame);
 }
 
@@ -743,9 +766,11 @@ function revertTouchGesture() {
     Object.assign(cam, g.cam0);
     if (g.type === 'lassoMove' && g.total) lasso.move(app.exp, -g.total[0], -g.total[1]);
     if (g.type === 'lassoScale' && g.k !== 1) lasso.scale(app.exp, 1 / g.k, g.ax, g.ay);
+    if (g.type === 'drag' && g.moved && g.params0) { Object.assign(app.params, g.params0); syncParams(); resetSim(); }
   }
   if (g.type === 'ink') ink.cancel();
   g.custom?.cancel?.();
+  if (g.scene0 && performance.now() - g.t0 < PALM_REVERT_MS) app.exp.history?.restore(g.scene0);
   app.activeHandle = null;
   gesture = null;
 }
@@ -770,7 +795,12 @@ canvas.addEventListener('pointerdown', e => {
   // Ricorda come era la vista quando è iniziato un gesto col dito, per poterlo annullare se era il polso.
   if (e.pointerType === 'touch' && gesture && gesture !== before) {
     const prev = before?.touch ? before : null;
-    Object.assign(gesture, { touch: true, t0: prev?.t0 ?? performance.now(), cam0: prev?.cam0 ?? { cx: cam.cx, cy: cam.cy, scale: cam.scale } });
+    Object.assign(gesture, {
+      touch: true, t0: prev?.t0 ?? performance.now(), cam0: prev?.cam0 ?? { cx: cam.cx, cy: cam.cy, scale: cam.scale },
+      // Anche parametri e scena, perché il polso può aver trascinato una maniglia o un oggetto.
+      params0: prev?.params0 ?? { ...app.params },
+      scene0: prev ? prev.scene0 : (app.exp.history ? JSON.stringify(app.exp.history.get()) : null),
+    });
   }
 });
 
@@ -1009,7 +1039,9 @@ document.addEventListener('pointerup', e => {
 document.addEventListener('pointercancel', () => { tapStart = null; }, true);
 document.addEventListener('click', e => {
   if (!e.isTrusted || !tapFired) return;
-  if (performance.now() - tapFired < 800 && e.target.closest?.(TAPPABLE)) { e.preventDefault(); e.stopPropagation(); }
+  // Il click nativo che segue un tocco già gestito va scartato ovunque cada: se il tocco ha aperto il menu,
+  // quel click finirebbe sullo scrim appena comparso e lo richiuderebbe subito.
+  if (performance.now() - tapFired < 800) { e.preventDefault(); e.stopPropagation(); }
   tapFired = 0;
 }, true);
 
@@ -1176,8 +1208,10 @@ document.querySelectorAll('#toolSeg button').forEach(b => b.onclick = () => setT
 document.querySelectorAll('#swatches button').forEach(b => b.onclick = () => setInkColor(b.dataset.color));
 
 addEventListener('keydown', e => {
-  if (e.target.closest?.('input')) return;
-  if (e.key === ' ') { e.preventDefault(); togglePlay(); }
+  // Dopo aver usato la moviola il fuoco resta sul cursore: lo spazio deve comunque avviare e fermare.
+  if (e.target.closest?.('input')) { if (e.key === ' ' && e.target.type === 'range') e.target.blur(); else return; }
+  if (e.key === 'Escape') { toggleDrawer(false); togglePenPop(false); }
+  else if (e.key === ' ') { e.preventDefault(); togglePlay(); }
   else if (e.key === 'r') { stopSweep(); resetSim(); }
   else if (e.key === 'h') setTool('hand');
   else if (e.key === 'p') setTool('pen');

@@ -91,7 +91,7 @@ export default {
     return {
       t: s.t, th: s.th, w: s.w, v: s.v,
       x: p.R * Math.cos(s.th), y: p.R * Math.sin(s.th),
-      ac: s.v * s.v / p.R, at: s.stopped || s.t >= k.tEnd ? 0 : p.at,
+      ac: s.v * s.v / p.R, at: s.stopped ? 0 : p.at,
     };
   },
 
@@ -198,7 +198,7 @@ export default {
     const lab = (n, val, unit) => `${n} = ${fmt(Math.abs(val), Math.abs(val) < 10 ? 2 : 1)} ${unit}`;
     if (s.t > 0 && Math.abs(s.v) > 1e-9) arrowTo(P, x, y, tx * KV * s.v, ty * KV * s.v, cap, { color: 'vel', label: lab('v', s.v, 'm/s'), width: 4 });
     if (p.showAcc) {
-      const ac = s.v * s.v / R, aT = s.stopped || s.t >= k.tEnd ? 0 : p.at;
+      const ac = s.v * s.v / R, aT = s.stopped ? 0 : p.at;
       if (ac > 1e-9) arrowTo(P, x, y, -ux * KA * ac, -uy * KA * ac, cap, { color: 'acc', label: lab('a꜀', ac, 'm/s²'), width: 3.5 });
       if (Math.abs(aT) > 1e-9) {
         arrowTo(P, x, y, tx * KA * aT, ty * KA * aT, cap, { color: 'friction', label: lab('aₜ', aT, 'm/s²'), width: 3.5 });
@@ -210,7 +210,7 @@ export default {
   formulas(s, p) {
     const k = kin(p), u = x => `\\ \\mathrm{${x}}`;
     const v = Math.abs(s.v), w = Math.abs(s.w);
-    const ac = s.v * s.v / p.R, aT = s.stopped || s.t >= k.tEnd ? 0 : p.at;
+    const ac = s.v * s.v / p.R, aT = s.stopped ? 0 : p.at;
     const T = w > 1e-9 ? `${tn(TWO_PI / w)}${u('s')}` : '\\infty';
     const f = w / TWO_PI;
     const uniform = p.at === 0;

@@ -204,7 +204,7 @@ body.lesson #inspBtn { display: none; }
 
 /* ---------- Floating panels ---------- */
 .panel {
-  position: fixed; z-index: 10;
+  position: fixed; z-index: 19;   /* sopra l'ispettore (18), sotto la barra in alto (20) */
   background: var(--panel-bg); border: 1px solid var(--panel-border); box-shadow: var(--panel-shadow);
   border-radius: 14px; overflow: hidden;
   -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
@@ -304,7 +304,7 @@ input[type=range] { width: 100%; height: 28px; margin: 0; accent-color: var(--ac
 
 /* Formulas */
 .formulas { font-size: 14px; }
-.formulas .fh { font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--c-muted); margin: 12px 0 2px; font-weight: 600; }
+.formulas .fh { font-size: 11.5px; letter-spacing: .02em; color: var(--c-muted); margin: 12px 0 2px; font-weight: 600; }
 .formulas .fh:first-child { margin-top: 2px; }
 .formulas .f { padding: 3px 0; overflow-x: auto; }
 .formulas .ok { color: var(--c-normal); }
@@ -314,6 +314,8 @@ input[type=range] { width: 100%; height: 28px; margin: 0; accent-color: var(--ac
 /* Theory */
 .theory { font-size: 15px; line-height: 1.55; -webkit-user-select: text; user-select: text; }
 .theory h2 { font-size: 22px; margin: 6px 0 8px; }
+/* Titoli della teoria in "LaTeX classico" (Computer Modern dei font di KaTeX, già offline). */
+.theory h2, .theory h3 { font-family: KaTeX_Main, "Latin Modern Roman", "Times New Roman", serif; font-weight: 700; letter-spacing: .005em; }
 .theory h3 { font-size: 16px; margin: 20px 0 6px; color: var(--accent); }
 .theory p, .theory li { margin: 6px 0; }
 .theory .katex-display { margin: 10px 0; overflow-x: auto; overflow-y: hidden; }

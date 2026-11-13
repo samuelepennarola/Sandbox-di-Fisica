@@ -2,9 +2,11 @@ import { clamp, fmt, tn, deg } from '../core/math.js';
 import { icons } from '../core/icons.js';
 import { store } from '../core/store.js';
 import { el } from '../core/ui.js';
-import { drawGrid, drawAxes, dragGuides, alignTo } from '../core/render.js';
+import { Painter, dragGuides, alignTo } from '../core/render.js';
 import { SceneHistory } from '../core/history.js';
-import { K, MU, pointField, drawFieldLines, drawFieldGrid, chargeSphere } from '../core/electric.js';
+import { K, MU, pointField, drawFieldGrid } from '../core/electric.js';
+import { palette, rampColor, mixHex, drawPlaneGrid, drawPlaneAxes, arrowS, tex, texWidth, sciTeX } from '../core/manim.js';
+import { rate, cumulate, partial } from '../core/anim.js';
 
 // Cariche e campo elettrico (elettrostatica, livello liceo).
 // Sorgenti: cariche puntiformi (Coulomb in 3D), barre cariche uniformi (segmenti nel piano),
@@ -219,22 +221,101 @@ function trace(seed, dir, [x0, y0, x1, y1]) {
   return pts;
 }
 
+/* ---------------- Transizioni (regia alla Manim) ---------------- */
+// Orologio delle animazioni, fatto avanzare da draw(). Nelle istantanee della Lavagna (A.still) tutto è subito
+// al suo stato finale. La fisica non c'entra: qui si anima solo come le cose compaiono e cambiano sullo schermo.
+const A = { M: null, now: 0, dt: 0, last: 0, still: false, vals: new Map(), born: new Map(), on: {}, sig: null, linesT0: -1e9 };
+const TAU = 0.09;   // tempo di risposta (s) dei valori mostrati che inseguono quelli veri
+
+// Valore mostrato che insegue il valore vero: un vettore che cambia verso si ritira e ricresce dall'altra parte.
+function smooth(key, target, tau = TAU) {
+  const v = A.vals.get(key);
+  if (!v || A.still || B.drag || v.length !== target.length) { A.vals.set(key, target.slice()); return target; }
+  const k = 1 - Math.exp(-A.dt / tau);
+  for (let i = 0; i < v.length; i++) v[i] += (target[i] - v[i]) * k;
+  return v;
+}
+// Fattore di scala di un oggetto appena comparso (rimbalzo di 0,45 s).
+function born(id) {
+  if (A.still) return 1;
+  if (!A.born.has(id)) A.born.set(id, A.now);
+  return rate.backOut(Math.min(1, (A.now - A.born.get(id)) / 0.45));
+}
+// Avanzamento (0 → 1 in 0,6 s) di un elemento che si accende: forze, componenti, sonda.
+A.p = key => (A.still ? 1 : A.on[key] == null ? 0 : Math.min(1, (A.now - A.on[key]) / 0.6));
+
+// Linee di campo alla Manim: colore in base all'intensità del campo e, quando cambiano le sorgenti
+// (numero o segno) o si accendono, si tracciano una dopo l'altra (Create).
+function drawLinesM(P, lines) {
+  const M = A.M, ctx = P.ctx, n = lines.length;
+  const lag = Math.min(0.05, 0.6 / Math.max(1, n)), dur = 0.8;
+  ctx.save();
+  ctx.lineCap = ctx.lineJoin = 'round'; ctx.lineWidth = 1.8; ctx.globalAlpha = M.lineA;
+  lines.forEach((L, i) => {
+    const f = A.still ? 1 : Math.min(1, Math.max(0, (A.now - A.linesT0 - i * lag) / dur));
+    if (f <= 0 || L.pts.length < 2) return;
+    L.mags ??= L.pts.map((pt, k) => (k % 3 ? 0 : Math.hypot(...fieldAt(pt[0], pt[1]))));
+    L.acc ??= cumulate(L.pts);
+    const pts = f < 1 ? partial(L.pts, f, L.acc) : L.pts, N = pts.length;
+    for (let k = 0; k < N - 1; k += 3) {
+      ctx.strokeStyle = rampColor(M, L.mags[k] || 1e4);
+      ctx.beginPath();
+      for (let j = k; j <= Math.min(k + 3, N - 1); j++) { const [a, b] = P.S(pts[j][0], pts[j][1]); j === k ? ctx.moveTo(a, b) : ctx.lineTo(a, b); }
+      ctx.stroke();
+    }
+    // Punta del verso a metà linea, quando la linea è stata tracciata oltre la metà.
+    const m = Math.floor(L.pts.length / 2);
+    if (f > 0.55 && m > 0) {
+      const p0 = P.S(...L.pts[m - 1]), p1 = P.S(...L.pts[m]);
+      let dx = (p1[0] - p0[0]) * L.dir, dy = (p1[1] - p0[1]) * L.dir;
+      const d = Math.hypot(dx, dy);
+      if (d > 1e-6) {
+        dx /= d; dy /= d;
+        const h = 9, w = 4.2;
+        ctx.fillStyle = rampColor(M, L.mags[m - (m % 3)] || 1e4);
+        ctx.beginPath(); ctx.moveTo(p1[0] + dx * h / 2, p1[1] + dy * h / 2);
+        ctx.lineTo(p1[0] - dx * h / 2 - dy * w, p1[1] - dy * h / 2 + dx * w); ctx.lineTo(p1[0] - dx * h / 2 + dy * w, p1[1] - dy * h / 2 - dx * w);
+        ctx.closePath(); ctx.fill();
+      }
+    }
+  });
+  ctx.restore();
+}
+
 /* ---------------- Disegno ---------------- */
 
+// Carica alla Manim: disco pieno con un alone morbido e il segno in bianco. Il colore sfuma quando cambia il segno,
+// e appena creata la carica "sboccia" con un piccolo rimbalzo.
 function drawCharge(P, s, selected) {
-  const [a, b] = P.S(s.x, s.y), r = Math.max(9, radius(s.q) * P.cam.scale);
-  chargeSphere(P, a, b, r, s.q >= 0, selected);
-  P.textS(a, b + r + 13, `${nameOf(s)} = ${fmt(s.q, 1)} µC`, { size: 12, align: 'center', color: 'text' });
+  const M = A.M, ctx = P.ctx, [a, b] = P.S(s.x, s.y);
+  const hue = smooth('hue:' + s.id, [s.q >= 0 ? 1 : 0], 0.16)[0];
+  const r = Math.max(10, radius(s.q) * P.cam.scale) * born(s.id), col = mixHex(M.neg, M.pos, hue);
+  if (r <= 0.5) return;
+  ctx.save();
+  const g = ctx.createRadialGradient(a, b, r * 0.6, a, b, r * 2.5);
+  g.addColorStop(0, col + (M.dark ? '55' : '33')); g.addColorStop(1, col + '00');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(a, b, r * 2.5, 0, Math.PI * 2); ctx.fill();
+  if (selected) { ctx.strokeStyle = M.sel; ctx.lineWidth = 2; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.arc(a, b, r + 6, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
+  ctx.fillStyle = col; ctx.globalAlpha = 0.95; ctx.beginPath(); ctx.arc(a, b, r, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = 1; ctx.strokeStyle = mixHex(col, '#ffffff', 0.45); ctx.lineWidth = 1.5; ctx.stroke();
+  // Segno: durante l'inversione il tratto verticale si allunga o si accorcia.
+  const h = r * 0.45;
+  ctx.strokeStyle = '#ffffff'; ctx.lineWidth = Math.max(2, r * 0.13); ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(a - h, b); ctx.lineTo(a + h, b);
+  if (hue > 0.03) { ctx.moveTo(a, b - h * hue); ctx.lineTo(a, b + h * hue); }
+  ctx.stroke();
+  ctx.restore();
+  tex(P, a, b + r + 16, `${nameOf(s)} = ${fmt(s.q, 1)}\\ \\mathrm{µC}`, { size: 16, color: M.text, halo: M.bg });
 }
 
 function drawBar(P, s, selected) {
-  const [A, Bp] = ends(s), ctx = P.ctx, [a1, b1] = P.S(...A), [a2, b2] = P.S(...Bp);
-  const value = s.type === 'rod' ? s.Q : s.sigma, posC = value >= 0, hue = posC ? 2 : 214;
+  const [E0, E1] = ends(s), ctx = P.ctx, [a1, b1] = P.S(...E0), [a2, b2] = P.S(...E1);
+  const value = s.type === 'rod' ? s.Q : s.sigma, posC = value >= 0, M = A.M, col = posC ? M.pos : M.neg;
   const w = s.type === 'rod' ? 12 : 7;
   ctx.save();
   ctx.lineCap = 'round';
-  if (selected) { ctx.strokeStyle = P.c.handle; ctx.lineWidth = w + 8; ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.moveTo(a1, b1); ctx.lineTo(a2, b2); ctx.stroke(); ctx.globalAlpha = 1; }
-  ctx.strokeStyle = s.type === 'rod' ? `hsl(${hue} 60% 52%)` : `hsl(${hue} 25% 58%)`; ctx.lineWidth = w;
+  if (selected) { ctx.strokeStyle = M.sel; ctx.lineWidth = w + 8; ctx.globalAlpha = 0.45; ctx.beginPath(); ctx.moveTo(a1, b1); ctx.lineTo(a2, b2); ctx.stroke(); ctx.globalAlpha = 1; }
+  ctx.strokeStyle = s.type === 'rod' ? col : mixHex(col, M.bg, 0.35); ctx.lineWidth = w;
   ctx.beginPath(); ctx.moveTo(a1, b1); ctx.lineTo(a2, b2); ctx.stroke();
   // Segni + o − distribuiti lungo la sorgente.
   const len = Math.hypot(a2 - a1, b2 - b1), n = Math.max(2, Math.floor(len / 22)), ux = (a2 - a1) / len, uy = (b2 - b1) / len;
@@ -246,8 +327,8 @@ function drawBar(P, s, selected) {
     ctx.stroke();
   }
   ctx.restore();
-  const unit = s.type === 'rod' ? 'µC' : 'µC/m²', sym = s.type === 'rod' ? 'Q' : 'σ';
-  P.textS((a1 + a2) / 2 - uy * 20, (b1 + b2) / 2 + ux * 20, `${sym} = ${fmt(value, 1)} ${unit}`, { size: 12, align: 'center' });
+  const label = s.type === 'rod' ? `Q = ${fmt(value, 1)}\\ \\mathrm{µC}` : `\\sigma = ${fmt(value, 1)}\\ \\mathrm{µC/m}^{2}`;
+  tex(P, (a1 + a2) / 2 - uy * 22, (b1 + b2) / 2 + ux * 22, label, { size: 15, color: M.text, halo: M.bg });
 }
 
 function drawFieldVectors(P) {
@@ -266,12 +347,32 @@ function drawForces(P) {
   // La freccia più lunga misura poco più di metà della distanza minima tra le cariche: le frecce sono in scala tra loro.
   let dmin = Infinity;
   for (const a of charges) for (const c of charges) if (a !== c) dmin = Math.min(dmin, Math.hypot(a.x - c.x, a.y - c.y));
-  const kf = clamp(0.6 * (Number.isFinite(dmin) ? dmin : 0.3), 0.08, 0.25) / maxF;
-  for (const d of data) {
-    if (focus) for (const f of d.list) {
-      P.arrow(d.c.x, d.c.y, d.c.x + kf * f.F[0], d.c.y + kf * f.F[1], { color: 'applied', width: 2.2, dash: [5, 4], alpha: 0.7, label: 'F' + (f.s.type === 'point' ? '←' + nameOf(f.s) : '') });
+  // Le frecce partono dal bordo della sfera e restano sotto metà della distanza: due cariche che si attraggono
+  // non hanno più le frecce (e le etichette) sovrapposte a metà strada.
+  const kf = clamp(0.3 * (Number.isFinite(dmin) ? dmin : 0.3), 0.06, 0.25) / maxF;
+  const M = A.M, grow = rate.smooth(A.p('F'));
+  // Freccia di una forza: parte dal bordo della sfera; il vettore mostrato insegue quello vero (transizione).
+  const fromEdge = (c, F, key, color, opts, label) => {
+    const [dx, dy] = smooth(key, [kf * F[0], kf * F[1]]), m = Math.hypot(dx, dy);
+    if (!m) return;
+    const r = Math.max(10, radius(c.q) * P.cam.scale) / P.cam.scale, ux = dx / m, uy = dy / m;
+    const [a, b] = P.S(c.x + ux * r, c.y + uy * r), [e, f] = P.S(c.x + ux * r + dx, c.y + uy * r + dy);
+    const tip = arrowS(P.ctx, a, b, e, f, color, { grow, halo: M.bg, ...opts });
+    // Etichetta a lato dell'asta, dalla parte "di sopra" dello schermo: due forze opposte sulla stessa retta
+    // non si sovrappongono più a metà strada.
+    if (tip && label && tip.len > 16) {
+      let nx = -tip.uy, ny = tip.ux;
+      if (ny > 0 || (Math.abs(ny) < 1e-3 && nx < 0)) { nx = -nx; ny = -ny; }
+      const t = Math.max(0.55, 1 - 14 / tip.len), mx = a + (tip.x - a) * t, my = b + (tip.y - b) * t;
+      tex(P, mx + nx * 17, my + ny * 17, label, { size: 18, color, halo: M.bg, alpha: grow });
     }
-    P.arrow(d.c.x, d.c.y, d.c.x + kf * d.R[0], d.c.y + kf * d.R[1], { color: 'applied', width: 4, label: focus ? 'F ris.' : 'F' });
+  };
+  for (const d of data) {
+    // Con una sola altra sorgente la forza singola coincide con la risultante: basta una freccia.
+    if (focus && d.list.length > 1) for (const f of d.list) {
+      fromEdge(d.c, f.F, `F:${d.c.id}:${f.s.id}`, mixHex(M.force, M.bg, 0.35), { width: 2 }, f.s.type === 'point' ? `\\vec F_{${pIdx(f.s)}${pIdx(d.c)}}` : '');
+    }
+    fromEdge(d.c, d.R, `F:${d.c.id}`, M.force, { width: 3.2 }, focus ? `\\vec F_{\\mathrm{ris}}` : `\\vec F_{${pIdx(d.c)}}`);
   }
   if (B.spec.show.comp) {
     for (const d of data) drawComponents(P, d, kf, !!focus);
@@ -279,28 +380,34 @@ function drawForces(P) {
 }
 
 // Proiezioni sugli assi x e y: assi locali tratteggiati per la carica, linee di proiezione dalle punte dei vettori
-// e frecce delle componenti della risultante (Fx, Fy). Con una carica selezionata si proiettano anche le singole forze.
+// e frecce delle componenti della risultante (Fx, Fy), che crescono quando si accendono.
 function drawComponents(P, d, kf, detail) {
-  const { c, R } = d, ctx = P.ctx, [a, b] = P.S(c.x, c.y);
+  const { c } = d, ctx = P.ctx, M = A.M, [a, b] = P.S(c.x, c.y), g = rate.smooth(A.p('comp'));
+  const R = smooth(`F:${c.id}`, [kf * d.R[0], kf * d.R[1]]).map(v => v / kf);
   const vecs = [...(detail ? d.list.map(f => f.F) : []), R];
   let ext = 40;
   for (const F of vecs) ext = Math.max(ext, Math.abs(kf * F[0]) * P.cam.scale + 24, Math.abs(kf * F[1]) * P.cam.scale + 24);
   ctx.save();
-  ctx.strokeStyle = P.c.muted; ctx.lineWidth = 1.2; ctx.setLineDash([4, 4]);
-  ctx.beginPath(); ctx.moveTo(a - ext, b); ctx.lineTo(a + ext, b); ctx.moveTo(a, b - ext); ctx.lineTo(a, b + ext); ctx.stroke();
-  ctx.font = 'italic 600 12px system-ui, sans-serif'; ctx.fillStyle = P.c.muted; ctx.setLineDash([]);
-  ctx.fillText('x', a + ext + 3, b + 4); ctx.fillText('y', a - 4, b - ext - 5);
+  ctx.globalAlpha = g;
+  ctx.strokeStyle = M.muted; ctx.lineWidth = 1.1; ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(a - ext * g, b); ctx.lineTo(a + ext * g, b); ctx.moveTo(a, b - ext * g); ctx.lineTo(a, b + ext * g); ctx.stroke();
   // Linee di proiezione: dalla punta di ogni vettore, perpendicolari agli assi.
-  ctx.setLineDash([2, 4]); ctx.lineWidth = 1.3;
+  ctx.setLineDash([2, 4]); ctx.lineWidth = 1.2;
   vecs.forEach((F, i) => {
     const last = i === vecs.length - 1, [tx, ty] = P.S(c.x + kf * F[0], c.y + kf * F[1]);
-    ctx.strokeStyle = P.c.applied; ctx.globalAlpha = last ? 0.85 : 0.45;
-    ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx, b); ctx.moveTo(tx, ty); ctx.lineTo(a, ty); ctx.stroke();
+    ctx.strokeStyle = M.force; ctx.globalAlpha = g * (last ? 0.75 : 0.4);
+    ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx, ty + (b - ty) * g); ctx.moveTo(tx, ty); ctx.lineTo(tx + (a - tx) * g, ty); ctx.stroke();
   });
   ctx.restore();
-  const opt = { color: 'applied', width: 3, head: 10 };
-  P.arrow(c.x, c.y, c.x + kf * R[0], c.y, { ...opt, label: 'Fx' });
-  P.arrow(c.x, c.y, c.x, c.y + kf * R[1], { ...opt, label: 'Fy' });
+  if (g > 0.05) {
+    tex(P, a + ext * g + 9, b, 'x', { size: 15, color: M.muted, align: 'left', halo: M.bg, alpha: g });
+    tex(P, a, b - ext * g - 10, 'y', { size: 15, color: M.muted, halo: M.bg, alpha: g });
+  }
+  const [ex] = P.S(c.x + kf * R[0], c.y), [, ey] = P.S(c.x, c.y + kf * R[1]), n = pIdx(c);
+  const tx = arrowS(ctx, a, b, ex, b, M.fx, { width: 2.6, tip: 11, grow: g, halo: M.bg });
+  const ty = arrowS(ctx, a, b, a, ey, M.fy, { width: 2.6, tip: 11, grow: g, halo: M.bg });
+  if (tx && tx.len > 14) tex(P, tx.x + tx.ux * 22, b + 14, `F_{${n}x}`, { size: 15, color: M.fx, halo: M.bg, alpha: g });
+  if (ty && ty.len > 14) tex(P, a - 22, ty.y + ty.uy * 14, `F_{${n}y}`, { size: 15, color: M.fy, halo: M.bg, alpha: g });
 }
 
 // Carica selezionata (diversa da q₁): segmento da q₁ e angolo θ rispetto all'asse x.
@@ -311,22 +418,34 @@ function drawPolar(P) {
   P.line([[ref.x, ref.y], [s.x, s.y]], { color: 'handle', width: 1.5, dash: [6, 5], alpha: 0.8 });
   P.line([[ref.x, ref.y], [ref.x + Math.max(r * 0.6, 0.06), ref.y]], { color: 'muted', width: 1.2, dash: [3, 4] });
   const R = clamp(r * P.cam.scale * 0.35, 22, 60);
-  P.arc(ref.x, ref.y, R, Math.min(0, th), Math.max(0, th), { color: 'handle', width: 1.8, label: `${fmt(th / deg, 0)}°`, labelR: R + 16 });
+  P.arc(ref.x, ref.y, R, Math.min(0, th), Math.max(0, th), { color: 'handle', width: 1.6 });
+  { const m = th / 2, [ra, rb] = P.S(ref.x, ref.y); tex(P, ra + Math.cos(m) * (R + 18), rb - Math.sin(m) * (R + 18), `\\theta = ${fmt(th / deg, 0)}°`, { size: 15, color: A.M.sel, halo: A.M.bg }); }
   const [mx, my] = P.S((ref.x + s.x) / 2, (ref.y + s.y) / 2), nx = -Math.sin(th), ny = -Math.cos(th);
-  P.textS(mx + nx * 14, my + ny * 14, `r = ${fmt(r * 100, 1)} cm`, { size: 12, color: 'handle', align: 'center' });
+  tex(P, mx + nx * 16, my + ny * 16, `r = ${fmt(r * 100, 1)}\\ \\mathrm{cm}`, { size: 15, color: A.M.sel, halo: A.M.bg });
 }
 
 function drawProbe(P) {
-  const { x, y } = B.spec.probe, [ex, ey] = fieldAt(x, y), m = Math.hypot(ex, ey);
-  if (m > 0) P.arrow(x, y, x + PROBE_LEN * ex / m, y + PROBE_LEN * ey / m, { color: 'acc', width: 3.5, label: 'E' });
+  const { x, y } = B.spec.probe, [ex, ey] = fieldAt(x, y), m = Math.hypot(ex, ey), M = A.M, g = rate.smooth(A.p('probe'));
   const [a, b] = P.S(x, y), ctx = P.ctx;
+  if (m > 0) {
+    const [ux, uy] = smooth('E', [ex / m, ey / m]), L = PROBE_LEN * P.cam.scale;
+    arrowS(ctx, a, b, a + ux * L, b - uy * L, M.field, { width: 3, grow: g, halo: M.bg });
+  }
   ctx.save();
-  ctx.strokeStyle = P.c.handle; ctx.lineWidth = 2.5;
-  ctx.beginPath(); ctx.arc(a, b, 9, 0, Math.PI * 2); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(a - 14, b); ctx.lineTo(a - 5, b); ctx.moveTo(a + 5, b); ctx.lineTo(a + 14, b);
-  ctx.moveTo(a, b - 14); ctx.lineTo(a, b - 5); ctx.moveTo(a, b + 5); ctx.lineTo(a, b + 14); ctx.stroke();
+  ctx.globalAlpha = Math.min(1, g * 2); ctx.strokeStyle = M.field; ctx.lineWidth = 1.8;
+  ctx.beginPath(); ctx.arc(a, b, 8, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(a - 13, b); ctx.lineTo(a - 4, b); ctx.moveTo(a + 4, b); ctx.lineTo(a + 13, b);
+  ctx.moveTo(a, b - 13); ctx.lineTo(a, b - 4); ctx.moveTo(a, b + 4); ctx.lineTo(a, b + 13); ctx.stroke();
   ctx.restore();
-  P.textS(a + 14, b + 20, `|E| = ${sciText(m)} N/C`, { size: 12, color: 'acc' });
+  // L'etichetta sta dalla parte opposta alla freccia, per non coprirla. Il valore scorre fino a quello vero.
+  const shown = smooth('Emag', [m])[0], lx = m > 0 ? -ex / m : 0, ly = m > 0 ? ey / m : 1;
+  const label = `|\\vec E| = ${sciTeX(shown)}\\ \\mathrm{N/C}`, w = texWidth(P, label, 16);
+  const align = lx > 0.3 ? 'left' : lx < -0.3 ? 'right' : 'center';
+  // Resta dentro l'area libera (non sotto l'ispettore o la barra a sinistra).
+  const pad = P.cam.padFn?.() ?? { left: 10, right: 10 }, x0 = pad.left + 6, x1 = P.cam.w - pad.right - 6;
+  let lxS = a + lx * 24, left = align === 'left' ? lxS : align === 'right' ? lxS - w : lxS - w / 2;
+  left = Math.min(Math.max(left, x0), x1 - w);
+  tex(P, left, b + ly * 24 + (Math.abs(ly) > 0.5 ? Math.sign(ly) * 6 : 0), label, { size: 16, color: M.field, halo: M.bg, align: 'left', alpha: g });
 }
 
 /* ---------------- Numeri ---------------- */
@@ -422,23 +541,49 @@ export default {
   },
 
   drawBackground(ctx, cam, c) {
-    ctx.fillStyle = c.bg;
+    A.M = palette(c);
+    ctx.fillStyle = A.M.bg;
     ctx.fillRect(0, 0, cam.w, cam.h);
-    drawGrid(ctx, cam, c, false);
+    drawPlaneGrid(ctx, cam, A.M);
   },
 
-  draw(P, s, p, ui) {
+  draw(P0, s, p, ui) {
+    const now = performance.now() / 1000;
+    A.dt = Math.min(0.1, now - (A.last || now)); A.last = A.now = now;
+    A.still = !!ui?.snapshot;
+    const M = A.M = palette(P0.c);
+    // Painter con i colori del kit Manim (aloni del colore di fondo, maniglie e guide nel blu di Manim).
+    const P = new Painter(P0.ctx, P0.cam, { ...P0.c, bg: M.bg, text: M.text, muted: M.muted, handle: M.sel, acc: M.field });
+    if (A.still) { P.arrow = P0.arrow; P.handle = P0.handle; P.sizeHandle = P0.sizeHandle; }
     const show = B.spec.show;
-    if (!ui?.snapshot) drawAxes(P, { unit: 'cm', k: 100 });
-    if (show.lines) drawFieldLines(P, fieldLines());
+    for (const k of ['F', 'comp', 'probe']) { if (!show[k]) A.on[k] = null; else if (A.on[k] == null) A.on[k] = now; }
+    // Le linee si ridisegnano quando cambiano il numero o il segno delle sorgenti, o quando si accendono.
+    const sig = show.lines + '|' + B.spec.sources.map(o => o.id + (Math.sign(o.type === 'point' ? o.q : o.type === 'rod' ? o.Q : o.sigma))).join(',');
+    if (sig !== A.sig) { A.sig = sig; A.linesT0 = now; }
+    if (!ui?.snapshot) drawPlaneAxes(P, M, { unit: 'cm', k: 100 });
+    if (show.lines) drawLinesM(P, fieldLines());
     if (show.E) drawFieldVectors(P);
     for (const s of B.spec.sources) if (s.type !== 'point') drawBar(P, s, s.id === B.sel);
     drawPolar(P);
-    if (show.F) drawForces(P);
+    if (show.F && !A.still) drawForces(P);
     for (const s of B.spec.sources) if (s.type === 'point') drawCharge(P, s, s.id === B.sel);
     for (const h of handlesOf(srcOf(B.sel))) P.sizeHandle(h.x, h.y, B.dragHandle === h.i);
-    if (show.probe) drawProbe(P);
+    if (show.probe && !A.still) drawProbe(P);
     if (B.drag) dragGuides(P, { x: B.drag.o.x, y: B.drag.o.y, vx: B.drag.vx, hy: B.drag.hy, text: `x = ${fmt(B.drag.o.x * 100, 1)} cm · y = ${fmt(B.drag.o.y * 100, 1)} cm` });
+  },
+
+  // Valore di una puntina dalla scena corrente (vedi pinValue in main.js).
+  pinInfo(key) {
+    if (!B.spec || key.startsWith('charges.')) return undefined;
+    const i = key.lastIndexOf('.'), s = srcOf(key.slice(0, i)), prop = key.slice(i + 1);
+    if (!s) return null;
+    const ref = refCharge();
+    let value = s[prop];
+    if (prop === 'r' || prop === 'th') {
+      if (!ref || ref === s) return null;
+      value = prop === 'r' ? Math.hypot(s.x - ref.x, s.y - ref.y) * 100 : Math.atan2(s.y - ref.y, s.x - ref.x) / deg;
+    } else if (prop === 'x' || prop === 'y') value = s[prop] * 100;
+    return value == null ? null : { value, name: nameOf(s) };
   },
 
   formulas() {
