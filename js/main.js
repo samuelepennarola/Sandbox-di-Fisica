@@ -56,6 +56,39 @@ theoryBody.innerHTML = '<div class="theory"></div>';
 // Aprendo o chiudendo l'ispettore la scena scorre di metà della sua larghezza: resta centrata nello spazio libero.
 insp.onChange = (before, after) => cam.panBy((before - after) / 2, 0);
 
+/* ---------------- Annulla e ripeti ---------------- */
+// Un'unica cronologia per l'inchiostro e la scena dell'esperimento, nell'ordine in cui sono avvenute le modifiche.
+// L'inchiostro si salva a istantanee; la scena la gestisce l'esperimento (exp.history, vedi core/history.js).
+const undoLog = [], redoLog = [];
+let inkSnap = [];
+const cloneStrokes = list => list.map(st => ({ ...st, pts: st.pts.map(p => p.slice()) }));
+function resetHistory() { undoLog.length = 0; redoLog.length = 0; inkSnap = cloneStrokes(ink.strokes); syncUndoBtns(); }
+function recordInk() {
+  undoLog.push({ kind: 'ink', strokes: inkSnap });
+  if (undoLog.length > 100) undoLog.shift();
+  inkSnap = cloneStrokes(ink.strokes);
+  redoLog.length = 0;
+  syncUndoBtns();
+}
+function recordExp() { undoLog.push({ kind: 'exp' }); redoLog.length = 0; syncUndoBtns(); }
+function stepHistory(from, to) {
+  const e = from.pop();
+  if (!e) return;
+  lasso.clear();
+  if (e.kind === 'ink') {
+    to.push({ kind: 'ink', strokes: cloneStrokes(ink.strokes) });
+    ink.strokes = e.strokes; ink.save();
+    inkSnap = cloneStrokes(e.strokes);
+  } else {
+    const h = app.exp.history;
+    if (h && (from === undoLog ? h.undo() : h.redo())) to.push(e);
+  }
+  syncUndoBtns();
+}
+const undo = () => stepHistory(undoLog, redoLog);
+const redo = () => stepHistory(redoLog, undoLog);
+function syncUndoBtns() { $('undoBtn').disabled = !undoLog.length; $('redoBtn').disabled = !redoLog.length; }
+
 /* ---------------- Barra degli strumenti a sinistra ---------------- */
 // Gli strumenti per creare oggetti (costruttore, cariche) stanno in una colonna a sinistra, separati
 // dalle proprietà nel pannello di destra. groups: [{ title, items: [[id, icona, etichetta]] }].
@@ -71,6 +104,8 @@ function setRail(groups, active, onPick) {
       b.title = label;
       b.innerHTML = `${icons[ic]}<span>${label}</span>`;
       b.onclick = () => onPick(id);
+      // Si può anche trascinare lo strumento sulla scena: l'oggetto nasce dove lo si lascia.
+      if (id !== 'select') b.addEventListener('pointerdown', e => startRailDrag(e, b, id, onPick, ic));
       rail.appendChild(b);
     }
   });
@@ -83,6 +118,42 @@ function showRail(v) {
   if (was !== v) cam.panBy((v ? 1 : -1) * RAIL_W / 2, 0);
 }
 const RAIL_W = 76;
+
+// Trascinamento dalla barra: un'icona fantasma segue il dito; rilasciandola sulla scena l'oggetto viene creato lì,
+// come se si fosse scelto lo strumento e toccato quel punto (stesse regole: griglia, appoggio sui piani).
+let railDrag = null;
+function startRailDrag(e, btn, id, onPick, ic) {
+  railDrag = { id: e.pointerId, tool: id, onPick, ic, x0: e.clientX, y0: e.clientY, ghost: null };
+}
+addEventListener('pointermove', e => {
+  const d = railDrag;
+  if (!d || e.pointerId !== d.id) return;
+  if (!d.ghost) {
+    if (Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < 12) return;
+    d.ghost = document.createElement('div');
+    d.ghost.className = 'rail-ghost';
+    d.ghost.innerHTML = icons[d.ic];
+    document.body.appendChild(d.ghost);
+    tapStart = null;   // non è più un tocco sul pulsante
+  }
+  d.ghost.style.left = e.clientX + 'px';
+  d.ghost.style.top = e.clientY + 'px';
+  d.ghost.classList.toggle('over', document.elementFromPoint(e.clientX, e.clientY) === canvas);
+}, true);
+const endRailDrag = e => {
+  const d = railDrag;
+  if (!d || e.pointerId !== d.id) return;
+  railDrag = null;
+  if (!d.ghost) return;
+  d.ghost.remove();
+  if (e.type !== 'pointerup' || document.elementFromPoint(e.clientX, e.clientY) !== canvas) return;
+  d.onPick(d.tool, true);                          // sceglie lo strumento (true: anche se era già attivo)
+  const [x, y] = pos(e), [wx, wy] = cam.toWorld(x, y);
+  const g = app.exp.pointerDown?.({ wx, wy, sx: x, sy: y, api });
+  g?.up?.({ wx, wy, sx: x, sy: y });
+};
+addEventListener('pointerup', endRailDrag, true);
+addEventListener('pointercancel', endRailDrag, true);
 
 // Sezione richiudibile del pannello: si mostra solo l'essenziale, il resto si apre a richiesta.
 function section(parent, title, key, open = true) {
@@ -299,6 +370,7 @@ const api = {
   ink, areas: AREAS,
   snapshot: (exp, w, h) => expSnapshot(exp, w, h),
   setRail: (groups, active, onPick) => setRail(groups, active, onPick),
+  recordChange: () => recordExp(),
   section: (parent, title, key, open) => section(parent, title, key, open),
   lassoClear: () => lasso.clear(),
 };
@@ -341,6 +413,8 @@ function loadExperiment(id) {
   ink.load(exp.id);
   lasso.clear();
   exp.mount?.(api);
+  exp.history?.reset();
+  resetHistory();
   // La Lavagna non ha simulazione: niente comandi di play, moviola, grafici e formule.
   document.body.classList.toggle('no-sim', !!exp.noSim);
   // Un esperimento senza tempo può comunque tenere alcuni pannelli (exp.keepPanels).
@@ -523,6 +597,32 @@ function render() {
   ink.draw(ctx, cam, colors);
   lasso.draw(P, app.exp, app.activeHandle === 'lassoScale');
   updateSelbar();
+  updateCtxbar();
+}
+
+// Barretta di azioni accanto all'oggetto selezionato (exp.selectionBar): le azioni frequenti stanno dove si guarda.
+// L'esperimento restituisce { x, y, actions: [{ label, run, danger? }] } con (x, y) il punto sopra l'oggetto, o null.
+const ctxbar = $('ctxbar');
+let ctxKey = '';
+function updateCtxbar() {
+  const bar = !app.running && !gesture && app.mode !== 'lesson' ? app.exp.selectionBar?.(api) : null;
+  ctxbar.classList.toggle('hidden', !bar);
+  if (!bar) { ctxKey = ''; return; }
+  const key = bar.key + '|' + bar.actions.map(a => a.label).join('|');
+  if (key !== ctxKey) {
+    ctxKey = key;
+    ctxbar.innerHTML = '';
+    for (const a of bar.actions) {
+      const b = document.createElement('button');
+      b.textContent = a.label;
+      if (a.danger) b.className = 'danger';
+      b.onclick = () => { a.run(); ctxKey = ''; };
+      ctxbar.appendChild(b);
+    }
+  }
+  const [sx, sy] = cam.toScreen(bar.x, bar.y), w = ctxbar.offsetWidth || 200;
+  ctxbar.style.left = Math.min(innerWidth - insp.reserved - w - 8, Math.max(cam.padFn().left - 12, sx - w / 2)) + 'px';
+  ctxbar.style.top = Math.max(64, sy - 54) + 'px';
 }
 
 // Barretta Copia / Elimina sopra la selezione del lazo.
@@ -859,9 +959,10 @@ function endPointer(e) {
   if (!gesture) return;
   if (gesture.type === 'pinch') { if (touches.size < 2) gesture = null; return; }
   if (e.pointerId !== gesture.id) return;
-  if (gesture.type === 'ink') ink.end();
+  if (gesture.type === 'ink') { ink.end(); recordInk(); }
+  if (gesture.type === 'erase') recordInk();
   if (gesture.type === 'lasso') lasso.finish(app.exp);
-  if (gesture.type === 'lassoMove' || gesture.type === 'lassoScale') lasso.save(app.exp);
+  if (gesture.type === 'lassoMove' || gesture.type === 'lassoScale') { lasso.save(app.exp); recordInk(); }
   if (gesture.type === 'size') store.set('sizes.' + app.exp.id, app.sizes);
   // Tocco senza trascinare su una maniglia che coincide con un oggetto: lo seleziona per ridimensionarlo.
   if (gesture.type === 'drag' && !gesture.moved) app.sizeSel = hitResizable(gesture.sx, gesture.sy)?.key ?? null;
@@ -1063,10 +1164,11 @@ $('fitBtn').onclick = fitView;
 $('inspBtn').onclick = () => insp.toggle();
 document.querySelectorAll('#modeSeg button').forEach(b => b.onclick = () => setMode(b.dataset.mode));
 $('speedBtn').onclick = () => setSpeed(SPEEDS[(SPEEDS.indexOf(app.speed) + 1) % SPEEDS.length]);
-$('undoBtn').onclick = () => { lasso.clear(); ink.undo(); };
-$('clearBtn').onclick = () => { if (ink.strokes.length && confirm('Cancellare tutti gli appunti di questo esperimento?')) { lasso.clear(); ink.clear(); } };
-$('selCopy').onclick = () => lasso.copy(app.exp, 24 / cam.scale, -24 / cam.scale);
-$('selDelete').onclick = () => lasso.remove(app.exp);
+$('undoBtn').onclick = undo;
+$('redoBtn').onclick = redo;
+$('clearBtn').onclick = () => { if (ink.strokes.length && confirm('Cancellare tutti gli appunti di questo esperimento?')) { lasso.clear(); ink.clear(); recordInk(); } };
+$('selCopy').onclick = () => { lasso.copy(app.exp, 24 / cam.scale, -24 / cam.scale); recordInk(); };
+$('selDelete').onclick = () => { lasso.remove(app.exp); recordInk(); };
 tlRange.oninput = () => scrubTo(+tlRange.value);
 $('tlStart').onclick = () => scrubTo(0);
 $('tlEnd').onclick = () => { stopSweep(); app.view = null; app.viewCache = null; };
@@ -1081,10 +1183,11 @@ addEventListener('keydown', e => {
   else if (e.key === 'p') setTool('pen');
   else if (e.key === 'e') setTool('eraser');
   else if (e.key === 'l') setTool('lasso');
-  else if ((e.key === 'Backspace' || e.key === 'Delete') && lasso.active) lasso.remove(app.exp);
+  else if ((e.key === 'Backspace' || e.key === 'Delete') && lasso.active) { lasso.remove(app.exp); recordInk(); }
   else if (e.key === 'ArrowLeft') scrubTo((app.view ?? app.history.length - 1) - 1);
   else if (e.key === 'ArrowRight') stepFrame();
-  else if (e.key === 'z' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); ink.undo(); }
+  else if (e.key.toLowerCase() === 'z' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+  else if (e.key === 'y' && e.ctrlKey) { e.preventDefault(); redo(); }
   else if (e.key === '+' || e.key === '=') cam.zoomAt(cam.w / 2, cam.h / 2, 1.25);
   else if (e.key === '-') cam.zoomAt(cam.w / 2, cam.h / 2, 0.8);
   else if (e.key === '0') fitView();

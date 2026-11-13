@@ -229,3 +229,35 @@ export function drawAxes(P, { unit = 'm', k = 1 } = {}) {
   if (!pinX && !pinY) { ctx.textAlign = 'right'; ctx.textBaseline = 'top'; ctx.font = '500 11px -apple-system, sans-serif'; ctx.fillStyle = c.muted; ctx.fillText('0', ox - 5, oy + 5); }
   ctx.restore();
 }
+
+// Durante un trascinamento: linee guida quando l'oggetto è allineato a un altro (vx: verticale, hy: orizzontale)
+// e un'etichetta con le coordinate, sopra l'oggetto.
+export function dragGuides(P, { x, y, vx = null, hy = null, text }) {
+  const { ctx, cam } = P, c = P.c;
+  ctx.save();
+  ctx.strokeStyle = c.handle; ctx.lineWidth = 1.3; ctx.setLineDash([6, 5]); ctx.globalAlpha = 0.9;
+  ctx.beginPath();
+  if (vx != null) { const [a] = cam.toScreen(vx, 0); ctx.moveTo(a, 0); ctx.lineTo(a, cam.h); }
+  if (hy != null) { const [, b] = cam.toScreen(0, hy); ctx.moveTo(0, b); ctx.lineTo(cam.w, b); }
+  ctx.stroke();
+  ctx.restore();
+  const [a, b] = cam.toScreen(x, y);
+  ctx.save();
+  ctx.font = '600 13px -apple-system, BlinkMacSystemFont, sans-serif';
+  const w = ctx.measureText(text).width + 18, h = 26, bx = a - w / 2, by = b - 58;
+  ctx.fillStyle = c.handle; ctx.globalAlpha = 0.95;
+  ctx.beginPath(); ctx.roundRect ? ctx.roundRect(bx, by, w, h, 8) : ctx.rect(bx, by, w, h); ctx.fill();
+  ctx.globalAlpha = 1; ctx.fillStyle = c.bg; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(text, a, by + h / 2 + 0.5);
+  ctx.restore();
+}
+
+// Allineamento magnetico: se x (o y) è entro tol da quello di un altro punto, vi si aggancia.
+export function alignTo(x, y, others, tol) {
+  let vx = null, hy = null, bx = tol, by = tol;
+  for (const [ox, oy] of others) {
+    if (Math.abs(ox - x) < bx) { bx = Math.abs(ox - x); vx = ox; }
+    if (Math.abs(oy - y) < by) { by = Math.abs(oy - y); hy = oy; }
+  }
+  return { x: vx ?? x, y: hy ?? y, vx, hy };
+}

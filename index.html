@@ -54,7 +54,8 @@
         <button data-color="inkBlue" title="Blu"></button>
         <button data-color="inkGreen" title="Verde"></button>
       </div>
-      <button class="icon-btn" id="undoBtn" data-icon="undo" title="Annulla tratto"></button>
+      <button class="icon-btn" id="undoBtn" data-icon="undo" title="Annulla (⌘Z)"></button>
+      <button class="icon-btn" id="redoBtn" data-icon="redo" title="Ripeti (⇧⌘Z)"></button>
       <button class="icon-btn" id="clearBtn" data-icon="trash" title="Cancella tutti gli appunti"></button>
     </div>
 
@@ -85,6 +86,8 @@
     <input type="range" id="penSizeRange" step="0.1" aria-label="Spessore della penna">
     <canvas id="penPreview" class="pen-preview"></canvas>
   </div>
+
+  <div class="ctxbar hidden" id="ctxbar"></div>
 
   <div class="selbar hidden" id="selbar">
     <button id="selCopy">Copia</button>

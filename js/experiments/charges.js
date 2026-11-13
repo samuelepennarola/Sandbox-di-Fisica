@@ -2,7 +2,8 @@ import { clamp, fmt, tn, deg } from '../core/math.js';
 import { icons } from '../core/icons.js';
 import { store } from '../core/store.js';
 import { el } from '../core/ui.js';
-import { drawGrid, drawAxes } from '../core/render.js';
+import { drawGrid, drawAxes, dragGuides, alignTo } from '../core/render.js';
+import { SceneHistory } from '../core/history.js';
 import { K, MU, pointField, drawFieldLines, drawFieldGrid, chargeSphere } from '../core/electric.js';
 
 // Cariche e campo elettrico (elettrostatica, livello liceo).
@@ -45,7 +46,7 @@ function newSpec() {
 }
 const add = (spec, s) => { s.id = 's' + spec.next++; spec.sources.push(s); return s; };
 const srcOf = id => B.spec.sources.find(s => s.id === id);
-const save = () => store.set('charges.scene', B.spec);
+const save = () => { store.set('charges.scene', B.spec); B.hist?.record(); };
 
 // Estremi di una barra o di una lastra (centro, lunghezza, inclinazione).
 function ends(s) {
@@ -62,7 +63,7 @@ function nameOf(s) {
 function nth(s) { const same = B.spec.sources.filter(o => o.type === s.type); return same.length > 1 ? ' ' + (same.indexOf(s) + 1) : ''; }
 const pIdx = s => B.spec.sources.filter(o => o.type === 'point').indexOf(s) + 1;   // numero della carica, per le formule
 const refCharge = () => B.spec.sources.find(o => o.type === 'point');                // q₁: riferimento per distanze e angoli
-const snap = v => Math.round(v * 200) / 200;                                          // posizioni a passi di mezzo centimetro
+const snap = v => +(Math.round(v * 200) / 200).toFixed(4);                                          // posizioni a passi di mezzo centimetro
 const sub = n => String(n).split('').map(d => '₀₁₂₃₄₅₆₇₈₉'[+d]).join('');
 
 /* ---------------- Fisica ---------------- */
@@ -383,9 +384,30 @@ export default {
     B.api = api;
     B.spec ??= store.get('charges.scene', null) ?? PRESETS[1].make();
     B.spec.show.comp ??= false;
+    B.hist ??= new SceneHistory(() => B.spec, sc => {
+      B.spec = sc; B.sel = null; B.tool = 'select';
+      store.set('charges.scene', sc);
+      B.api.rebuildPanel(); B.api.refresh();
+    }, () => B.api.recordChange());
     B.tool = 'select';
   },
   unmount() { B.tool = 'select'; },
+  get history() { return B.hist; },
+
+  selectionBar() {
+    const s = srcOf(B.sel);
+    if (!s || B.drag || B.tool !== 'select') return null;
+    const top = s.type === 'point' ? s.y + radius(s.q) : Math.max(...ends(s).map(p => p[1]));
+    const key = s.type === 'point' ? 'q' : s.type === 'rod' ? 'Q' : 'sigma';
+    return {
+      key: s.id, x: s.x, y: top,
+      actions: [
+        { label: 'Duplica', run: () => { const c = add(B.spec, { ...structuredClone(s), x: snap(s.x + 0.1) }); select(c.id); save(); } },
+        { label: '± Segno', run: () => { s[key] = -s[key]; changed(); B.api.rebuildPanel(); } },
+        { label: 'Elimina', danger: true, run: () => { B.spec.sources = B.spec.sources.filter(o => o !== s); B.sel = null; changed(); B.api.rebuildPanel(); } },
+      ],
+    };
+  },
 
   init: () => ({ t: 0 }),
   step() {},
@@ -416,6 +438,7 @@ export default {
     for (const s of B.spec.sources) if (s.type === 'point') drawCharge(P, s, s.id === B.sel);
     for (const h of handlesOf(srcOf(B.sel))) P.sizeHandle(h.x, h.y, B.dragHandle === h.i);
     if (show.probe) drawProbe(P);
+    if (B.drag) dragGuides(P, { x: B.drag.o.x, y: B.drag.o.y, vx: B.drag.vx, hy: B.drag.hy, text: `x = ${fmt(B.drag.o.x * 100, 1)} cm · y = ${fmt(B.drag.o.y * 100, 1)} cm` });
   },
 
   formulas() {
@@ -471,7 +494,7 @@ export default {
 
   buildPanel(body, api) {
     body.innerHTML = '';
-    api.setRail([{ title: 'Sorgenti', items: TOOLS }], B.tool, t => { B.tool = B.tool === t && t !== 'select' ? 'select' : t; api.rebuildPanel(); });
+    api.setRail([{ title: 'Sorgenti', items: TOOLS }], B.tool, (t, force) => { B.tool = !force && B.tool === t && t !== 'select' ? 'select' : t; api.rebuildPanel(); });
     if (B.tool !== 'select') body.appendChild(el('div', 'hint', 'Tocca la scena per aggiungere.'));
 
     const s = srcOf(B.sel);
@@ -655,9 +678,17 @@ $$E_{\\text{interno}} = \\frac{\\sigma}{\\varepsilon_0} \\qquad E_{\\text{estern
 
 function moveGesture(o, wx0, wy0) {
   const ox = o.x, oy = o.y;
+  const others = [[0, 0], ...B.spec.sources.filter(p => p !== o).map(p => [p.x, p.y]), ...(o === B.spec.probe ? [] : [[B.spec.probe.x, B.spec.probe.y]])];
   return {
-    move: ({ wx, wy }) => { o.x = snap(ox + wx - wx0); o.y = snap(oy + wy - wy0); B.api.refresh(); },
-    up: () => changed(),
+    move: ({ wx, wy }) => {
+      // Mezzo centimetro di griglia, più l'aggancio agli allineamenti con le altre cariche (linee guida).
+      const al = alignTo(ox + wx - wx0, oy + wy - wy0, others, 10 / B.api.cam.scale);
+      o.x = al.vx ?? snap(al.x); o.y = al.hy ?? snap(al.y);
+      B.drag = { o, vx: al.vx, hy: al.hy };
+      B.api.refresh();
+    },
+    up: () => { B.drag = null; changed(); },
+    cancel: () => { B.drag = null; },
   };
 }
 

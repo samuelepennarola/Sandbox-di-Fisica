@@ -340,7 +340,7 @@ body.no-sim .topbar .group.tools { margin-left: auto; }
   background: var(--panel-bg); border: 1px solid var(--panel-border); box-shadow: var(--panel-shadow); border-radius: 12px;
   -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
 }
-.selbar.hidden { display: none; }
+.selbar.hidden, .ctxbar.hidden { display: none; }
 .selbar button { border: 0; background: transparent; border-radius: 9px; padding: 8px 14px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .selbar button:hover { background: var(--ui-hover); }
 .selbar button.danger { color: var(--c-weight); }
@@ -472,3 +472,23 @@ body.has-rail:not(.lesson) #pins { left: 88px; }
 
 .insp-more { display: none; font-size: 12px; font-weight: 600; color: var(--accent); }
 #inspector.params-collapsed .insp-more { display: inline; }
+
+/* Barretta di azioni sull'oggetto selezionato */
+.ctxbar {
+  position: fixed; z-index: 16; display: flex; gap: 2px; padding: 4px;
+  background: var(--panel-bg); border: 1px solid var(--panel-border); box-shadow: var(--panel-shadow); border-radius: 12px;
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+.ctxbar button { border: 0; background: transparent; border-radius: 9px; padding: 8px 11px; font-size: 13.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.ctxbar button:hover { background: var(--ui-hover); }
+.ctxbar button.danger { color: var(--c-weight); }
+
+/* Oggetto trascinato dalla barra degli strumenti */
+.rail-ghost {
+  position: fixed; z-index: 70; width: 52px; height: 52px; margin: -26px 0 0 -26px; pointer-events: none;
+  display: grid; place-items: center; border-radius: 50%;
+  background: var(--panel-bg); border: 2px dashed var(--accent); color: var(--accent); opacity: .8;
+  box-shadow: var(--panel-shadow); transition: transform .1s;
+}
+.rail-ghost svg { width: 26px; height: 26px; }
+.rail-ghost.over { transform: scale(1.12); opacity: 1; border-style: solid; }

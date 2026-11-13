@@ -1,6 +1,7 @@
 import * as pl from '../../vendor/planck/planck.mjs';
 import { deg, clamp, fmt } from '../core/math.js';
-import { drawAxes } from '../core/render.js';
+import { drawAxes, dragGuides, alignTo } from '../core/render.js';
+import { SceneHistory } from '../core/history.js';
 import { icons } from '../core/icons.js';
 import { store } from '../core/store.js';
 import { el } from '../core/ui.js';
@@ -108,7 +109,7 @@ function addLink(spec, l) { l.id = 'l' + spec.next++; spec.links.push(l); return
 const objOf = (spec, id) => spec.objects.find(o => o.id === id);
 const linkOf = (spec, id) => spec.links.find(l => l.id === id);
 const selected = spec => B.sel && (objOf(spec, B.sel) || linkOf(spec, B.sel));
-const save = () => store.set('builder.scene', B.spec);
+const save = () => { store.set('builder.scene', B.spec); B.hist?.record(); };
 
 function nameOf(spec, item) {
   const list = item.type in PROPS && spec.objects.includes(item) ? spec.objects : spec.links;
@@ -669,6 +670,20 @@ function finishEdit(selId) {
   select(selId);
 }
 
+// Copia dell'oggetto selezionato, spostata a destra di mezzo metro; la copia diventa la selezione.
+function duplicate(o) {
+  const c = addObj(B.spec, { ...structuredClone(o), id: undefined, x: Math.round((o.x + 0.5) * 100) / 100 });
+  if (DYNAMIC.has(c.type)) snapBody(B.spec, c);
+  finishEdit(c.id);
+}
+
+// Molla o fune che parte dal corpo selezionato: il prossimo tocco sceglie l'altro estremo.
+function startLink(type, o) {
+  B.tool = type;
+  B.pending = { type, a: { o: o.id, lx: 0, ly: 0 } };
+  B.api.rebuildPanel();
+}
+
 function deleteSelected() {
   const id = B.sel;
   if (!id) return;
@@ -697,18 +712,25 @@ function pickEndpoint(st, wx, wy, tol) {
 function moveGesture(o, wx0, wy0) {
   const ox = o.x, oy = o.y;
   let moved = false;
+  // Punti a cui allinearsi: centri degli altri oggetti (e l'origine degli assi).
+  const others = [[0, 0], ...B.spec.objects.filter(p => p !== o && 'x' in p && p.type !== 'incline').map(p => [p.x, p.y])];
   return {
     move: ({ wx, wy }) => {
       if (!moved && Math.hypot(wx - wx0, wy - wy0) * B.api.cam.scale < 5) return;
       moved = true;
-      // Le posizioni scattano su una griglia (5 cm per gli oggetti fissi, 1 cm per i corpi, che poi si appoggiano).
+      // Le posizioni scattano su una griglia (5 cm per gli oggetti fissi, 1 cm per i corpi, che poi si appoggiano)
+      // e si agganciano agli allineamenti con gli altri oggetti, mostrati da linee guida.
       const g = DYNAMIC.has(o.type) ? 0.01 : 0.05;
-      o.x = Math.round((ox + wx - wx0) / g) * g; o.y = Math.round((oy + wy - wy0) / g) * g;
+      const al = alignTo(ox + wx - wx0, oy + wy - wy0, others, 10 / B.api.cam.scale);
+      const gs = v => +(Math.round(v / g) * g).toFixed(4);
+      o.x = al.vx ?? gs(al.x); o.y = al.hy ?? gs(al.y);
       if (o.type === 'incline') o.y = Math.max(0, o.y);
       if (DYNAMIC.has(o.type)) snapBody(B.spec, o);
+      B.drag = { o, vx: al.vx, hy: o.y === al.hy ? al.hy : null };
       B.api.reset();
     },
-    up: () => { if (moved) { save(); B.api.refresh(); } },
+    up: () => { B.drag = null; if (moved) { save(); B.api.refresh(); } },
+    cancel: () => { B.drag = null; },
   };
 }
 
@@ -960,6 +982,11 @@ function draw(P, st, ui = {}) {
     }
   }
 
+  if (B.drag) {
+    const o = B.drag.o;
+    dragGuides(P, { x: o.x, y: o.y, vx: B.drag.vx, hy: B.drag.hy, text: `x = ${fmt(o.x, 2)} m · y = ${fmt(o.y, 2)} m` });
+  }
+
   // Maniglie di ridimensionamento dell'oggetto selezionato (solo a simulazione ferma).
   if (!ui.api?.running && B.tool === 'select') for (const h of resizeHandles(st)) P.sizeHandle(h.x, h.y, B.resizing === h.id);
 
@@ -1095,7 +1122,7 @@ const PRIMARY = { block: ['m', 'w', 'h', 'angle', 'q'], ball: ['m', 'r', 'q'] };
 
 function buildPanel(body, api) {
   body.innerHTML = '';
-  api.setRail(TOOL_GROUPS.map(([title, items]) => ({ title, items })), B.tool, t => setTool(B.tool === t && t !== 'select' ? 'select' : t));
+  api.setRail(TOOL_GROUPS.map(([title, items]) => ({ title, items })), B.tool, (t, force) => setTool(!force && B.tool === t && t !== 'select' ? 'select' : t));
   if (B.tool !== 'select') body.appendChild(el('div', 'hint', hint()));
 
   const spec = B.spec, item = selected(spec);
@@ -1286,6 +1313,42 @@ export default {
       B.spec = !saved || JSON.stringify(saved) === JSON.stringify(first) ? newSpec() : saved;
     }
     B.tool = 'select'; B.pending = null;
+    // Annulla / ripeti: ripristina la scena e ricostruisce il mondo fisico.
+    B.hist ??= new SceneHistory(() => B.spec, sc => {
+      B.spec = sc; B.sel = null; B.pending = null; B.tool = 'select';
+      store.set('builder.scene', sc);
+      B.api.stopSweep(); B.api.reset(); B.api.rebuildPanel(); B.api.refresh();
+    }, () => B.api.recordChange());
+  },
+  get history() { return B.hist; },
+
+  // Azioni rapide sull'oggetto selezionato, in una barretta sopra di esso.
+  selectionBar(api) {
+    if (B.tool !== 'select' || B.drag) return null;
+    const spec = B.spec, item = selected(spec);
+    if (!item) return null;
+    const st = api.view(), acts = [];
+    let x, y;
+    if (spec.objects.includes(item)) {
+      const T = xf(st, item.id) ?? item;
+      x = T.x;
+      y = T.y + (item.type === 'block' ? item.h / 2 : item.type === 'ball' ? item.r : item.type === 'charge' ? CHARGE_R : item.type === 'pulley' ? item.r : item.type === 'incline' ? item.L * Math.sin(item.alpha * deg) : 0.1);
+      if (item.type === 'incline') x = item.x + item.L * Math.cos(item.alpha * deg) / 2;
+      acts.push({ label: 'Duplica', run: () => duplicate(item) });
+      if (DYNAMIC.has(item.type)) {
+        acts.push({ label: '+ Forza', run: () => { const l = addLink(spec, { type: 'force', o: item.id, F: 10, angle: 0 }); finishEdit(l.id); } });
+        acts.push({ label: 'Molla', run: () => startLink('spring', item) });
+        acts.push({ label: 'Fune', run: () => startLink('rope', item) });
+      }
+      if (item.q || item.type === 'charge') acts.push({ label: '± Segno', run: () => { item.q = -item.q; save(); api.reset(); api.rebuildPanel(); } });
+    } else {
+      const segs = linkSegs(st, item);
+      if (!segs.length) return null;
+      const [[ax, ay], [bx, by]] = segs[0];
+      x = (ax + bx) / 2; y = Math.max(ay, by) + 0.1;
+    }
+    acts.push({ label: 'Elimina', danger: true, run: deleteSelected });
+    return { key: item.id, x, y, actions: acts };
   },
   unmount() { B.pending = null; B.tool = 'select'; },
 
@@ -1458,6 +1521,10 @@ export default {
 <ul>
   <li><b>Aggiungere</b>: scegli un oggetto nella barra a sinistra e tocca la scena. Un blocco vicino a un piano ci si appoggia da solo, allineato alla pendenza.</li>
   <li><b>Collegare</b>: con <i>Molla</i> o <i>Fune</i> tocca i due estremi (un corpo, un punto fisso, una superficie o uno spazio vuoto). Con <i>Fune + carrucola</i> tocca la carrucola e poi i due corpi.</li>
+  <li><b>Trascinare dalla barra</b>: puoi anche trascinare un oggetto dalla barra a sinistra e lasciarlo dove vuoi sulla scena.</li>
+  <li><b>Allineare</b>: mentre sposti un oggetto vedi le sue coordinate; quando è allineato a un altro oggetto (o all'origine) compare una linea guida e l'oggetto si aggancia.</li>
+  <li><b>Azioni rapide</b>: sopra l'oggetto selezionato compare una barretta con Duplica, Elimina, + Forza, Molla, Fune e ± Segno per le cariche.</li>
+  <li><b>Annulla e ripeti</b>: ↶ e ↷ in alto (o ⌘Z e ⇧⌘Z; su PC Ctrl+Z e Ctrl+Y) annullano e ripetono sia le modifiche alla scena sia gli appunti.</li>
   <li><b>Modificare</b>: tocca un oggetto per selezionarlo; i suoi parametri compaiono nel pannello. Tocca un valore per scriverlo esattamente, oppure ▸ per animarlo.</li>
   <li><b>Interagire</b>: a simulazione ferma trascini gli oggetti; mentre gira puoi tirare i corpi con il dito.</li>
   <li><b>Moviola</b>: con la barra in basso torni a qualsiasi istante. Premendo ▶ la simulazione riparte da lì.</li>
