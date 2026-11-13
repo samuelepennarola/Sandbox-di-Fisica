@@ -242,7 +242,10 @@ function loadExperiment(id) {
   exp.mount?.(api);
   // La Lavagna non ha simulazione: niente comandi di play, moviola, grafici e formule.
   document.body.classList.toggle('no-sim', !!exp.noSim);
-  for (const p of [graphPanel, formulaPanel]) exp.noSim ? p.hide() : p.show();
+  // Un esperimento senza tempo può comunque tenere alcuni pannelli (exp.keepPanels).
+  for (const [p, key] of [[graphPanel, 'graphs'], [formulaPanel, 'formulas']]) {
+    exp.noSim && !exp.keepPanels?.includes(key) ? p.hide() : p.show();
+  }
   resetSim();
   buildParams(); buildGraphTabs(); buildDrawer(); renderTheory();
   fitView();
