@@ -4,7 +4,7 @@ import { icons } from '../core/icons.js';
 import { store } from '../core/store.js';
 import { el } from '../core/ui.js';
 import { crate, ball as ballShape } from '../core/shapes.js';
-import { K, MU as UC, pointField, traceLine, drawFieldLines, chargeSphere, chargeBadge } from '../core/electric.js';
+import { K, MU as UC, pointField, traceLine, drawFieldLines, drawFieldGrid, chargeSphere, chargeBadge } from '../core/electric.js';
 import { slab, spring as springShape, rope as ropeShape, pulley as pulleyShape, anchorPlate, trail, dust, BODY_COLORS } from '../core/look.js';
 
 // Costruttore libero: scena composta dall'utente, simulata con Planck.js (Box2D).
@@ -100,7 +100,7 @@ const B = { spec: null, sel: null, tool: 'select', pending: null, hover: null, a
 /* ---------------- Spec ---------------- */
 
 function newSpec() {
-  return { g: 9.81, muFloor: 0.3, E: 0, Eangle: 0, show: { fbd: true, all: false, vel: false, trail: false, field: true }, objects: [], links: [], next: 1 };
+  return { g: 9.81, muFloor: 0.3, E: 0, Eangle: 0, show: { fbd: true, all: false, vel: false, trail: false, field: true, Evec: false, Fe: true, dist: true }, objects: [], links: [], next: 1 };
 }
 function addObj(spec, o) { o.id = 'o' + spec.next++; spec.objects.push(o); return o; }
 function addLink(spec, l) { l.id = 'l' + spec.next++; spec.links.push(l); return l; }
@@ -336,6 +336,62 @@ function electricForces(st) {
     out[c.id] = [Fx, Fy];
   }
   return out;
+}
+
+// Forza elettrica su una carica (anche fissa), voce per voce: da ogni altra carica e dal campo uniforme.
+function forceDetail(st, id, list = chargesOf(st)) {
+  const c = list.find(o => o.id === id);
+  if (!c) return null;
+  const rows = [];
+  for (const o of list) {
+    if (o === c) continue;
+    let dx = c.x - o.x, dy = c.y - o.y, r = Math.hypot(dx, dy);
+    const rmin = (c.r + o.r) * 0.8, rr = Math.max(r, rmin, 1e-9);
+    const f = K * c.q * o.q / (rr * rr * (r || 1));
+    rows.push({ from: o.id, r, F: [f * dx, f * dy] });
+  }
+  const [Ux, Uy] = uniformE(st.spec);
+  if (Ux || Uy) rows.push({ from: 'E', F: [c.q * Ux, c.q * Uy] });
+  const R = rows.reduce((a, f) => [a[0] + f.F[0], a[1] + f.F[1]], [0, 0]);
+  return { c, rows, R };
+}
+
+// Frecce delle forze elettriche su tutte le cariche (in scala tra loro); per la carica selezionata
+// anche i singoli contributi, tratteggiati.
+function drawElectricForces(P, st, sel, skip) {
+  const list = chargesOf(st);
+  if (!list.length) return;
+  const data = list.map(c => forceDetail(st, c.id, list)).filter(d => d.rows.length);
+  let maxF = 0, dmin = Infinity;
+  for (const d of data) {
+    maxF = Math.max(maxF, Math.hypot(...d.R));
+    if (d.c.id === sel) for (const f of d.rows) maxF = Math.max(maxF, Math.hypot(...f.F));
+  }
+  for (const a of list) for (const b of list) if (a !== b) dmin = Math.min(dmin, Math.hypot(a.x - b.x, a.y - b.y));
+  if (maxF <= 0) return;
+  const kf = clamp(0.6 * (Number.isFinite(dmin) ? dmin : 2), 0.4, 2) / maxF;
+  const name = id => id === 'E' ? 'E' : nameOf(st.spec, objOf(st.spec, id));
+  for (const d of data) {
+    const { c } = d;
+    if (skip.has(c.id)) continue;
+    if (c.id === sel) for (const f of d.rows) {
+      P.arrow(c.x, c.y, c.x + kf * f.F[0], c.y + kf * f.F[1], { color: 'acc', width: 2.2, dash: [5, 4], alpha: 0.75, label: f.from === 'E' ? 'qE' : 'F←' + shortName(name(f.from)) });
+    }
+    P.arrow(c.x, c.y, c.x + kf * d.R[0], c.y + kf * d.R[1], { color: 'acc', width: 3.5, label: 'Fe' });
+  }
+}
+const shortName = n => n.replace('Carica fissa', 'carica').replace('Sfera', 'sfera').replace('Blocco', 'blocco');
+
+// Distanze tra le cariche: segmento tratteggiato e valore di r a metà.
+function drawDistances(P, st) {
+  const list = chargesOf(st);
+  if (list.length > 7) return;
+  for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+    const a = list[i], b = list[j], r = Math.hypot(a.x - b.x, a.y - b.y);
+    P.line([[a.x, a.y], [b.x, b.y]], { color: 'muted', width: 1.4, dash: [5, 5] });
+    const [ma, mb] = P.S((a.x + b.x) / 2, (a.y + b.y) / 2), ang = Math.atan2(b.y - a.y, b.x - a.x);
+    P.textS(ma - Math.sin(ang) * 12, mb - Math.cos(ang) * 12, `r = ${fmt(r, 2)} m`, { size: 12, align: 'center', color: 'muted' });
+  }
 }
 
 // Energia potenziale elettrica: coppie di cariche (k q₁q₂/r) più il campo uniforme (−q E·r).
@@ -611,7 +667,9 @@ function moveGesture(o, wx0, wy0) {
     move: ({ wx, wy }) => {
       if (!moved && Math.hypot(wx - wx0, wy - wy0) * B.api.cam.scale < 5) return;
       moved = true;
-      o.x = ox + wx - wx0; o.y = oy + wy - wy0;
+      // Le posizioni scattano su una griglia (5 cm per gli oggetti fissi, 1 cm per i corpi, che poi si appoggiano).
+      const g = DYNAMIC.has(o.type) ? 0.01 : 0.05;
+      o.x = Math.round((ox + wx - wx0) / g) * g; o.y = Math.round((oy + wy - wy0) / g) * g;
       if (o.type === 'incline') o.y = Math.max(0, o.y);
       if (DYNAMIC.has(o.type)) snapBody(B.spec, o);
       B.api.reset();
@@ -765,6 +823,11 @@ function draw(P, st, ui = {}) {
     const { x0, y0, x1, y1 } = P.cam.bounds(), m = 0.2 * (x1 - x0);
     drawFieldLines(P, fieldLines(st, [x0 - m, y0 - m, x1 + m, y1 + m]), { alpha: 0.35 });
   }
+  if (show.Evec) {
+    const list = chargesOf(st);
+    if (list.length || spec.E) drawFieldGrid(P, (x, y) => fieldAt(st, x, y, list), (x, y) => y < 0 || list.some(c => Math.hypot(x - c.x, y - c.y) < c.r * 1.6));
+  }
+  if (show.dist) drawDistances(P, st);
 
   for (const o of spec.objects) {
     if (o.type === 'incline') {
@@ -844,6 +907,10 @@ function draw(P, st, ui = {}) {
     if (T) P.arrow(T.x, T.y, T.x + kf * l.F * Math.cos(l.angle * deg), T.y + kf * l.F * Math.sin(l.angle * deg), { color: 'applied', width: sel === l.id ? 5 : 3.5, label: 'F', dash: [7, 4] });
   }
 
+  // I corpi con il diagramma di corpo libero mostrano la forza elettrica lì, nella scala delle altre forze.
+  const fbdIds = !show.fbd ? [] : show.all ? spec.objects.filter(o => DYNAMIC.has(o.type)).map(o => o.id) : DYNAMIC.has(objOf(spec, sel)?.type) ? [sel] : [];
+  if (show.Fe ?? true) drawElectricForces(P, st, sel, new Set(fbdIds));
+
   if (show.vel) for (const o of spec.objects) if (DYNAMIC.has(o.type)) {
     const T = xf(st, o.id), [vx, vy] = velOf(st, o.id);
     P.arrow(T.x, T.y, T.x + KV * vx, T.y + KV * vy, { color: 'vel', label: 'v' });
@@ -894,6 +961,22 @@ function kv(rows) {
   return `<table class="ftable">${rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('')}</table>`;
 }
 
+// Forze elettriche sulla carica selezionata: Coulomb con distanza, angolo e componenti, poi la somma.
+function electricFormulas(st, item) {
+  const d = forceDetail(st, item.id);
+  if (!d || !d.rows.length) return [];
+  const out = [{ h: 'Forze elettriche (Coulomb)' }];
+  const n = v => fmt(v, Math.abs(v) < 0.1 ? 4 : 3), ang = F => fmt(Math.atan2(F[1], F[0]) / deg, 0) + '°';
+  for (const f of d.rows) {
+    if (f.from === 'E') { out.push({ tex: `F = q\\,E = ${n(Math.hypot(...f.F)).replace(',', '{,}')}\\ \\mathrm{N}` }); continue; }
+    const o = objOf(st.spec, f.from);
+    out.push({ tex: `F_{\\text{${shortName(nameOf(st.spec, o))}}} = k\\dfrac{|q\\,q'|}{r^2} = ${n(Math.hypot(...f.F)).replace(',', '{,}')}\\ \\mathrm{N}\\quad (r = ${fmt(f.r, 2).replace(',', '{,}')}\\ \\mathrm{m},\\ \\text{${item.q * o.q > 0 ? 'repulsiva' : 'attrattiva'}})` });
+  }
+  const rows = d.rows.map(f => `<tr><td>${f.from === 'E' ? 'campo E' : 'da ' + shortName(nameOf(st.spec, objOf(st.spec, f.from)))}</td><td>${n(Math.hypot(...f.F))}</td><td>${ang(f.F)}</td><td>${n(f.F[0])}</td><td>${n(f.F[1])}</td></tr>`).join('');
+  out.push({ html: `<table class="ftable"><tr><td></td><td>F (N)</td><td>θ</td><td>Fx (N)</td><td>Fy (N)</td></tr>${rows}<tr class="sum"><td>Risultante</td><td>${n(Math.hypot(...d.R))}</td><td>${ang(d.R)}</td><td>${n(d.R[0])}</td><td>${n(d.R[1])}</td></tr></table>` });
+  return out;
+}
+
 function formulas(st) {
   const spec = st.spec, item = selected(spec), out = [];
   if (item && DYNAMIC.has(item.type)) {
@@ -923,9 +1006,8 @@ function formulas(st) {
     const T = st.tensions?.[item.id] ?? 0;
     out.push({ html: kv([['Tensione T', `${n2(T)} N`], ...(item.L ? [['Lunghezza', `${n2(item.L)} m`]] : []), ['Stato', T > 1e-3 ? 'tesa' : 'lenta']]) });
   } else if (item?.type === 'charge') {
-    out.push({ h: nameOf(spec, item) });
-    out.push({ tex: `q = ${fmt(item.q, 1).replace(',', '{,}')}\\ \\mu\\mathrm{C}` });
-    out.push({ html: '<div class="hint">Una carica fissa non si muove: agisce sui corpi carichi con la forza di Coulomb F = k·|q₁q₂|/r².</div>' });
+    out.push({ h: `${nameOf(spec, item)} · q = ${fmt(item.q, 1)} µC` });
+    out.push({ html: '<div class="hint">Una carica fissa non si muove, ma subisce anch\'essa le forze delle altre cariche (terza legge).</div>' });
   } else if (item?.type === 'force') {
     out.push({ h: nameOf(spec, item) });
     out.push({ html: kv([['Fx', `${n2(item.F * Math.cos(item.angle * deg))} N`], ['Fy', `${n2(item.F * Math.sin(item.angle * deg))} N`]]) });
@@ -933,6 +1015,7 @@ function formulas(st) {
     out.push({ h: 'Suggerimento' });
     out.push({ html: '<div class="hint">Seleziona un corpo per vedere il suo diagramma di corpo libero e verificare che ΣF = m·a.</div>' });
   }
+  if (item?.q) out.push(...electricFormulas(st, item));
   const E = st.energy;
   if (E) {
     out.push({ h: 'Energia del sistema' });
@@ -995,6 +1078,13 @@ function buildPanel(body, api) {
         save(); api.reset();
       }, `${item.id}.${def.key}`));
     }
+    if ('x' in item && item.type !== 'incline') {
+      body.appendChild(el('div', 'sub', 'Posizione'));
+      for (const k of ['x', 'y']) {
+        body.appendChild(api.control({ key: k, label: `Posizione ${k}`, pinLabel: `${nameOf(spec, item)} · ${k}`, unit: 'm', min: k === 'x' ? -20 : 0, max: 20, step: 0.01, hardMin: -1e3, hardMax: 1e3 },
+          () => item[k], v => { item[k] = v; save(); api.reset(); }, `${item.id}.${k}`));
+      }
+    }
     const row = el('div', 'btn-row');
     const del = el('button', 'btn danger', 'Elimina');
     del.onclick = deleteSelected;
@@ -1015,7 +1105,9 @@ function buildPanel(body, api) {
   body.appendChild(el('div', 'sub', 'Elettromagnetismo'));
   body.appendChild(api.control({ key: 'E', label: 'Campo elettrico uniforme E', unit: 'kN/C', min: 0, max: 2000, step: 5 }, () => spec.E ?? 0, v => { spec.E = v; save(); api.reset(); }, 'scene.E'));
   body.appendChild(api.control({ key: 'Eangle', label: 'Direzione del campo', unit: '°', min: -180, max: 180, step: 1 }, () => spec.Eangle ?? 0, v => { spec.Eangle = v; save(); api.reset(); }, 'scene.Ea'));
-  body.appendChild(api.control({ key: 'field', type: 'toggle', label: 'Linee di campo elettrico' }, () => spec.show.field ?? true, v => { spec.show.field = v; save(); api.refresh(); }, 'show.field'));
+  for (const [k, label, def] of [['field', 'Linee di campo elettrico', true], ['Evec', 'Vettori del campo E', false], ['Fe', 'Forze elettriche sulle cariche', true], ['dist', 'Distanze tra le cariche', true]]) {
+    body.appendChild(api.control({ key: k, type: 'toggle', label }, () => spec.show[k] ?? def, v => { spec.show[k] = v; save(); api.refresh(); }, 'show.' + k));
+  }
   body.appendChild(el('div', 'hint', 'Dai una carica q a blocchi e sfere selezionandoli, oppure aggiungi cariche fisse.'));
   body.appendChild(el('div', 'sub', 'Esempi'));
   const chips = el('div', 'chips');
@@ -1339,6 +1431,8 @@ $$\\sum \\vec F = m\\,\\vec a$$
   <li>Due cariche si attraggono o si respingono con la <b>legge di Coulomb</b>: $F = k\\,\\dfrac{|q_1 q_2|}{r^2}$.</li>
   <li>Nella sezione Elettromagnetismo della scena puoi accendere un <b>campo elettrico uniforme</b> $\\vec E$ (come tra le armature di un condensatore): su ogni corpo carico agisce $\\vec F = q\\,\\vec E$.</li>
   <li>Nel diagramma di corpo libero la forza elettrica compare in viola come $F_e$.</li>
+  <li>Nella sezione Elettromagnetismo puoi mostrare le <b>forze elettriche</b> su tutte le cariche (anche quelle fisse), i <b>vettori del campo</b> e le <b>distanze</b> tra le cariche. Selezionando una carica, il pannello Formule riporta ogni forza di Coulomb con distanza, angolo e componenti.</li>
+  <li>Ogni oggetto selezionato ha la sua <b>posizione x, y</b>, che puoi scrivere esattamente; trascinando, gli oggetti scattano su una griglia di 5 cm.</li>
 </ul>
 <p>Esempi: nei <i>Pendoli carichi</i> all'equilibrio $\\tan\\theta = \\dfrac{F_e}{mg}$; nel <i>Pendolo in un campo uniforme</i> $\\tan\\alpha = \\dfrac{qE}{mg}$ (con i valori dell'esempio $\\alpha \\approx 26{,}6^\\circ$); nell'<i>Orbita</i> la forza di Coulomb fa da forza centripeta: $k\\dfrac{Q|q|}{r^2} = m\\dfrac{v^2}{r}$.</p>
 

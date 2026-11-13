@@ -92,3 +92,21 @@ function sign(ctx, a, b, h, w, positive) {
   if (positive) { ctx.moveTo(a, b - h); ctx.lineTo(a, b + h); }
   ctx.stroke();
 }
+
+// Vettori del campo su una griglia di schermo: lunghezza e opacità crescono con |E| in scala compressa
+// (il campo varia di ordini di grandezza). isNear(x, y) esclude i punti troppo vicini alle sorgenti.
+export function drawFieldGrid(P, fieldAt, isNear, sp = 54) {
+  const { w, h } = P.cam, pts = [];
+  for (let sy = sp / 2; sy < h; sy += sp) for (let sx = sp / 2; sx < w; sx += sp) {
+    const [x, y] = P.cam.toWorld(sx, sy);
+    if (isNear(x, y)) continue;
+    const [ex, ey] = fieldAt(x, y), m = Math.hypot(ex, ey);
+    if (m > 0) pts.push([x, y, ex / m, ey / m, m]);
+  }
+  if (!pts.length) return;
+  const mags = pts.map(p => p[4]).sort((a, b) => a - b), ref = mags[Math.floor(mags.length * 0.8)] || 1;
+  for (const [x, y, ux, uy, m] of pts) {
+    const k = Math.min(1, (m / ref) ** 0.5), len = sp * 0.75 * Math.max(0.25, k) / P.cam.scale;
+    P.arrow(x - ux * len / 2, y - uy * len / 2, x + ux * len / 2, y + uy * len / 2, { color: 'acc', width: 2, head: 7, alpha: 0.3 + 0.7 * k });
+  }
+}

@@ -3,7 +3,7 @@ import { icons } from '../core/icons.js';
 import { store } from '../core/store.js';
 import { el } from '../core/ui.js';
 import { drawGrid } from '../core/render.js';
-import { K, MU, pointField, drawFieldLines, chargeSphere } from '../core/electric.js';
+import { K, MU, pointField, drawFieldLines, drawFieldGrid, chargeSphere } from '../core/electric.js';
 
 // Cariche e campo elettrico (elettrostatica, livello liceo).
 // Sorgenti: cariche puntiformi (Coulomb in 3D), barre cariche uniformi (segmenti nel piano),
@@ -249,25 +249,8 @@ function drawBar(P, s, selected) {
   P.textS((a1 + a2) / 2 - uy * 20, (b1 + b2) / 2 + ux * 20, `${sym} = ${fmt(value, 1)} ${unit}`, { size: 12, align: 'center' });
 }
 
-// Vettori del campo su una griglia: lunghezza e opacità crescono con |E| (scala compressa: il campo varia di ordini di grandezza).
-function drawFieldGrid(P) {
-  const sp = 54, { w, h } = P.cam, pts = [];
-  for (let sy = sp / 2; sy < h; sy += sp) for (let sx = sp / 2; sx < w; sx += sp) {
-    const [x, y] = P.cam.toWorld(sx, sy);
-    let near = false;
-    for (const s of B.spec.sources) {
-      if (s.type === 'point' ? Math.hypot(x - s.x, y - s.y) < radius(s.q) * 1.6 : segDist(x, y, ...ends(s)) < 0.02) { near = true; break; }
-    }
-    if (near) continue;
-    const [ex, ey] = fieldAt(x, y), m = Math.hypot(ex, ey);
-    if (m > 0) pts.push([x, y, ex / m, ey / m, m]);
-  }
-  if (!pts.length) return;
-  const mags = pts.map(p => p[4]).sort((a, b) => a - b), ref = mags[Math.floor(mags.length * 0.8)] || 1;
-  for (const [x, y, ux, uy, m] of pts) {
-    const k = Math.min(1, (m / ref) ** 0.5), len = sp * 0.75 * Math.max(0.25, k) / P.cam.scale;
-    P.arrow(x - ux * len / 2, y - uy * len / 2, x + ux * len / 2, y + uy * len / 2, { color: 'acc', width: 2, head: 7, alpha: 0.3 + 0.7 * k });
-  }
+function drawFieldVectors(P) {
+  drawFieldGrid(P, fieldAt, (x, y) => B.spec.sources.some(s => s.type === 'point' ? Math.hypot(x - s.x, y - s.y) < radius(s.q) * 1.6 : segDist(x, y, ...ends(s)) < 0.02));
 }
 
 function drawForces(P) {
@@ -424,7 +407,7 @@ export default {
   draw(P) {
     const show = B.spec.show;
     if (show.lines) drawFieldLines(P, fieldLines());
-    if (show.E) drawFieldGrid(P);
+    if (show.E) drawFieldVectors(P);
     for (const s of B.spec.sources) if (s.type !== 'point') drawBar(P, s, s.id === B.sel);
     drawPolar(P);
     if (show.F) drawForces(P);
