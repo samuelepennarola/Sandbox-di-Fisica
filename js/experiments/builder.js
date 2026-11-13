@@ -359,14 +359,14 @@ function forceDetail(st, id, list = chargesOf(st)) {
 
 // Frecce delle forze elettriche su tutte le cariche (in scala tra loro); per la carica selezionata
 // anche i singoli contributi, tratteggiati.
-function drawElectricForces(P, st, sel, skip) {
+function drawElectricForces(P, st, sel, skip, all = false) {
   const list = chargesOf(st);
   if (!list.length) return;
   const data = list.map(c => forceDetail(st, c.id, list)).filter(d => d.rows.length);
   let maxF = 0, dmin = Infinity;
   for (const d of data) {
     maxF = Math.max(maxF, Math.hypot(...d.R));
-    if (d.c.id === sel) for (const f of d.rows) maxF = Math.max(maxF, Math.hypot(...f.F));
+    if (all || d.c.id === sel) for (const f of d.rows) maxF = Math.max(maxF, Math.hypot(...f.F));
   }
   for (const a of list) for (const b of list) if (a !== b) dmin = Math.min(dmin, Math.hypot(a.x - b.x, a.y - b.y));
   if (maxF <= 0) return;
@@ -376,12 +376,43 @@ function drawElectricForces(P, st, sel, skip) {
     const { c } = d;
     if (skip.has(c.id)) continue;
     // Con un solo contributo la freccia tratteggiata coinciderebbe con la risultante.
-    if (c.id === sel && d.rows.length > 1) for (const f of d.rows) {
-      P.arrow(c.x, c.y, c.x + kf * f.F[0], c.y + kf * f.F[1], { color: 'acc', width: 2.2, dash: [5, 4], alpha: 0.75, label: f.from === 'E' ? 'qE' : 'F←' + shortName(name(f.from)) });
+    if ((all || c.id === sel) && d.rows.length > 1) for (const f of d.rows) {
+      // F₁₂ = forza esercitata da q₂ su q₁ (notazione dei libri di testo).
+      P.arrow(c.x, c.y, c.x + kf * f.F[0], c.y + kf * f.F[1], { color: 'acc', width: 2.2, dash: [5, 4], alpha: 0.75, label: f.from === 'E' ? 'qE' : 'F' + subN(chargeNo(st.spec, c.id)) + subN(chargeNo(st.spec, f.from)) });
     }
-    P.arrow(c.x, c.y, c.x + kf * d.R[0], c.y + kf * d.R[1], { color: 'acc', width: 3.5, label: 'Fe' });
+    P.arrow(c.x, c.y, c.x + kf * d.R[0], c.y + kf * d.R[1], { color: 'acc', width: 3.5, label: 'F' + subN(chargeNo(st.spec, c.id)) });
+    forceAngle(P, c.x, c.y, d.R);
   }
 }
+
+// Angolo di una forza rispetto all'asse x: riferimento orizzontale tratteggiato, arco e valore in gradi.
+function forceAngle(P, x, y, F) {
+  if (Math.hypot(...F) < 1e-12) return;
+  const th = Math.atan2(F[1], F[0]), [a, b] = P.S(x, y), R = 30;
+  const ctx = P.ctx;
+  ctx.save();
+  ctx.strokeStyle = P.c.muted; ctx.lineWidth = 1.2; ctx.setLineDash([3, 4]);
+  ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(a + R + 16, b); ctx.stroke();
+  ctx.restore();
+  P.arc(x, y, R, Math.min(0, th), Math.max(0, th), { color: 'acc', width: 1.6, label: `${fmt(th / deg, 0)}°`, labelR: R + 15 });
+}
+
+// Con tre cariche: angoli interni del triangolo ai vertici.
+function triangleAngles(P, list) {
+  if (list.length !== 3) return;
+  for (let i = 0; i < 3; i++) {
+    const A = list[i], Bv = list[(i + 1) % 3], C = list[(i + 2) % 3];
+    let a0 = Math.atan2(Bv.y - A.y, Bv.x - A.x), d = Math.atan2(C.y - A.y, C.x - A.x) - a0;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d <= -Math.PI) d += 2 * Math.PI;
+    if (d < 0) { a0 += d; d = -d; }
+    P.arc(A.x, A.y, 46, a0, a0 + d, { color: 'muted', width: 1.4, label: `${fmt(d / deg, 0)}°`, labelR: 62 });
+  }
+}
+// Numero di una carica (q₁, q₂…) nell'ordine di creazione, contando corpi carichi e cariche fisse.
+const SUBS = '₀₁₂₃₄₅₆₇₈₉';
+const subN = n => String(n).split('').map(d => SUBS[+d]).join('');
+function chargeNo(spec, id) { return spec.objects.filter(o => o.q && (DYNAMIC.has(o.type) || o.type === 'charge')).findIndex(o => o.id === id) + 1; }
 const shortName = n => n.replace('Carica fissa', 'carica').replace('Sfera', 'sfera').replace('Blocco', 'blocco');
 
 // Distanze tra le cariche: segmento tratteggiato e valore di r a metà.
@@ -394,6 +425,7 @@ function drawDistances(P, st) {
     const [ma, mb] = P.S((a.x + b.x) / 2, (a.y + b.y) / 2), ang = Math.atan2(b.y - a.y, b.x - a.x);
     P.textS(ma - Math.sin(ang) * 12, mb - Math.cos(ang) * 12, `r = ${fmt(r, 2)} m`, { size: 12, align: 'center', color: 'muted' });
   }
+  triangleAngles(P, list);
 }
 
 // Energia potenziale elettrica: coppie di cariche (k q₁q₂/r) più il campo uniforme (−q E·r).
@@ -866,7 +898,7 @@ function draw(P, st, ui = {}) {
     else if (o.type === 'charge') {
       const [a, b] = P.S(o.x, o.y), r = Math.max(10, CHARGE_R * P.cam.scale);
       chargeSphere(P, a, b, r, o.q >= 0, sel === o.id);
-      P.textS(a, b + r + 13, `${fmt(o.q, 1)} µC`, { size: 12, align: 'center' });
+      P.textS(a, b + r + 13, `q${subN(chargeNo(spec, o.id))} = ${fmt(o.q, 1)} µC`, { size: 12, align: 'center' });
     }
   }
 
@@ -893,7 +925,7 @@ function draw(P, st, ui = {}) {
       // Corpo carico: distintivo con il segno in alto a destra e valore della carica.
       const [cx, cy] = P.S(T.x, T.y), hw = (o.type === 'ball' ? o.r * Math.SQRT1_2 : o.w / 2) * P.cam.scale, hh = (o.type === 'ball' ? o.r * Math.SQRT1_2 : o.h / 2) * P.cam.scale;
       chargeBadge(P, cx + hw, cy - hh, o.q > 0);
-      P.textS(cx + hw + 13, cy - hh, `${fmt(o.q, 1)} µC`, { size: 11, weight: 700 });
+      P.textS(cx + hw + 13, cy - hh, `q${subN(chargeNo(spec, o.id))} = ${fmt(o.q, 1)} µC`, { size: 11, weight: 700 });
     }
 
     // Polvere dove il corpo striscia con attrito.
@@ -912,7 +944,7 @@ function draw(P, st, ui = {}) {
 
   // I corpi con il diagramma di corpo libero mostrano la forza elettrica lì, nella scala delle altre forze.
   const fbdIds = !show.fbd ? [] : show.all ? spec.objects.filter(o => DYNAMIC.has(o.type)).map(o => o.id) : DYNAMIC.has(objOf(spec, sel)?.type) ? [sel] : [];
-  if (show.Fe ?? true) drawElectricForces(P, st, sel, new Set(fbdIds));
+  if (show.Fe ?? true) drawElectricForces(P, st, sel, new Set(fbdIds), show.all);
 
   if (show.vel) for (const o of spec.objects) if (DYNAMIC.has(o.type)) {
     const T = xf(st, o.id), [vx, vy] = velOf(st, o.id);
@@ -973,9 +1005,10 @@ function electricFormulas(st, item) {
   for (const f of d.rows) {
     if (f.from === 'E') { out.push({ tex: `F = q\\,E = ${n(Math.hypot(...f.F)).replace(',', '{,}')}\\ \\mathrm{N}` }); continue; }
     const o = objOf(st.spec, f.from);
-    out.push({ tex: `F_{\\text{${shortName(nameOf(st.spec, o))}}} = k\\dfrac{|q\\,q'|}{r^2} = ${n(Math.hypot(...f.F)).replace(',', '{,}')}\\ \\mathrm{N}\\quad (r = ${fmt(f.r, 2).replace(',', '{,}')}\\ \\mathrm{m},\\ \\text{${item.q * o.q > 0 ? 'repulsiva' : 'attrattiva'}})` });
+    const i = chargeNo(st.spec, item.id), j = chargeNo(st.spec, o.id);
+    out.push({ tex: `F_{${i}${j}} = k\\dfrac{|q_{${i}}\\,q_{${j}}|}{r^2} = ${n(Math.hypot(...f.F)).replace(',', '{,}')}\\ \\mathrm{N}\\quad (r = ${fmt(f.r, 2).replace(',', '{,}')}\\ \\mathrm{m},\\ \\text{${item.q * o.q > 0 ? 'repulsiva' : 'attrattiva'}})` });
   }
-  const rows = d.rows.map(f => `<tr><td>${f.from === 'E' ? 'campo E' : 'da ' + shortName(nameOf(st.spec, objOf(st.spec, f.from)))}</td><td>${n(Math.hypot(...f.F))}</td><td>${ang(f.F)}</td><td>${n(f.F[0])}</td><td>${n(f.F[1])}</td></tr>`).join('');
+  const rows = d.rows.map(f => `<tr><td>${f.from === 'E' ? 'qE' : 'F' + subN(chargeNo(st.spec, item.id)) + subN(chargeNo(st.spec, f.from)) + ' (da q' + subN(chargeNo(st.spec, f.from)) + ')'}</td><td>${n(Math.hypot(...f.F))}</td><td>${ang(f.F)}</td><td>${n(f.F[0])}</td><td>${n(f.F[1])}</td></tr>`).join('');
   out.push({ html: `<table class="ftable"><tr><td></td><td>F (N)</td><td>θ</td><td>Fx (N)</td><td>Fy (N)</td></tr>${rows}<tr class="sum"><td>Risultante</td><td>${n(Math.hypot(...d.R))}</td><td>${ang(d.R)}</td><td>${n(d.R[0])}</td><td>${n(d.R[1])}</td></tr></table>` });
   return out;
 }
@@ -1101,7 +1134,7 @@ function buildPanel(body, api) {
   scene.appendChild(api.control({ key: 'g', label: 'Gravità g', unit: 'm/s²', min: 0, max: 25, step: 0.01 }, () => spec.g, v => { spec.g = v; save(); api.reset(); }, 'scene.g'));
   scene.appendChild(api.control({ key: 'muFloor', label: 'Attrito μ del suolo', unit: '', min: 0, max: 1.5, step: 0.01 }, () => spec.muFloor, v => { spec.muFloor = v; save(); api.reset(); }, 'scene.mu'));
   const show = api.section(body, 'Mostra', 'b.show', true);
-  for (const [k, label] of [['fbd', 'Diagramma di corpo libero'], ['all', '…su tutti i corpi'], ['vel', 'Vettori velocità'], ['trail', 'Scie']]) {
+  for (const [k, label] of [['fbd', 'Diagramma di corpo libero'], ['all', '…su tutti i corpi e le cariche'], ['vel', 'Vettori velocità'], ['trail', 'Scie']]) {
     show.appendChild(api.control({ key: k, type: 'toggle', label }, () => spec.show[k], v => { spec.show[k] = v; save(); api.refresh(); }, 'show.' + k));
   }
   const hasEM = spec.E || spec.objects.some(o => o.q);
@@ -1183,6 +1216,14 @@ const EXAMPLES = [
     const s = newSpec();
     const blk = addObj(s, { ...MAKE.block(-4, 0.25), w: 0.8, h: 0.5, m: 3 });
     addLink(s, { type: 'force', o: blk.id, F: 20, angle: 20 });
+    return s;
+  } },
+  { label: 'Tre cariche (triangolo equilatero)', make() {
+    // Tre cariche fisse uguali ai vertici di un triangolo equilatero di lato 2 m: ogni forza risultante
+    // è diretta lungo la bisettrice, verso l'esterno, e vale √3·kq²/a².
+    const s = newSpec(), a = 2, h = a * Math.sqrt(3) / 2;
+    s.g = 0; s.show.all = true; s.show.dist = true;
+    for (const [x, y] of [[-a / 2, 1.2], [a / 2, 1.2], [0, 1.2 + h]]) addObj(s, { ...MAKE.chargePos(x, y), q: 10 });
     return s;
   } },
   { label: 'Pendoli carichi', make() {
@@ -1304,12 +1345,16 @@ export default {
   },
 
   view() {
-    let x0 = -3, x1 = 3, y0 = -0.5, y1 = 4;
+    // Inquadra gli oggetti con un margine; la scena vuota mostra un'area di 6 m × 4,5 m.
+    if (!B.spec.objects.length) return { xmin: -3, xmax: 3, ymin: -0.5, ymax: 4 };
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
     for (const o of B.spec.objects) {
       const pts = o.type === 'incline' ? inclineVerts(o).map(([x, y]) => [x + o.x, y + o.y]) : [[o.x - (o.L ?? 0) / 2, o.y], [o.x + (o.L ?? 0) / 2, o.y]];
-      for (const [x, y] of pts) { x0 = Math.min(x0, x - 1); x1 = Math.max(x1, x + 1); y1 = Math.max(y1, y + 1.2); }
+      for (const [x, y] of pts) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
     }
-    return { xmin: x0, xmax: x1, ymin: y0, ymax: y1 };
+    x0 -= 1; x1 += 1; y1 += 1.2; y0 = Math.min(-0.4, y0 - 0.6);
+    const cx = (x0 + x1) / 2, w = Math.max(x1 - x0, 4);
+    return { xmin: cx - w / 2, xmax: cx + w / 2, ymin: y0, ymax: Math.max(y1, y0 + 3) };
   },
 
   draw(P, st, p, ui) { draw(P, st, ui); },

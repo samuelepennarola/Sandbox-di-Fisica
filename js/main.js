@@ -875,10 +875,17 @@ function endPointer(e) {
 canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', endPointer);
 
+// Rotella del mouse e trackpad (Mac e PC), come in GeoGebra o nelle mappe:
+// rotella o scorrimento a due dita = zoom attorno al puntatore; pinch del trackpad = zoom (arriva con ctrlKey);
+// Maiuscole + rotella = spostamento della vista.
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
-  if (e.ctrlKey || !e.deltaX) cam.zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)));
-  else cam.panBy(-e.deltaX, -e.deltaY);
+  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;   // righe o pagine (Firefox) → pixel
+  const dx = e.deltaX * unit, dy = e.deltaY * unit;
+  const [x, y] = pos(e);
+  if (e.shiftKey && !e.ctrlKey) { cam.panBy(-(dx || dy), 0); return; }
+  const d = Math.max(-120, Math.min(120, dy));
+  cam.zoomAt(x, y, Math.exp(-d * (e.ctrlKey ? 0.01 : 0.002)));
 }, { passive: false });
 
 // Pulsanti affidabili su iPad: Safari a volte non genera il "click" (per esempio se due tocchi sono
@@ -1078,6 +1085,9 @@ addEventListener('keydown', e => {
   else if (e.key === 'ArrowLeft') scrubTo((app.view ?? app.history.length - 1) - 1);
   else if (e.key === 'ArrowRight') stepFrame();
   else if (e.key === 'z' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); ink.undo(); }
+  else if (e.key === '+' || e.key === '=') cam.zoomAt(cam.w / 2, cam.h / 2, 1.25);
+  else if (e.key === '-') cam.zoomAt(cam.w / 2, cam.h / 2, 0.8);
+  else if (e.key === '0') fitView();
   else app.exp.onKey?.(e, api);
 });
 
