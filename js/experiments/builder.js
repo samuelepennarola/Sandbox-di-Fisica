@@ -1157,6 +1157,15 @@ function buildPanel(body, api) {
   }
 
   if (B.tool === 'select') body.appendChild(el('div', 'hint', 'Scegli un oggetto nella barra a sinistra e tocca la scena. Tocca un oggetto per modificarlo.'));
+  // Azioni sulla scena intera, sempre in vista. Svuotare si può annullare con ↶, quindi niente conferma.
+  const top = el('div', 'btn-row scene-actions');
+  const wipe = el('button', 'btn danger', 'Svuota la scena');
+  wipe.disabled = !spec.objects.length;
+  wipe.onclick = () => loadScene({ ...newSpec(), show: spec.show });
+  const fitB = el('button', 'btn', 'Inquadra');
+  fitB.onclick = () => api.fit();
+  top.append(wipe, fitB);
+  body.appendChild(top);
   const scene = api.section(body, 'Scena', 'b.scene', true);
   scene.appendChild(api.control({ key: 'g', label: 'Gravità g', unit: 'm/s²', min: 0, max: 25, step: 0.01 }, () => spec.g, v => { spec.g = v; save(); api.reset(); }, 'scene.g'));
   scene.appendChild(api.control({ key: 'muFloor', label: 'Attrito μ del suolo', unit: '', min: 0, max: 1.5, step: 0.01 }, () => spec.muFloor, v => { spec.muFloor = v; save(); api.reset(); }, 'scene.mu'));
@@ -1179,9 +1188,6 @@ function buildPanel(body, api) {
     b.onclick = () => loadScene(ex.make());
     chips.appendChild(b);
   }
-  const clear = el('button', '', 'Scena vuota');
-  clear.onclick = () => { if (!spec.objects.length || confirm('Svuotare la scena?')) loadScene(newSpec()); };
-  chips.appendChild(clear);
   exs.appendChild(chips);
 }
 

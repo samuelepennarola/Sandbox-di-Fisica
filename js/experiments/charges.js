@@ -529,6 +529,14 @@ export default {
     }
 
     if (B.tool === 'select') body.appendChild(el('div', 'hint', 'Aggiungi cariche dalla barra a sinistra; trascinale col dito o con la Pencil. Toccane una per vederne forze, valore e posizione.'));
+    const top = el('div', 'btn-row scene-actions');
+    const wipe = el('button', 'btn danger', 'Svuota la scena');
+    wipe.disabled = !B.spec.sources.length;
+    wipe.onclick = () => { B.spec = { ...newSpec(), show: B.spec.show }; B.sel = null; changed(); api.rebuildPanel(); };
+    const fitB = el('button', 'btn', 'Inquadra');
+    fitB.onclick = () => api.fit();
+    top.append(wipe, fitB);
+    body.appendChild(top);
     if (B.spec.sources.length) {
       const inScene = api.section(body, 'In scena', 'c.list', true);
       const list = el('div', 'chips');
@@ -551,9 +559,6 @@ export default {
       b.onclick = () => { B.spec = p.make(); B.sel = p.sel ?? null; changed(); api.fit(); api.rebuildPanel(); };
       chips.appendChild(b);
     }
-    const clear = el('button', '', 'Scena vuota');
-    clear.onclick = () => { B.spec = { ...newSpec(), show: B.spec.show }; B.sel = null; changed(); api.rebuildPanel(); };
-    chips.appendChild(clear);
     presets.appendChild(chips);
   },
 

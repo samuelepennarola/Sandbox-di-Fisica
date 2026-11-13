@@ -492,3 +492,17 @@ body.has-rail:not(.lesson) #pins { left: 88px; }
 }
 .rail-ghost svg { width: 26px; height: 26px; }
 .rail-ghost.over { transform: scale(1.12); opacity: 1; border-style: solid; }
+
+/* Più respiro nel pannello di destra */
+.scene-actions { margin: 10px 0 6px; }
+.scene-actions .btn { flex: 1; padding: 9px 12px; font-weight: 600; }
+.btn:disabled { opacity: .4; cursor: default; }
+#inspector .param { margin: 8px 0 14px; }
+#inspector .toggle { padding: 8px 0; }
+#inspector .hint { min-height: 0; margin: 6px 2px 4px; }
+#inspector .sel-title { font-size: 16px; margin: 6px 0 12px; }
+.sec { margin-top: 10px; }
+.sec-head { padding: 14px 0 8px; }
+.sec-body { padding-bottom: 12px; }
+#inspector .chips { gap: 8px; }
+#inspector .chips button { padding: 8px 12px; }
