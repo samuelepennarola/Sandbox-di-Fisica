@@ -51,6 +51,7 @@ export function paramControl(def, opts) {
       <span class="param-label">${def.label}</span>
       <span class="param-tools">
         <button class="param-value" title="Tocca per scrivere il valore"></button>
+        ${opts.pin ? `<button class="param-pin" title="Mostra il valore sulla scena">${icons.pin}</button>` : ''}
         ${opts.animate ? `<button class="param-anim" title="Anima il parametro">${icons.play}</button>` : ''}
       </span>
     </div>
@@ -58,6 +59,7 @@ export function paramControl(def, opts) {
   const range = row.querySelector('input[type=range]');
   const valBtn = row.querySelector('.param-value');
   const animBtn = row.querySelector('.param-anim');
+  const pinBtn = row.querySelector('.param-pin');
   const d = decimalsOf(def.step);
   const show = v => `${fmt(v, d)}${def.unit ? ' ' + def.unit : ''}`;
 
@@ -65,6 +67,7 @@ export function paramControl(def, opts) {
     const v = opts.get();
     range.value = v;
     if (!valBtn.querySelector('input')) valBtn.textContent = show(v);
+    pinBtn?.classList.toggle('on', !!opts.pin.isOn());
     if (animBtn) {
       const on = !!opts.isAnimating?.();
       animBtn.classList.toggle('on', on);
@@ -74,6 +77,7 @@ export function paramControl(def, opts) {
 
   range.oninput = () => { opts.onUser?.(); opts.set(parseFloat(range.value)); sync(); };
   animBtn && (animBtn.onclick = () => { opts.animate(); sync(); });
+  pinBtn && (pinBtn.onclick = () => { opts.pin.toggle(); sync(); });
 
   valBtn.onclick = () => {
     if (valBtn.querySelector('input')) return;

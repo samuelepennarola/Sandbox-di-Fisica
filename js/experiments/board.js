@@ -108,7 +108,7 @@ export default {
   // Zoom iniziale fisso (quadretti di circa 5 mm), centrato sul contenuto se c'è.
   fit(cam, api) {
     const b = contentBox(api);
-    if (b && (b.xmax - b.xmin) * START_SCALE > cam.w * 0.9) { cam.fit(b, { top: 90, right: 40, bottom: 40, left: 300 }); return; }
+    if (b && (b.xmax - b.xmin) * START_SCALE > cam.w * 0.9) { cam.fit(b); return; }
     cam.scale = START_SCALE;
     cam.cx = b ? (b.xmin + b.xmax) / 2 : 0;
     cam.cy = b ? (b.ymin + b.ymax) / 2 : 0;

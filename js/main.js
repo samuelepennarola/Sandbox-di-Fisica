@@ -2,6 +2,7 @@ import { Camera } from './core/camera.js';
 import { Painter, readColors, drawGrid } from './core/render.js';
 import { Ink } from './core/ink.js';
 import { Panel } from './core/panels.js';
+import { Inspector } from './core/inspector.js';
 import { drawPlot } from './core/plot.js';
 import { icons, applyIcons } from './core/icons.js';
 import { store } from './core/store.js';
@@ -21,6 +22,8 @@ const HIT_PX = 26;            // tolleranza per afferrare una maniglia
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
 const cam = new Camera();
+// Margini dell'inquadratura: barra in alto, ispettore a destra (se occupa spazio), moviola in basso.
+cam.padFn = () => ({ top: 76, right: 24 + (insp?.reserved ?? 0), bottom: document.body.classList.contains('no-sim') ? 24 : 72, left: 24 });
 const ink = new Ink();
 const lasso = new Lasso(ink);
 let colors = readColors();
@@ -43,21 +46,61 @@ const app = {
 
 /* ---------------- Pannelli ---------------- */
 
-const paramsPanel = new Panel({ id: 'params', title: 'Parametri', x: 12, y: 72, width: 268 });
-const graphPanel = new Panel({ id: 'graph', title: 'Grafici', x: innerWidth - 362, y: 72, width: 350 });
-const formulaPanel = new Panel({ id: 'formulas', title: 'Formule', x: innerWidth - 362, y: 372, width: 350 });
-const theoryPanel = new Panel({ id: 'theory', title: 'Teoria', x: Math.max(12, innerWidth / 2 - 300), y: 80, width: Math.min(600, innerWidth - 24), closable: true, hidden: true });
+// Ispettore a destra: controlli dell'esperimento in alto, schede Formule · Grafici · Teoria sotto.
+const insp = new Inspector();
+const graphBody = insp.pages.graphs, formulaBody = insp.pages.formulas, theoryBody = insp.pages.theory;
+graphBody.innerHTML = '<div class="tabs"></div><canvas class="plot"></canvas><div class="legend"></div>';
+const plotCanvas = graphBody.querySelector('.plot');
+formulaBody.innerHTML = '<div class="formulas"></div>';
+theoryBody.innerHTML = '<div class="theory"></div>';
+// Aprendo o chiudendo l'ispettore la scena scorre di metà della sua larghezza: resta centrata nello spazio libero.
+insp.onChange = (before, after) => cam.panBy((before - after) / 2, 0);
 
-graphPanel.body.innerHTML = '<div class="tabs"></div><canvas class="plot"></canvas><div class="legend"></div>';
-const plotCanvas = graphPanel.body.querySelector('.plot');
-formulaPanel.body.innerHTML = '<div class="formulas"></div>';
-theoryPanel.body.innerHTML = '<div class="theory"></div>';
-theoryPanel.el.querySelector('.panel-body').style.maxHeight = '72vh';
+/* ---------------- Valori fissati sulla scena ---------------- */
+// Ogni controllo numerico ha una puntina: il suo valore resta visibile in alto a sinistra,
+// anche in modalità Spiega quando i pannelli sono nascosti.
+const pinGetters = new Map();   // chiave → { get, def }
+const pinsBox = document.getElementById('pins');
+const pinKey = key => app.exp.id + ':' + key;
+function pinList() { return store.get('pins.' + app.exp.id, []); }
+function isPinned(key) { return pinList().some(p => p.key === key); }
+function togglePin(key, def) {
+  const list = pinList(), i = list.findIndex(p => p.key === key);
+  if (i >= 0) list.splice(i, 1);
+  else list.push({ key, label: def.pinLabel ?? def.label, unit: def.unit ?? '', step: def.step });
+  store.set('pins.' + app.exp.id, list);
+  buildPins(); syncParams();
+}
+function buildPins() {
+  const list = pinList().filter(p => pinGetters.has(pinKey(p.key)));
+  pinsBox.innerHTML = '';
+  pinsBox.classList.toggle('hidden', !list.length);
+  for (const p of list) {
+    const row = document.createElement('div');
+    row.className = 'pin';
+    row.dataset.key = p.key;
+    row.innerHTML = `<span class="pin-label"></span><strong class="pin-val"></strong><button class="pin-x" title="Togli dalla scena">${icons.close}</button>`;
+    row.querySelector('.pin-label').textContent = p.label;
+    row.querySelector('.pin-x').onclick = () => togglePin(p.key, p);
+    pinsBox.appendChild(row);
+  }
+  updatePins();
+}
+function updatePins() {
+  for (const row of pinsBox.children) {
+    const p = pinList().find(q => q.key === row.dataset.key), g = pinGetters.get(pinKey(row.dataset.key));
+    if (!p || !g) continue;
+    const d = Math.max(0, -Math.floor(Math.log10(p.step || 1) + 1e-9));
+    row.querySelector('.pin-val').textContent = `${fmt(g.get(), d)}${p.unit ? ' ' + p.unit : ''}`;
+  }
+}
 
 // Controllo di un parametro collegato al motore (valore digitabile + animazione).
 function control(def, get, set, key = def.key) {
+  if (!def.type) pinGetters.set(pinKey(key), { get, def });
   const c = paramControl(def, {
     get, set,
+    pin: def.type ? null : { isOn: () => isPinned(key), toggle: () => togglePin(key, def) },
     onUser: () => { if (app.sweep?.key === key) stopSweep(); },
     animate: def.type ? null : () => toggleSweep({ key, def, get, set }),
     isAnimating: () => app.sweep?.key === key,
@@ -68,11 +111,11 @@ function control(def, get, set, key = def.key) {
 
 function buildParams() {
   const { exp } = app;
-  const body = paramsPanel.body;
+  const body = insp.paramsBody;
   body.innerHTML = '';
   app.syncs = [];
-  paramsPanel.setTitle(exp.panelTitle ?? 'Parametri');
-  if (exp.buildPanel) { exp.buildPanel(body, api); return; }
+  insp.setTitle(exp.panelTitle ?? 'Parametri');
+  if (exp.buildPanel) { exp.buildPanel(body, api); buildPins(); return; }
 
   for (const def of exp.params) {
     body.appendChild(control(def, () => app.params[def.key], v => setParam(def, v)));
@@ -95,6 +138,7 @@ function buildParams() {
     chips.appendChild(reset);
     body.append(h, chips);
   }
+  buildPins();
 }
 
 function defaults(exp) { return Object.fromEntries((exp.params ?? []).map(p => [p.key, p.value])); }
@@ -116,7 +160,7 @@ function graphs() {
 function buildGraphTabs() {
   const list = graphs();
   if (app.graphIdx >= list.length) app.graphIdx = 0;
-  const tabs = graphPanel.body.querySelector('.tabs');
+  const tabs = graphBody.querySelector('.tabs');
   tabs.innerHTML = '';
   list.forEach((g, i) => {
     const b = document.createElement('button');
@@ -126,14 +170,14 @@ function buildGraphTabs() {
     tabs.appendChild(b);
   });
   const g = list[app.graphIdx];
-  graphPanel.body.querySelector('.legend').innerHTML = g
+  graphBody.querySelector('.legend').innerHTML = g
     ? g.series.map(s => `<span style="--lc:${colors[s.color] || s.color}">${s.label}</span>`).join('')
     : '';
 }
 
 function renderFormulas() {
   const out = app.exp.formulas(viewSim(), app.params);
-  const box = formulaPanel.body.firstChild;
+  const box = formulaBody.firstChild;
   if (typeof out === 'string') { box.innerHTML = out; return; }
   const k = window.katex;
   box.innerHTML = out.map(f => {
@@ -145,9 +189,8 @@ function renderFormulas() {
 }
 
 function renderTheory() {
-  const el = theoryPanel.body.firstChild;
+  const el = theoryBody.firstChild;
   el.innerHTML = app.exp.theory;
-  theoryPanel.setTitle('Teoria · ' + app.exp.title);
   window.renderMathInElement?.(el, {
     delimiters: [{ left: '$$', right: '$$', display: true }, { left: '$', right: '$', display: false }],
     throwOnError: false,
@@ -159,6 +202,11 @@ function renderTheory() {
 function buildDrawer() {
   const dr = $('drawer');
   dr.innerHTML = '<h1>Sandbox di Fisica</h1>';
+  const theme = document.createElement('button');
+  theme.className = 'drawer-theme';
+  theme.innerHTML = `${icons.theme}<span>Tema chiaro / scuro</span>`;
+  theme.onclick = toggleTheme;
+  dr.appendChild(theme);
   for (const a of AREAS) {
     const h = document.createElement('h2');
     h.textContent = a.title;
@@ -243,9 +291,7 @@ function loadExperiment(id) {
   // La Lavagna non ha simulazione: niente comandi di play, moviola, grafici e formule.
   document.body.classList.toggle('no-sim', !!exp.noSim);
   // Un esperimento senza tempo può comunque tenere alcuni pannelli (exp.keepPanels).
-  for (const [p, key] of [[graphPanel, 'graphs'], [formulaPanel, 'formulas']]) {
-    exp.noSim && !exp.keepPanels?.includes(key) ? p.hide() : p.show();
-  }
+  insp.setTabs([...['formulas', 'graphs'].filter(k => !exp.noSim || exp.keepPanels?.includes(k)), 'theory']);
   resetSim();
   buildParams(); buildGraphTabs(); buildDrawer(); renderTheory();
   fitView();
@@ -395,6 +441,7 @@ function resize() {
   canvas.width = Math.round(w * dpr);
   canvas.height = Math.round(h * dpr);
   cam.setViewport(w, h);
+  insp.sync();
   Panel.clampAll();
 }
 
@@ -449,7 +496,7 @@ function updateTimeline() {
   $('timeline').classList.toggle('past', app.view != null);
 }
 
-let lastTs = 0, lastFormulaTs = 0, lastViewShown = null;
+let lastTs = 0, lastFormulaTs = 0, lastPinTs = 0, lastViewShown = null;
 function frame(ts) {
   const dt = Math.min(0.05, (ts - lastTs) / 1000 || 0);
   lastTs = ts;
@@ -462,10 +509,11 @@ function frame(ts) {
   render();
   updateTimeline();
   const g = graphs()[app.graphIdx];
-  if (!graphPanel.collapsed && g) drawPlot(plotCanvas, app.samples, g, colors, app.view);
-  if (app.formulasDirty && ts - lastFormulaTs > 120 && !formulaPanel.collapsed) {
+  if (insp.showing('graphs') && g) drawPlot(plotCanvas, app.samples, g, colors, app.view);
+  if (app.formulasDirty && ts - lastFormulaTs > 120 && insp.showing('formulas')) {
     renderFormulas(); lastFormulaTs = ts; app.formulasDirty = false;
   }
+  if (ts - lastPinTs > 150 && pinsBox.children.length) { updatePins(); lastPinTs = ts; }
   requestAnimationFrame(frame);
 }
 
@@ -607,8 +655,14 @@ function onPointerDown(e) {
     if (touches.size > 2) return;
   }
 
-  const tool = inkTool(e);
   const [wx, wy] = cam.toWorld(x, y);
+  // Con lo strumento Mano la Pencil sposta gli oggetti su cui parte (cariche, corpi, maniglie);
+  // altrove, o con lo strumento Penna, scrive.
+  if (e.pointerType === 'pen' && app.tool === 'hand') {
+    const g = objectGesture(x, y, wx, wy, e.pointerId, true);
+    if (g) { gesture = g; return; }
+  }
+  const tool = inkTool(e);
   if (tool === 'pen') {
     ink.begin(wx, wy, pressureOf(e), app.penSizes[app.penType] / cam.scale, app.inkColor, app.penType);
     gesture = { type: 'ink', id: e.pointerId, pen: e.pointerType === 'pen' };
@@ -640,12 +694,23 @@ function onPointerDown(e) {
     return;
   }
 
-  const custom = app.exp.pointerDown?.({ wx, wy, sx: x, sy: y, api });
-  if (custom) {
+  const g = objectGesture(x, y, wx, wy, e.pointerId, false);
+  if (g) { gesture = g; return; }
+  // Un tocco su un oggetto ridimensionabile lo seleziona (compare la maniglia); altrove deseleziona.
+  app.sizeSel = hitResizable(x, y)?.key ?? null;
+  gesture = { type: 'pan', id: e.pointerId, lx: x, ly: y };
+}
+
+
+// Gesto su un oggetto della scena: quello dell'esperimento (pointerDown), una maniglia di ridimensionamento
+// o una maniglia dei parametri. Con la Pencil (pen = true) lo spazio vuoto non conta: lì si scrive.
+function objectGesture(x, y, wx, wy, id, pen) {
+  const custom = app.exp.pointerDown?.({ wx, wy, sx: x, sy: y, api, pen });
+  if (custom && !(pen && custom.pan)) {
     stopSweep();
-    gesture = { type: 'custom', id: e.pointerId, custom, lx: x, ly: y };
-    return;
+    return { type: 'custom', id, custom, lx: x, ly: y };
   }
+  if (custom) return null;
 
   const sel = selectedResizable();
   if (sel) {
@@ -653,8 +718,7 @@ function onPointerDown(e) {
     if (Math.hypot(hx - x, hy - y) < HIT_PX) {
       const [cx, cy] = cam.toScreen(sel.x, sel.y);
       app.activeHandle = 'size';
-      gesture = { type: 'size', id: e.pointerId, key: sel.key, k0: sizeOf(sel.key), d0: Math.max(8, Math.hypot(x - cx, y - cy)) };
-      return;
+      return { type: 'size', id, key: sel.key, k0: sizeOf(sel.key), d0: Math.max(8, Math.hypot(x - cx, y - cy)) };
     }
   }
 
@@ -662,12 +726,9 @@ function onPointerDown(e) {
   if (h) {
     stopSweep();
     app.activeHandle = h.id;
-    gesture = { type: 'drag', id: e.pointerId, handle: h.id, sx: x, sy: y, moved: false };
-    return;
+    return { type: 'drag', id, handle: h.id, sx: x, sy: y, moved: false };
   }
-  // Un tocco su un oggetto ridimensionabile lo seleziona (compare la maniglia); altrove deseleziona.
-  app.sizeSel = hitResizable(x, y)?.key ?? null;
-  gesture = { type: 'pan', id: e.pointerId, lx: x, ly: y };
+  return null;
 }
 
 canvas.addEventListener('pointermove', e => {
@@ -892,9 +953,21 @@ function setInkColor(c) {
   if (!penPop.classList.contains('hidden')) drawPenPreview();
   if (app.tool === 'eraser') setTool('pen');
 }
+const SPEEDS = [1, 0.5, 0.25, 2];
+const SPEED_LABEL = { 1: '1×', 0.5: '½×', 0.25: '¼×', 2: '2×' };
 function setSpeed(s) {
   app.speed = s;
-  document.querySelectorAll('#speedSeg button').forEach(b => b.classList.toggle('on', +b.dataset.speed === s));
+  $('speedBtn').textContent = SPEED_LABEL[s];
+  $('speedBtn').classList.toggle('on', s !== 1);
+}
+
+// Modalità Spiega: spariscono i pannelli, restano la scena, gli appunti e i valori fissati.
+function setMode(m) {
+  app.mode = m;
+  store.set('mode', m);
+  document.body.classList.toggle('lesson', m === 'lesson');
+  document.querySelectorAll('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
+  insp.setLesson(m === 'lesson');
 }
 function toggleTheme() {
   const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
@@ -926,8 +999,9 @@ $('playBtn').onclick = togglePlay;
 $('resetBtn').onclick = () => { stopSweep(); resetSim(); };
 $('stepBtn').onclick = stepFrame;
 $('fitBtn').onclick = fitView;
-$('themeBtn').onclick = toggleTheme;
-$('theoryBtn').onclick = () => theoryPanel.toggle();
+$('inspBtn').onclick = () => insp.toggle();
+document.querySelectorAll('#modeSeg button').forEach(b => b.onclick = () => setMode(b.dataset.mode));
+$('speedBtn').onclick = () => setSpeed(SPEEDS[(SPEEDS.indexOf(app.speed) + 1) % SPEEDS.length]);
 $('undoBtn').onclick = () => { lasso.clear(); ink.undo(); };
 $('clearBtn').onclick = () => { if (ink.strokes.length && confirm('Cancellare tutti gli appunti di questo esperimento?')) { lasso.clear(); ink.clear(); } };
 $('selCopy').onclick = () => lasso.copy(app.exp, 24 / cam.scale, -24 / cam.scale);
@@ -937,7 +1011,6 @@ $('tlStart').onclick = () => scrubTo(0);
 $('tlEnd').onclick = () => { stopSweep(); app.view = null; app.viewCache = null; };
 document.querySelectorAll('#toolSeg button').forEach(b => b.onclick = () => setTool(b.dataset.tool));
 document.querySelectorAll('#swatches button').forEach(b => b.onclick = () => setInkColor(b.dataset.color));
-document.querySelectorAll('#speedSeg button').forEach(b => b.onclick = () => setSpeed(+b.dataset.speed));
 
 addEventListener('keydown', e => {
   if (e.target.closest?.('input')) return;
@@ -996,6 +1069,8 @@ if (new URLSearchParams(location.search).has('debug')) {
 /* ---------------- Avvio ---------------- */
 
 applyIcons();
+setSpeed(1);
+setMode(store.get('mode', 'explore'));
 setTool(app.tool, true);
 syncPenPop();
 setInkColor(app.inkColor);

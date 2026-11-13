@@ -3,13 +3,13 @@ import { icons } from '../core/icons.js';
 import { store } from '../core/store.js';
 import { el } from '../core/ui.js';
 import { drawGrid } from '../core/render.js';
+import { K, MU, pointField, drawFieldLines, chargeSphere } from '../core/electric.js';
 
 // Cariche e campo elettrico (elettrostatica, livello liceo).
 // Sorgenti: cariche puntiformi (Coulomb in 3D), barre cariche uniformi (segmenti nel piano),
 // lastre cariche viste di taglio (piani infiniti in profondità, campo calcolato in forma esatta).
 // Unità: metri, microcoulomb (µC), µC/m² per la densità delle lastre.
 
-const K = 8.9875e9, MU = 1e-6;
 const ROD_N = 48;                  // una barra è sommata come 48 cariche puntiformi
 const LINES_PER_UC = 6;            // linee di campo per µC
 const PLATE_FLUX = 1.7e4;          // lastre: una linea ogni 1,7·10⁴ N/C·m di flusso (≈ ogni 3 cm in un condensatore con σ = 5 µC/m²)
@@ -41,7 +41,7 @@ const B = { spec: null, sel: null, tool: 'select', api: null, linesKey: null, li
 /* ---------------- Scena ---------------- */
 
 function newSpec() {
-  return { sources: [], probe: { x: 0.25, y: 0.18 }, show: { lines: true, E: false, F: true, probe: true }, next: 1 };
+  return { sources: [], probe: { x: 0.25, y: 0.18 }, show: { lines: true, E: false, F: true, comp: false, probe: true }, next: 1 };
 }
 const add = (spec, s) => { s.id = 's' + spec.next++; spec.sources.push(s); return s; };
 const srcOf = id => B.spec.sources.find(s => s.id === id);
@@ -61,6 +61,8 @@ function nameOf(s) {
 }
 function nth(s) { const same = B.spec.sources.filter(o => o.type === s.type); return same.length > 1 ? ' ' + (same.indexOf(s) + 1) : ''; }
 const pIdx = s => B.spec.sources.filter(o => o.type === 'point').indexOf(s) + 1;   // numero della carica, per le formule
+const refCharge = () => B.spec.sources.find(o => o.type === 'point');                // q₁: riferimento per distanze e angoli
+const snap = v => Math.round(v * 200) / 200;                                          // posizioni a passi di mezzo centimetro
 const sub = n => String(n).split('').map(d => '₀₁₂₃₄₅₆₇₈₉'[+d]).join('');
 
 /* ---------------- Fisica ---------------- */
@@ -86,13 +88,6 @@ function fieldOf(s, x, y) {
   const Eu = ks * Math.log(((u + h) ** 2 + d * d) / ((u - h) ** 2 + d * d));
   const Ed = 2 * ks * (Math.atan((u + h) / d) - Math.atan((u - h) / d));
   return [Eu * ux + Ed * nx, Eu * uy + Ed * ny];
-}
-
-function pointField(cx, cy, q, x, y) {
-  const dx = x - cx, dy = y - cy, r2 = dx * dx + dy * dy;
-  if (r2 < 1e-10) return [0, 0];
-  const f = K * q / (r2 * Math.sqrt(r2));
-  return [f * dx, f * dy];
 }
 
 function fieldAt(x, y, skip = null) {
@@ -226,20 +221,8 @@ function trace(seed, dir, [x0, y0, x1, y1]) {
 /* ---------------- Disegno ---------------- */
 
 function drawCharge(P, s, selected) {
-  const ctx = P.ctx, [a, b] = P.S(s.x, s.y), r = Math.max(9, radius(s.q) * P.cam.scale);
-  const posC = s.q >= 0, hue = posC ? 2 : 214, L = document.documentElement.dataset.theme === 'dark' ? 6 : 0;
-  ctx.save();
-  if (selected) { ctx.strokeStyle = P.c.handle; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(a, b, r + 5, 0, Math.PI * 2); ctx.stroke(); }
-  const g = ctx.createRadialGradient(a - r * 0.35, b - r * 0.4, r * 0.1, a, b, r);
-  g.addColorStop(0, `hsl(${hue} 80% ${76 + L}%)`); g.addColorStop(0.6, `hsl(${hue} 68% ${54 + L}%)`); g.addColorStop(1, `hsl(${hue} 62% ${38 + L}%)`);
-  ctx.shadowColor = 'rgba(0,0,0,.25)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 2;
-  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(a, b, r, 0, Math.PI * 2); ctx.fill();
-  ctx.shadowColor = 'transparent';
-  ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(2, r * 0.16); ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(a - r * 0.45, b); ctx.lineTo(a + r * 0.45, b);
-  if (posC) { ctx.moveTo(a, b - r * 0.45); ctx.lineTo(a, b + r * 0.45); }
-  ctx.stroke();
-  ctx.restore();
+  const [a, b] = P.S(s.x, s.y), r = Math.max(9, radius(s.q) * P.cam.scale);
+  chargeSphere(P, a, b, r, s.q >= 0, selected);
   P.textS(a, b + r + 13, `${nameOf(s)} = ${fmt(s.q, 1)} µC`, { size: 12, align: 'center', color: 'text' });
 }
 
@@ -266,32 +249,6 @@ function drawBar(P, s, selected) {
   P.textS((a1 + a2) / 2 - uy * 20, (b1 + b2) / 2 + ux * 20, `${sym} = ${fmt(value, 1)} ${unit}`, { size: 12, align: 'center' });
 }
 
-function drawLines(P, lines) {
-  const ctx = P.ctx;
-  ctx.save();
-  ctx.strokeStyle = P.c.text; ctx.fillStyle = P.c.text; ctx.globalAlpha = 0.5; ctx.lineWidth = 1.5; ctx.lineJoin = 'round';
-  for (const L of lines) {
-    if (L.pts.length < 2) continue;
-    ctx.beginPath();
-    L.pts.forEach(([x, y], i) => { const [a, b] = P.S(x, y); i ? ctx.lineTo(a, b) : ctx.moveTo(a, b); });
-    ctx.stroke();
-    // Freccia del verso del campo a metà linea (le linee tracciate dalle cariche negative vanno al contrario).
-    const m = Math.floor(L.pts.length / 2);
-    if (m < 1) continue;
-    const [p0, p1] = [P.S(...L.pts[m - 1]), P.S(...L.pts[m])];
-    let dx = (p1[0] - p0[0]) * L.dir, dy = (p1[1] - p0[1]) * L.dir;
-    const d = Math.hypot(dx, dy);
-    if (d < 1e-6) continue;
-    dx /= d; dy /= d;
-    const [cx, cy] = p1, hl = 8;
-    ctx.beginPath(); ctx.moveTo(cx + dx * hl / 2, cy + dy * hl / 2);
-    ctx.lineTo(cx - dx * hl / 2 - dy * hl * 0.4, cy - dy * hl / 2 + dx * hl * 0.4);
-    ctx.lineTo(cx - dx * hl / 2 + dy * hl * 0.4, cy - dy * hl / 2 - dx * hl * 0.4);
-    ctx.closePath(); ctx.fill();
-  }
-  ctx.restore();
-}
-
 // Vettori del campo su una griglia: lunghezza e opacità crescono con |E| (scala compressa: il campo varia di ordini di grandezza).
 function drawFieldGrid(P) {
   const sp = 54, { w, h } = P.cam, pts = [];
@@ -316,17 +273,63 @@ function drawFieldGrid(P) {
 function drawForces(P) {
   const charges = B.spec.sources.filter(s => s.type === 'point');
   if (charges.length < 2 && !B.spec.sources.some(s => s.type !== 'point')) return;
-  const data = charges.map(c => ({ c, ...forcesOn(c) }));
+  // Con una carica selezionata si mostrano solo le sue forze, in una scala che le rende ben leggibili.
+  const focus = charges.find(c => c.id === B.sel);
+  const data = (focus ? [focus] : charges).map(c => ({ c, ...forcesOn(c) }));
   let maxF = 0;
-  for (const d of data) { maxF = Math.max(maxF, Math.hypot(...d.R)); if (d.c.id === B.sel) for (const f of d.list) maxF = Math.max(maxF, Math.hypot(...f.F)); }
+  for (const d of data) { maxF = Math.max(maxF, Math.hypot(...d.R)); if (focus) for (const f of d.list) maxF = Math.max(maxF, Math.hypot(...f.F)); }
   if (maxF <= 0) return;
-  const kf = 0.16 / maxF;   // la freccia più lunga misura 16 cm: le frecce sono in scala tra loro
+  // La freccia più lunga misura poco più di metà della distanza minima tra le cariche: le frecce sono in scala tra loro.
+  let dmin = Infinity;
+  for (const a of charges) for (const c of charges) if (a !== c) dmin = Math.min(dmin, Math.hypot(a.x - c.x, a.y - c.y));
+  const kf = clamp(0.6 * (Number.isFinite(dmin) ? dmin : 0.3), 0.08, 0.25) / maxF;
   for (const d of data) {
-    if (d.c.id === B.sel) for (const f of d.list) {
+    if (focus) for (const f of d.list) {
       P.arrow(d.c.x, d.c.y, d.c.x + kf * f.F[0], d.c.y + kf * f.F[1], { color: 'applied', width: 2.2, dash: [5, 4], alpha: 0.7, label: 'F' + (f.s.type === 'point' ? '←' + nameOf(f.s) : '') });
     }
-    P.arrow(d.c.x, d.c.y, d.c.x + kf * d.R[0], d.c.y + kf * d.R[1], { color: 'applied', width: 4, label: d.c.id === B.sel ? 'F ris.' : 'F' });
+    P.arrow(d.c.x, d.c.y, d.c.x + kf * d.R[0], d.c.y + kf * d.R[1], { color: 'applied', width: 4, label: focus ? 'F ris.' : 'F' });
   }
+  if (B.spec.show.comp) {
+    for (const d of data) drawComponents(P, d, kf, !!focus);
+  }
+}
+
+// Proiezioni sugli assi x e y: assi locali tratteggiati per la carica, linee di proiezione dalle punte dei vettori
+// e frecce delle componenti della risultante (Fx, Fy). Con una carica selezionata si proiettano anche le singole forze.
+function drawComponents(P, d, kf, detail) {
+  const { c, R } = d, ctx = P.ctx, [a, b] = P.S(c.x, c.y);
+  const vecs = [...(detail ? d.list.map(f => f.F) : []), R];
+  let ext = 40;
+  for (const F of vecs) ext = Math.max(ext, Math.abs(kf * F[0]) * P.cam.scale + 24, Math.abs(kf * F[1]) * P.cam.scale + 24);
+  ctx.save();
+  ctx.strokeStyle = P.c.muted; ctx.lineWidth = 1.2; ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(a - ext, b); ctx.lineTo(a + ext, b); ctx.moveTo(a, b - ext); ctx.lineTo(a, b + ext); ctx.stroke();
+  ctx.font = 'italic 600 12px system-ui, sans-serif'; ctx.fillStyle = P.c.muted; ctx.setLineDash([]);
+  ctx.fillText('x', a + ext + 3, b + 4); ctx.fillText('y', a - 4, b - ext - 5);
+  // Linee di proiezione: dalla punta di ogni vettore, perpendicolari agli assi.
+  ctx.setLineDash([2, 4]); ctx.lineWidth = 1.3;
+  vecs.forEach((F, i) => {
+    const last = i === vecs.length - 1, [tx, ty] = P.S(c.x + kf * F[0], c.y + kf * F[1]);
+    ctx.strokeStyle = P.c.applied; ctx.globalAlpha = last ? 0.85 : 0.45;
+    ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx, b); ctx.moveTo(tx, ty); ctx.lineTo(a, ty); ctx.stroke();
+  });
+  ctx.restore();
+  const opt = { color: 'applied', width: 3, head: 10 };
+  P.arrow(c.x, c.y, c.x + kf * R[0], c.y, { ...opt, label: 'Fx' });
+  P.arrow(c.x, c.y, c.x, c.y + kf * R[1], { ...opt, label: 'Fy' });
+}
+
+// Carica selezionata (diversa da q₁): segmento da q₁ e angolo θ rispetto all'asse x.
+function drawPolar(P) {
+  const s = srcOf(B.sel), ref = refCharge();
+  if (s?.type !== 'point' || !ref || s === ref) return;
+  const r = Math.hypot(s.x - ref.x, s.y - ref.y), th = Math.atan2(s.y - ref.y, s.x - ref.x);
+  P.line([[ref.x, ref.y], [s.x, s.y]], { color: 'handle', width: 1.5, dash: [6, 5], alpha: 0.8 });
+  P.line([[ref.x, ref.y], [ref.x + Math.max(r * 0.6, 0.06), ref.y]], { color: 'muted', width: 1.2, dash: [3, 4] });
+  const R = clamp(r * P.cam.scale * 0.35, 22, 60);
+  P.arc(ref.x, ref.y, R, Math.min(0, th), Math.max(0, th), { color: 'handle', width: 1.8, label: `${fmt(th / deg, 0)}°`, labelR: R + 16 });
+  const [mx, my] = P.S((ref.x + s.x) / 2, (ref.y + s.y) / 2), nx = -Math.sin(th), ny = -Math.cos(th);
+  P.textS(mx + nx * 14, my + ny * 14, `r = ${fmt(r * 100, 1)} cm`, { size: 12, color: 'handle', align: 'center' });
 }
 
 function drawProbe(P) {
@@ -353,6 +356,14 @@ function sciParts(v) {
 const SUP = { '-': '⁻', 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹' };
 function sciText(v, d = 2) { const [m, e] = sciParts(v); return e ? `${fmt(m, d)}·10${String(e).split('').map(c => SUP[c]).join('')}` : fmt(m, d); }
 function sciTex(v, d = 2) { const [m, e] = sciParts(v); return e ? `${tn(m, d)}\\cdot 10^{${e}}` : tn(m, d); }
+
+// Tabella delle componenti: ogni forza con modulo, angolo, Fx e Fy; l'ultima riga è la somma (la risultante).
+function compTable(list, R) {
+  const n = v => fmt(v, Math.abs(v) < 0.1 ? 4 : 3), ang = F => fmt(Math.atan2(F[1], F[0]) / deg, 0) + '°';
+  const rows = list.map(f => `<tr><td>${f.s.type === 'point' ? 'da ' + nameOf(f.s) : nameOf(f.s)}</td><td>${n(Math.hypot(...f.F))}</td><td>${ang(f.F)}</td><td>${n(f.F[0])}</td><td>${n(f.F[1])}</td></tr>`).join('');
+  return `<table class="ftable"><tr><td></td><td>F (N)</td><td>θ</td><td>Fx (N)</td><td>Fy (N)</td></tr>${rows}`
+    + `<tr class="sum"><td>Risultante</td><td>${n(Math.hypot(...R))}</td><td>${ang(R)}</td><td>${n(R[0])}</td><td>${n(R[1])}</td></tr></table>`;
+}
 
 /* ---------------- Interazione ---------------- */
 
@@ -387,6 +398,7 @@ export default {
   mount(api) {
     B.api = api;
     B.spec ??= store.get('charges.scene', null) ?? PRESETS[1].make();
+    B.spec.show.comp ??= false;
     B.tool = 'select';
   },
   unmount() { B.tool = 'select'; },
@@ -411,9 +423,10 @@ export default {
 
   draw(P) {
     const show = B.spec.show;
-    if (show.lines) drawLines(P, fieldLines());
+    if (show.lines) drawFieldLines(P, fieldLines());
     if (show.E) drawFieldGrid(P);
     for (const s of B.spec.sources) if (s.type !== 'point') drawBar(P, s, s.id === B.sel);
+    drawPolar(P);
     if (show.F) drawForces(P);
     for (const s of B.spec.sources) if (s.type === 'point') drawCharge(P, s, s.id === B.sel);
     for (const h of handlesOf(srcOf(B.sel))) P.sizeHandle(h.x, h.y, B.dragHandle === h.i);
@@ -436,6 +449,9 @@ export default {
         }
       }
       if (list.length) {
+        out.push({ h: 'Componenti (proiezioni sugli assi)' });
+        out.push({ tex: `F_x = F\\cos\\theta \\qquad F_y = F\\sin\\theta` });
+        out.push({ html: compTable(list, R) });
         out.push({ h: 'Risultante (principio di sovrapposizione)' });
         out.push({ tex: `\\vec F = \\textstyle\\sum \\vec F_i = (${tn(R[0], 3)},\\ ${tn(R[1], 3)})\\ \\mathrm{N}` });
         out.push({ tex: `|\\vec F| = ${tn(Math.hypot(...R), 3)}\\ \\mathrm{N}\\qquad \\theta = ${tn(Math.atan2(R[1], R[0]) / deg, 0)}^\\circ` });
@@ -463,7 +479,7 @@ export default {
         }
       }
     }
-    if (!out.length) out.push({ html: '<div class="hint">Tocca una carica per vedere le forze che agisce su di essa, oppure attiva la sonda per misurare il campo.</div>' });
+    if (!out.length) out.push({ html: '<div class="hint">Tocca una carica per vedere le forze che agiscono su di essa, oppure attiva la sonda per misurare il campo.</div>' });
     out.push({ h: 'Costante' }, { tex: kTex });
     return out;
   },
@@ -477,14 +493,31 @@ export default {
       grid.appendChild(b);
     }
     body.append(grid, el('div', 'hint', B.tool === 'select'
-      ? 'Trascina cariche, barre, lastre e sonda. Tocca una sorgente per cambiarne il valore.'
+      ? 'Trascina cariche, barre, lastre e sonda (col dito o con la Pencil). Tocca una carica per vederne le forze e cambiarne valore e posizione.'
       : 'Tocca il foglio per aggiungere.'));
 
     const s = srcOf(B.sel);
     if (s) {
       body.append(el('div', 'sub', 'Selezione'), el('div', 'sel-title', `<span class="dot"></span>${nameOf(s)}`));
       for (const def of PROPS[s.type]) {
-        body.appendChild(api.control(def, () => s[def.key], v => { s[def.key] = v; changed(); }, `${s.id}.${def.key}`));
+        body.appendChild(api.control({ ...def, pinLabel: `${nameOf(s)} · ${def.label}` }, () => s[def.key], v => { s[def.key] = v; changed(); }, `${s.id}.${def.key}`));
+      }
+      body.appendChild(el('div', 'sub', 'Posizione'));
+      const ref = refCharge();
+      if (s.type === 'point' && ref && ref !== s) {
+        // Coordinate polari rispetto a q₁: distanza r e angolo θ dall'asse x (positivo in senso antiorario).
+        const polar = () => ({ r: Math.hypot(s.x - ref.x, s.y - ref.y), th: Math.atan2(s.y - ref.y, s.x - ref.x) / deg });
+        const place = (r, th) => { s.x = ref.x + r * Math.cos(th * deg); s.y = ref.y + r * Math.sin(th * deg); changed(); };
+        body.appendChild(el('div', 'hint', `Rispetto a ${nameOf(ref)}: distanza r e angolo θ misurato dall'asse x.`));
+        body.appendChild(api.control({ key: 'r', label: `Distanza da ${nameOf(ref)}`, pinLabel: `${nameOf(s)} · distanza da ${nameOf(ref)}`, unit: 'cm', min: 1, max: 80, step: 0.5, hardMin: 0.5 },
+          () => polar().r * 100, v => place(v / 100, polar().th), `${s.id}.r`));
+        body.appendChild(api.control({ key: 'th', label: 'Angolo θ', pinLabel: `${nameOf(s)} · angolo θ`, unit: '°', min: -180, max: 180, step: 1, hardMin: -360, hardMax: 360 },
+          () => polar().th, v => place(polar().r, v), `${s.id}.th`));
+      } else {
+        for (const [k, label] of [['x', 'Posizione x'], ['y', 'Posizione y']]) {
+          body.appendChild(api.control({ key: k, label, pinLabel: `${nameOf(s)} · ${k}`, unit: 'cm', min: -100, max: 100, step: 0.5, hardMin: -1000, hardMax: 1000 },
+            () => s[k] * 100, v => { s[k] = v / 100; changed(); }, `${s.id}.${k}`));
+        }
       }
       const row = el('div', 'btn-row'), del = el('button', 'btn danger', 'Elimina'), des = el('button', 'btn', 'Deseleziona');
       del.onclick = () => { B.spec.sources = B.spec.sources.filter(o => o !== s); B.sel = null; changed(); api.rebuildPanel(); };
@@ -494,15 +527,26 @@ export default {
       return;
     }
 
+    if (B.spec.sources.length) {
+      body.appendChild(el('div', 'sub', 'In scena (tocca per modificare)'));
+      const list = el('div', 'chips');
+      for (const o of B.spec.sources) {
+        const v = o.type === 'point' ? `${fmt(o.q, 1)} µC` : o.type === 'rod' ? `${fmt(o.Q, 1)} µC` : `${fmt(o.sigma, 1)} µC/m²`;
+        const b = el('button', '', `${nameOf(o)} · ${v}`);
+        b.onclick = () => select(o.id);
+        list.appendChild(b);
+      }
+      body.appendChild(list);
+    }
     body.appendChild(el('div', 'sub', 'Mostra'));
-    for (const [k, label] of [['lines', 'Linee di campo'], ['E', 'Vettori del campo E'], ['F', 'Forze sulle cariche'], ['probe', 'Sonda']]) {
+    for (const [k, label] of [['lines', 'Linee di campo'], ['E', 'Vettori del campo E'], ['F', 'Forze sulle cariche'], ['comp', 'Componenti x e y delle forze'], ['probe', 'Sonda']]) {
       body.appendChild(api.control({ key: k, type: 'toggle', label }, () => B.spec.show[k], v => { B.spec.show[k] = v; changed(); }, 'charges.show.' + k));
     }
     body.appendChild(el('div', 'sub', 'Situazioni tipiche'));
     const chips = el('div', 'chips');
     for (const p of PRESETS) {
       const b = el('button', '', p.label);
-      b.onclick = () => { B.spec = p.make(); B.sel = null; changed(); api.fit(); api.rebuildPanel(); };
+      b.onclick = () => { B.spec = p.make(); B.sel = p.sel ?? null; changed(); api.fit(); api.rebuildPanel(); };
       chips.appendChild(b);
     }
     const clear = el('button', '', 'Scena vuota');
@@ -573,6 +617,14 @@ $$F = k\\,\\frac{|q_1\\,q_2|}{r^2} \\qquad k = \\frac{1}{4\\pi\\varepsilon_0} = 
 $$\\vec F = \\vec F_1 + \\vec F_2 + \\dots$$
 <p>Tocca una carica: le frecce tratteggiate sono le singole forze, quella piena è la risultante.</p>
 
+<h3>Sommare le forze con le componenti</h3>
+<p>Per sommare vettori non allineati conviene <b>proiettarli sugli assi</b>. Una forza di modulo $F$ che forma l'angolo $\\theta$ con l'asse x ha componenti</p>
+$$F_x = F\\cos\\theta \\qquad F_y = F\\sin\\theta$$
+<p>Le componenti si sommano come numeri (con il segno): $R_x = \\sum F_{x,i}$, $R_y = \\sum F_{y,i}$. Poi</p>
+$$R = \\sqrt{R_x^2 + R_y^2} \\qquad \\tan\\theta_R = \\frac{R_y}{R_x}$$
+<p>Attiva <i>Componenti x e y delle forze</i>: le linee punteggiate proiettano ogni forza sugli assi della carica selezionata e la tabella nel pannello Formule riporta $F$, $\\theta$, $F_x$ e $F_y$ di ogni forza e della risultante.</p>
+<p>Selezionando una carica puoi anche fissarne la posizione rispetto a $q_1$ con la <b>distanza</b> $r$ e l'<b>angolo</b> $\\theta$: così costruisci triangoli precisi (per esempio equilateri, con angoli di 60°) come negli esercizi.</p>
+
 <h3>Il campo elettrico</h3>
 <p>Il campo in un punto è la forza che subirebbe una carica di prova positiva $q_0$, divisa per $q_0$:</p>
 $$\\vec E = \\frac{\\vec F}{q_0} \\qquad [E] = \\mathrm{N/C}$$
@@ -604,7 +656,7 @@ $$E_{\\text{interno}} = \\frac{\\sigma}{\\varepsilon_0} \\qquad E_{\\text{estern
 <ol>
   <li><b>Dipolo</b>: dove è più intenso il campo? Sposta la sonda lungo l'asse e lungo la perpendicolare.</li>
   <li><b>Cariche uguali</b>: trova il punto in cui il campo è nullo. Perché lì non passa nessuna linea?</li>
-  <li><b>Tre cariche</b>: tocca la carica in alto e verifica che la risultante è la somma delle due forze tratteggiate.</li>
+  <li><b>Tre cariche</b>: la carica in alto è già selezionata. Verifica nella tabella che le componenti della risultante sono la somma delle componenti delle due forze. Poi cambia l'angolo θ (o premi ▸ per animarlo): quando la forza risultante è orizzontale?</li>
   <li><b>Condensatore</b>: sposta la sonda tra le armature: il campo cambia? E fuori?</li>
   <li>Raddoppia la distanza tra due cariche: di quanto cambia la forza?</li>
 </ol>
@@ -624,7 +676,7 @@ $$E_{\\text{interno}} = \\frac{\\sigma}{\\varepsilon_0} \\qquad E_{\\text{estern
 function moveGesture(o, wx0, wy0) {
   const ox = o.x, oy = o.y;
   return {
-    move: ({ wx, wy }) => { o.x = ox + wx - wx0; o.y = oy + wy - wy0; B.api.refresh(); },
+    move: ({ wx, wy }) => { o.x = snap(ox + wx - wx0); o.y = snap(oy + wy - wy0); B.api.refresh(); },
     up: () => changed(),
   };
 }
@@ -633,7 +685,13 @@ const PRESETS = [
   { label: 'Carica singola', make() { const s = newSpec(); add(s, { type: 'point', x: 0, y: 0, q: 2 }); return s; } },
   { label: 'Dipolo', make() { const s = newSpec(); add(s, { type: 'point', x: -0.15, y: 0, q: 2 }); add(s, { type: 'point', x: 0.15, y: 0, q: -2 }); return s; } },
   { label: 'Cariche uguali', make() { const s = newSpec(); add(s, { type: 'point', x: -0.15, y: 0, q: 2 }); add(s, { type: 'point', x: 0.15, y: 0, q: 2 }); s.probe = { x: 0, y: 0.12 }; return s; } },
-  { label: 'Tre cariche', make() { const s = newSpec(); add(s, { type: 'point', x: -0.16, y: -0.1, q: 2 }); add(s, { type: 'point', x: 0.16, y: -0.1, q: -2 }); add(s, { type: 'point', x: 0, y: 0.16, q: 1 }); s.probe = { x: 0.3, y: 0.15 }; return s; } },
+  { label: 'Tre cariche', sel: 's3', make() {
+    // Triangolo: q₂ a 30 cm da q₁ lungo l'asse x, q₃ a 25 cm da q₁ a 60°. Si vedono le componenti delle forze.
+    const s = newSpec(), x0 = -0.15, y0 = -0.1;
+    add(s, { type: 'point', x: x0, y: y0, q: 2 }); add(s, { type: 'point', x: x0 + 0.3, y: y0, q: -2 });
+    add(s, { type: 'point', x: x0 + 0.25 * Math.cos(60 * deg), y: y0 + 0.25 * Math.sin(60 * deg), q: 1 });
+    s.probe = { x: 0.3, y: 0.15 }; s.show.comp = true; s.show.probe = false; return s;
+  } },
   { label: 'Condensatore piano', make() { const s = newSpec(); add(s, { type: 'plate', x: 0, y: 0.07, sigma: 5, L: 1.4, angle: 0 }); add(s, { type: 'plate', x: 0, y: -0.07, sigma: -5, L: 1.4, angle: 0 }); s.probe = { x: 0.05, y: 0 }; s.show.F = false; return s; } },
   { label: 'Barra e carica', make() { const s = newSpec(); add(s, { type: 'rod', x: 0, y: -0.1, Q: 6, L: 0.5, angle: 0 }); add(s, { type: 'point', x: 0, y: 0.15, q: -1 }); s.probe = { x: 0.32, y: 0.05 }; return s; } },
 ];

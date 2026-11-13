@@ -28,7 +28,7 @@
   <canvas id="stage"></canvas>
 
   <header class="topbar">
-    <div class="group">
+    <div class="group nav">
       <button class="icon-btn" id="menuBtn" data-icon="menu" title="Esperimenti"></button>
       <div class="crumb"><span id="crumbArea"></span><span class="sep">›</span><strong id="crumbExp"></strong></div>
     </div>
@@ -37,9 +37,7 @@
       <button class="icon-btn" id="resetBtn" data-icon="reset" title="Ricomincia (R)"></button>
       <button class="icon-btn primary" id="playBtn" data-icon="play" title="Avvia / pausa (spazio)"></button>
       <button class="icon-btn" id="stepBtn" data-icon="step" title="Avanza di un fotogramma"></button>
-      <div class="seg" id="speedSeg">
-        <button data-speed="0.25">¼×</button><button data-speed="0.5">½×</button><button data-speed="1" class="on">1×</button><button data-speed="2">2×</button>
-      </div>
+      <button class="speed-btn" id="speedBtn" title="Velocità della simulazione">1×</button>
       <span class="clock" id="clock">t = 0,00 s</span>
     </div>
 
@@ -58,12 +56,19 @@
       </div>
       <button class="icon-btn" id="undoBtn" data-icon="undo" title="Annulla tratto"></button>
       <button class="icon-btn" id="clearBtn" data-icon="trash" title="Cancella tutti gli appunti"></button>
-      <span class="divider"></span>
-      <button class="icon-btn" id="theoryBtn" data-icon="book" title="Scheda di teoria"></button>
+    </div>
+
+    <div class="group view">
       <button class="icon-btn" id="fitBtn" data-icon="target" title="Inquadra la scena"></button>
-      <button class="icon-btn" id="themeBtn" data-icon="theme" title="Tema chiaro / scuro"></button>
+      <div class="seg mode" id="modeSeg">
+        <button data-mode="explore" title="Esplora: controlli, formule e grafici">Esplora</button>
+        <button data-mode="lesson" title="Spiega: solo la scena e gli appunti">Spiega</button>
+      </div>
+      <button class="icon-btn" id="inspBtn" data-icon="sidebar" title="Mostra / nascondi il pannello"></button>
     </div>
   </header>
+
+  <div id="pins" class="hidden"></div>
 
   <div class="timeline" id="timeline">
     <button class="icon-btn" id="tlStart" data-icon="skipBack" title="Torna all'inizio"></button>

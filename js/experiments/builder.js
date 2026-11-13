@@ -4,6 +4,7 @@ import { icons } from '../core/icons.js';
 import { store } from '../core/store.js';
 import { el } from '../core/ui.js';
 import { crate, ball as ballShape } from '../core/shapes.js';
+import { K, MU as UC, pointField, traceLine, drawFieldLines, chargeSphere, chargeBadge } from '../core/electric.js';
 import { slab, spring as springShape, rope as ropeShape, pulley as pulleyShape, anchorPlate, trail, dust, BODY_COLORS } from '../core/look.js';
 
 // Costruttore libero: scena composta dall'utente, simulata con Planck.js (Box2D).
@@ -13,16 +14,19 @@ const DT = 1 / 240;
 const V2 = (x, y) => new pl.Vec2(x, y);
 const SURF_T = 0.12;   // spessore delle superfici (m)
 const KV = 0.3;        // frecce di velocità: metri per (m/s)
+const CHARGE_R = 0.12; // raggio di una carica fissa (m)
+const KNC = 1e3;       // il campo uniforme si dà in kN/C
 
 const NAMES = {
   block: 'Blocco', ball: 'Sfera', incline: 'Piano inclinato', surface: 'Superficie', anchor: 'Punto fisso',
-  pulley: 'Carrucola', spring: 'Molla', rope: 'Fune', pulleyRope: 'Fune su carrucola', force: 'Forza costante',
+  pulley: 'Carrucola', charge: 'Carica fissa', spring: 'Molla', rope: 'Fune', pulleyRope: 'Fune su carrucola', force: 'Forza costante',
 };
 const DYNAMIC = new Set(['block', 'ball']);
 
 const MU = (label = 'Attrito μ') => ({ key: 'mu', label, unit: '', min: 0, max: 1.5, step: 0.01 });
 const VX = { key: 'vx', label: 'Velocità iniziale vx', unit: 'm/s', min: -20, max: 20, step: 0.1 };
 const VY = { key: 'vy', label: 'Velocità iniziale vy', unit: 'm/s', min: -20, max: 20, step: 0.1 };
+const Q = { key: 'q', label: 'Carica elettrica q', unit: 'µC', min: -50, max: 50, step: 0.5, hardMin: -1e4, hardMax: 1e4 };
 const PROPS = {
   block: [
     { key: 'm', label: 'Massa m', unit: 'kg', min: 0.1, max: 20, step: 0.1 },
@@ -31,14 +35,14 @@ const PROPS = {
     { key: 'angle', label: 'Inclinazione', unit: '°', min: -90, max: 90, step: 1 },
     MU('Attrito μ con altri corpi'),
     { key: 'e', label: 'Elasticità negli urti e', unit: '', min: 0, max: 1, step: 0.05 },
-    VX, VY,
+    VX, VY, Q,
   ],
   ball: [
     { key: 'm', label: 'Massa m', unit: 'kg', min: 0.1, max: 20, step: 0.1 },
     { key: 'r', label: 'Raggio r', unit: 'm', min: 0.05, max: 2, step: 0.05 },
     MU('Attrito μ con altri corpi'),
     { key: 'e', label: 'Elasticità negli urti e', unit: '', min: 0, max: 1, step: 0.05 },
-    VX, VY,
+    VX, VY, Q,
   ],
   incline: [
     { key: 'alpha', label: 'Inclinazione α', unit: '°', min: 5, max: 75, step: 1 },
@@ -53,6 +57,7 @@ const PROPS = {
   ],
   anchor: [],
   pulley: [{ key: 'r', label: 'Raggio', unit: 'm', min: 0.05, max: 1, step: 0.01 }],
+  charge: [Q],
   spring: [
     { key: 'k', label: 'Costante elastica k', unit: 'N/m', min: 1, max: 500, step: 1 },
     { key: 'L0', label: 'Lunghezza a riposo L₀', unit: 'm', min: 0.05, max: 10, step: 0.05 },
@@ -73,13 +78,21 @@ const MAKE = {
   surface: (x, y) => ({ type: 'surface', x, y, L: 3, angle: 0, mu: 0.3 }),
   anchor: (x, y) => ({ type: 'anchor', x, y }),
   pulley: (x, y) => ({ type: 'pulley', x, y, r: 0.2 }),
+  chargePos: (x, y) => ({ type: 'charge', x, y, q: 10 }),
+  chargeNeg: (x, y) => ({ type: 'charge', x, y, q: -10 }),
 };
 
-const TOOLS = [
-  ['select', 'select', 'Seleziona'], ['block', 'block', 'Blocco'], ['ball', 'ball', 'Sfera'],
-  ['incline', 'incline', 'Piano incl.'], ['surface', 'surface', 'Superficie'], ['anchor', 'anchor', 'Punto fisso'],
-  ['pulley', 'pulley', 'Carrucola'], ['spring', 'spring', 'Molla'], ['rope', 'rope', 'Fune'],
-  ['pulleyRope', 'pulley', 'Fune + carr.'], ['force', 'force', 'Forza'],
+// Strumenti divisi per sezione: meccanica ed elettromagnetismo.
+const TOOL_GROUPS = [
+  ['Meccanica', [
+    ['select', 'select', 'Seleziona'], ['block', 'block', 'Blocco'], ['ball', 'ball', 'Sfera'],
+    ['incline', 'incline', 'Piano incl.'], ['surface', 'surface', 'Superficie'], ['anchor', 'anchor', 'Punto fisso'],
+    ['pulley', 'pulley', 'Carrucola'], ['spring', 'spring', 'Molla'], ['rope', 'rope', 'Fune'],
+    ['pulleyRope', 'pulley', 'Fune + carr.'], ['force', 'force', 'Forza'],
+  ]],
+  ['Elettromagnetismo', [
+    ['chargePos', 'chargePlus', 'Carica +'], ['chargeNeg', 'chargeMinus', 'Carica −'],
+  ]],
 ];
 
 const B = { spec: null, sel: null, tool: 'select', pending: null, hover: null, api: null, resizing: null };
@@ -87,7 +100,7 @@ const B = { spec: null, sel: null, tool: 'select', pending: null, hover: null, a
 /* ---------------- Spec ---------------- */
 
 function newSpec() {
-  return { g: 9.81, muFloor: 0.3, show: { fbd: true, all: false, vel: false, trail: false }, objects: [], links: [], next: 1 };
+  return { g: 9.81, muFloor: 0.3, E: 0, Eangle: 0, show: { fbd: true, all: false, vel: false, trail: false, field: true }, objects: [], links: [], next: 1 };
 }
 function addObj(spec, o) { o.id = 'o' + spec.next++; spec.objects.push(o); return o; }
 function addLink(spec, l) { l.id = 'l' + spec.next++; spec.links.push(l); return l; }
@@ -186,6 +199,9 @@ function buildSim(src) {
     } else if (o.type === 'surface') {
       b = world.createBody({ type: 'static', position: V2(o.x, o.y), angle: o.angle * deg });
       b.createFixture({ shape: new pl.Box(o.L / 2, SURF_T / 2), friction: o.mu });
+    } else if (o.type === 'charge') {
+      b = world.createBody({ type: 'static', position: V2(o.x, o.y) });
+      b.createFixture({ shape: new pl.Circle(CHARGE_R), friction: 0.2, restitution: 0.3 });
     } else {
       b = world.createBody({ type: 'static', position: V2(o.x, o.y) });
     }
@@ -263,6 +279,7 @@ function physStep(s, dt) {
       s.Wext += (F.x * v.x + F.y * v.y) * dt;
     }
   }
+  for (const [id, F] of Object.entries(electricForces(s))) s.bodies.get(id).applyForceToCenter(V2(F[0], F[1]), true);
   if (s.mouse) {
     const f = s.mouse.j.getReactionForce(1 / dt), v = s.mouse.b.getLinearVelocity();
     s.Wext += (f.x * v.x + f.y * v.y) * dt;
@@ -273,6 +290,100 @@ function physStep(s, dt) {
     const v = b.getLinearVelocity(), p = s.prevV[id];
     s.accel[id] = [(v.x - p[0]) / dt, (v.y - p[1]) / dt];
   }
+}
+
+/* ---------------- Elettrostatica ---------------- */
+
+// Cariche presenti: corpi con q ≠ 0 (nella posizione attuale) e cariche fisse. q in coulomb.
+function chargesOf(st) {
+  const out = [];
+  for (const o of st.spec.objects) {
+    if (!(o.q) || !(DYNAMIC.has(o.type) || o.type === 'charge')) continue;
+    const T = xf(st, o.id);
+    if (T) out.push({ id: o.id, x: T.x, y: T.y, q: o.q * UC, fixed: o.type === 'charge', r: o.type === 'charge' ? CHARGE_R : o.type === 'ball' ? o.r : Math.min(o.w, o.h) / 2 });
+  }
+  return out;
+}
+
+const uniformE = spec => [(spec.E ?? 0) * KNC * Math.cos((spec.Eangle ?? 0) * deg), (spec.E ?? 0) * KNC * Math.sin((spec.Eangle ?? 0) * deg)];
+
+// Campo totale (N/C) in (x, y): campo uniforme più le cariche (esclusa quella con id skip).
+function fieldAt(st, x, y, list = chargesOf(st), skip = null) {
+  let [Ex, Ey] = uniformE(st.spec);
+  for (const c of list) {
+    if (c.id === skip) continue;
+    const [ex, ey] = pointField(c.x, c.y, c.q, x, y);
+    Ex += ex; Ey += ey;
+  }
+  return [Ex, Ey];
+}
+
+// Forza elettrica su ogni corpo carico: F = q·E, con E dovuto a tutto il resto. Le distanze troppo piccole
+// (corpi compenetrati) sono limitate alla somma dei raggi, per non avere forze infinite.
+function electricForces(st) {
+  const list = chargesOf(st), out = {};
+  for (const c of list) {
+    if (c.fixed) continue;
+    let [Fx, Fy] = uniformE(st.spec).map(e => e * c.q);
+    for (const o of list) {
+      if (o === c) continue;
+      let dx = c.x - o.x, dy = c.y - o.y, r = Math.hypot(dx, dy);
+      const rmin = (c.r + o.r) * 0.8;
+      if (r < rmin) { if (r < 1e-9) { dx = 1; dy = 0; r = 1; } dx *= rmin / r; dy *= rmin / r; r = rmin; }
+      const f = K * c.q * o.q / (r * r * r);
+      Fx += f * dx; Fy += f * dy;
+    }
+    out[c.id] = [Fx, Fy];
+  }
+  return out;
+}
+
+// Energia potenziale elettrica: coppie di cariche (k q₁q₂/r) più il campo uniforme (−q E·r).
+function electricEnergy(st) {
+  const list = chargesOf(st), [Ex, Ey] = uniformE(st.spec);
+  let U = 0;
+  for (let i = 0; i < list.length; i++) {
+    const a = list[i];
+    if (!a.fixed) U -= a.q * (Ex * a.x + Ey * a.y);
+    for (let j = i + 1; j < list.length; j++) {
+      const b = list[j];
+      if (a.fixed && b.fixed) continue;
+      U += K * a.q * b.q / Math.max(Math.hypot(a.x - b.x, a.y - b.y), (a.r + b.r) * 0.8);
+    }
+  }
+  return U;
+}
+
+// Linee di campo: partono dalle cariche (una ogni µC circa) e, se c'è, da una fila di semi lungo il campo uniforme.
+function fieldLines(st, box) {
+  const list = chargesOf(st), [Ux, Uy] = uniformE(st.spec), U = Math.hypot(Ux, Uy);
+  if (!list.length && !U) return [];
+  const F = (x, y) => fieldAt(st, x, y, list);
+  const step = (x, y) => {
+    let near = Infinity;
+    for (const c of list) near = Math.min(near, Math.hypot(x - c.x, y - c.y));
+    return clamp(near * 0.15, 0.01, 0.12);
+  };
+  const stop = (x, y, i) => i > 2 && list.some(c => Math.hypot(x - c.x, y - c.y) < c.r * 0.6);
+  const lines = [];
+  for (const c of list) {
+    const n = clamp(Math.round(Math.abs(c.q) / UC), 4, 32), dir = Math.sign(c.q), r0 = c.r * 1.05;
+    for (let i = 0; i < n; i++) {
+      const a = (i + 0.5) / n * 2 * Math.PI;
+      lines.push({ pts: traceLine(F, c.x + r0 * Math.cos(a), c.y + r0 * Math.sin(a), dir, { box, step, stop, max: 500 }), dir });
+    }
+  }
+  if (U) {
+    // Semi su una retta perpendicolare al campo uniforme, attraverso il centro della vista.
+    const ux = Ux / U, uy = Uy / U, cx = (box[0] + box[2]) / 2, cy = (box[1] + box[3]) / 2;
+    const half = Math.hypot(box[2] - box[0], box[3] - box[1]) / 2, sp = Math.max(0.35, half / 9);
+    for (let t = -half + sp / 2; t < half; t += sp) {
+      const x = cx - uy * t, y = cy + ux * t;
+      if (list.some(c => Math.hypot(x - c.x, y - c.y) < c.r * 1.5)) continue;
+      for (const dir of [1, -1]) lines.push({ pts: traceLine(F, x, y, dir, { box, step, stop, max: 500 }), dir });
+    }
+  }
+  return lines;
 }
 
 // Forze agenti su ogni corpo dinamico nell'ultimo passo (per il diagramma di corpo libero).
@@ -336,6 +447,11 @@ function computeForces(s) {
       out[l.o].push({ n: 'Forza applicata', l: 'F', c: 'applied', F: [l.F * Math.cos(l.angle * deg), l.F * Math.sin(l.angle * deg)], at: [c.x, c.y] });
     }
   }
+  for (const [id, F] of Object.entries(electricForces(s))) {
+    if (!out[id]) continue;
+    const c = s.bodies.get(id).getWorldCenter();
+    out[id].push({ n: 'Forza elettrica', l: 'Fe', c: 'acc', F, at: [c.x, c.y] });
+  }
   if (s.mouse && out[s.mouse.id]) {
     const f = s.mouse.j.getReactionForce(inv), a = s.mouse.j.getAnchorB();
     out[s.mouse.id].push({ n: 'Spinta della mano', l: 'Fm', c: 'applied', F: [f.x, f.y], at: [a.x, a.y] });
@@ -344,10 +460,10 @@ function computeForces(s) {
 }
 
 function energy(s) {
-  let K = 0, Ug = 0, Uel = 0;
+  let Kin = 0, Ug = 0, Uel = 0;
   for (const [, b] of s.bodies) if (b.isDynamic()) {
     const v = b.getLinearVelocity(), w = b.getAngularVelocity();
-    K += 0.5 * b.getMass() * (v.x * v.x + v.y * v.y) + 0.5 * b.getInertia() * w * w;
+    Kin += 0.5 * b.getMass() * (v.x * v.x + v.y * v.y) + 0.5 * b.getInertia() * w * w;
     Ug += b.getMass() * s.spec.g * b.getWorldCenter().y;
   }
   for (const l of s.spec.links) if (l.type === 'spring') {
@@ -355,7 +471,7 @@ function energy(s) {
     const L = Math.hypot(Bp.p[0] - A.p[0], Bp.p[1] - A.p[1]);
     Uel += 0.5 * l.k * (L - l.L0) ** 2;
   }
-  return { K, Ug, Uel };
+  return { K: Kin, Ug, Uel, Ue: electricEnergy(s) };
 }
 
 /* ---------------- Pose (vive o dalla moviola) ---------------- */
@@ -402,6 +518,7 @@ function hitObj(st, o, wx, wy, tol) {
     case 'incline': return inTri(lx, ly, inclineVerts(o));
     case 'anchor': return Math.hypot(lx, ly) < 0.08 + tol;
     case 'pulley': return Math.hypot(lx, ly) < o.r + tol;
+    case 'charge': return Math.hypot(lx, ly) < CHARGE_R + tol;
   }
   return false;
 }
@@ -424,7 +541,7 @@ function hitTest(st, wx, wy, tol) {
   const spec = st.spec;
   const order = [
     ...spec.objects.filter(o => DYNAMIC.has(o.type)),
-    ...spec.objects.filter(o => o.type === 'anchor' || o.type === 'pulley'),
+    ...spec.objects.filter(o => o.type === 'anchor' || o.type === 'pulley' || o.type === 'charge'),
   ];
   for (const o of order) if (hitObj(st, o, wx, wy, tol)) return o;
   for (const l of spec.links) if (linkSegs(st, l).some(([a, b]) => segDist(wx, wy, a, b) < tol)) return l;
@@ -477,7 +594,7 @@ function deleteSelected() {
 function pickEndpoint(st, wx, wy, tol) {
   const hit = hitTest(st, wx, wy, tol);
   if (hit && hit.type in PROPS && B.spec.objects.some(o => o.id === hit.id)) {
-    if (DYNAMIC.has(hit.type) || hit.type === 'anchor' || hit.type === 'pulley') return { o: hit.id, lx: 0, ly: 0 };
+    if (DYNAMIC.has(hit.type) || hit.type === 'anchor' || hit.type === 'pulley' || hit.type === 'charge') return { o: hit.id, lx: 0, ly: 0 };
     const [lx, ly] = toL(xf(st, hit.id), wx, wy);
     return { o: hit.id, lx, ly };
   }
@@ -519,6 +636,7 @@ function hint() {
     case 'spring': case 'rope': return p ? 'Ora tocca il secondo estremo.' : 'Tocca il primo estremo: un corpo, un punto fisso o uno spazio vuoto (crea un punto fisso).';
     case 'pulleyRope': return !p ? 'Tocca una carrucola (o uno spazio vuoto per crearla).' : !p.a ? 'Tocca il primo corpo.' : 'Tocca il secondo corpo.';
     case 'force': return 'Tocca il corpo a cui applicare la forza.';
+    case 'chargePos': case 'chargeNeg': return 'Tocca la scena per posizionare la carica fissa. Per caricare un blocco o una sfera, selezionalo e cambia la sua carica q.';
     default: return 'Tocca la scena per posizionarlo.';
   }
 }
@@ -643,6 +761,10 @@ function resizeGesture(st, h) {
 function draw(P, st, ui = {}) {
   const spec = st.spec, sel = B.sel, show = B.spec.show;
   P.ground(0);
+  if (show.field ?? true) {
+    const { x0, y0, x1, y1 } = P.cam.bounds(), m = 0.2 * (x1 - x0);
+    drawFieldLines(P, fieldLines(st, [x0 - m, y0 - m, x1 + m, y1 + m]), { alpha: 0.35 });
+  }
 
   for (const o of spec.objects) {
     if (o.type === 'incline') {
@@ -675,6 +797,11 @@ function draw(P, st, ui = {}) {
   for (const o of spec.objects) {
     if (o.type === 'pulley') pulleyShape(P, o.x, o.y, o.r, pulleyAngle(st, o), { selected: sel === o.id });
     else if (o.type === 'anchor') anchorPlate(P, o.x, o.y, { selected: sel === o.id });
+    else if (o.type === 'charge') {
+      const [a, b] = P.S(o.x, o.y), r = Math.max(10, CHARGE_R * P.cam.scale);
+      chargeSphere(P, a, b, r, o.q >= 0, sel === o.id);
+      P.textS(a, b + r + 13, `${fmt(o.q, 1)} µC`, { size: 12, align: 'center' });
+    }
   }
 
   if (show.trail) for (const id in st.trails) trail(P, st.trails[id], 'vel', 2.5);
@@ -696,6 +823,12 @@ function draw(P, st, ui = {}) {
       ballShape(P, T.x, T.y, { r: o.r, minPx: 0, color, spin: T.a });
     }
     if (P.cam.scale * Math.min(o.w ?? o.r * 2, o.h ?? o.r * 2) > 24) P.text(T.x, T.y, `${fmt(o.m, o.m < 10 ? 1 : 0)} kg`, { size: 11, align: 'center', weight: 700 });
+    if (o.q) {
+      // Corpo carico: distintivo con il segno in alto a destra e valore della carica.
+      const [cx, cy] = P.S(T.x, T.y), hw = (o.type === 'ball' ? o.r * Math.SQRT1_2 : o.w / 2) * P.cam.scale, hh = (o.type === 'ball' ? o.r * Math.SQRT1_2 : o.h / 2) * P.cam.scale;
+      chargeBadge(P, cx + hw, cy - hh, o.q > 0);
+      P.textS(cx + hw + 13, cy - hh, `${fmt(o.q, 1)} µC`, { size: 11, weight: 700 });
+    }
 
     // Polvere dove il corpo striscia con attrito.
     const [vx, vy] = velOf(st, o.id), sp = Math.hypot(vx, vy);
@@ -789,6 +922,10 @@ function formulas(st) {
     out.push({ h: nameOf(spec, item) });
     const T = st.tensions?.[item.id] ?? 0;
     out.push({ html: kv([['Tensione T', `${n2(T)} N`], ...(item.L ? [['Lunghezza', `${n2(item.L)} m`]] : []), ['Stato', T > 1e-3 ? 'tesa' : 'lenta']]) });
+  } else if (item?.type === 'charge') {
+    out.push({ h: nameOf(spec, item) });
+    out.push({ tex: `q = ${fmt(item.q, 1).replace(',', '{,}')}\\ \\mu\\mathrm{C}` });
+    out.push({ html: '<div class="hint">Una carica fissa non si muove: agisce sui corpi carichi con la forza di Coulomb F = k·|q₁q₂|/r².</div>' });
   } else if (item?.type === 'force') {
     out.push({ h: nameOf(spec, item) });
     out.push({ html: kv([['Fx', `${n2(item.F * Math.cos(item.angle * deg))} N`], ['Fy', `${n2(item.F * Math.sin(item.angle * deg))} N`]]) });
@@ -803,6 +940,7 @@ function formulas(st) {
       ['<span class="sw" style="background:var(--c-vel)"></span>Cinetica K', `${n2(E.K)} J`],
       ['<span class="sw" style="background:var(--c-normal)"></span>Potenziale gravitazionale U<sub>g</sub>', `${n2(E.Ug)} J`],
       ['<span class="sw" style="background:var(--c-spring)"></span>Potenziale elastica U<sub>el</sub>', `${n2(E.Uel)} J`],
+      ...(E.Ue ? [['<span class="sw" style="background:var(--c-acc)"></span>Potenziale elettrica U<sub>e</sub>', `${n2(E.Ue)} J`]] : []),
       ['<span class="sw" style="background:var(--c-weight)"></span>Dissipata Q (attriti, urti)', `${n2(E.Q)} J`],
       ['Lavoro delle forze esterne W', `${n2(E.W)} J`],
       ['K + U + Q − W', `${n2(E.Em + E.Q - E.W)} J`],
@@ -828,26 +966,30 @@ function graphs(st) {
   }
   list.push({ title: 'Energia', series: [
     { label: 'K', color: 'vel', key: 'K' }, { label: 'Ug', color: 'normal', key: 'Ug' }, { label: 'Uel', color: 'spring', key: 'Uel' },
+    ...(st.spec.objects.some(o => o.q) ? [{ label: 'Ue', color: 'acc', key: 'Ue' }] : []),
     { label: 'Q', color: 'weight', key: 'Q' }, { label: 'K+U+Q−W', color: 'friction', dash: [5, 4], key: 'tot' }] });
   return list;
 }
 
 function buildPanel(body, api) {
   body.innerHTML = '';
-  const grid = el('div', 'toolgrid');
-  for (const [t, ic, label] of TOOLS) {
-    const b = el('button', B.tool === t ? 'on' : '', `${icons[ic]}<span>${label}</span>`);
-    b.onclick = () => setTool(B.tool === t ? 'select' : t);
-    grid.appendChild(b);
+  for (const [title, tools] of TOOL_GROUPS) {
+    const grid = el('div', 'toolgrid');
+    for (const [t, ic, label] of tools) {
+      const b = el('button', B.tool === t ? 'on' : '', `${icons[ic]}<span>${label}</span>`);
+      b.onclick = () => setTool(B.tool === t ? 'select' : t);
+      grid.appendChild(b);
+    }
+    body.append(el('div', 'sub', title), grid);
   }
-  body.append(grid, el('div', 'hint', hint()));
+  body.append(el('div', 'hint', hint()));
 
   const spec = B.spec, item = selected(spec);
   if (item) {
     const title = el('div', 'sel-title', `<span class="dot"></span>${nameOf(spec, item)}`);
     body.append(el('div', 'sub', 'Selezione'), title);
     for (const def of PROPS[item.type]) {
-      body.appendChild(api.control(def, () => item[def.key], v => {
+      body.appendChild(api.control({ ...def, pinLabel: `${nameOf(spec, item)} · ${def.label}` }, () => item[def.key] ?? 0, v => {
         item[def.key] = v;
         if (DYNAMIC.has(item.type) && (def.key === 'h' || def.key === 'r')) snapBody(spec, item);
         save(); api.reset();
@@ -870,6 +1012,11 @@ function buildPanel(body, api) {
   for (const [k, label] of toggles) {
     body.appendChild(api.control({ key: k, type: 'toggle', label }, () => spec.show[k], v => { spec.show[k] = v; save(); api.refresh(); }, 'show.' + k));
   }
+  body.appendChild(el('div', 'sub', 'Elettromagnetismo'));
+  body.appendChild(api.control({ key: 'E', label: 'Campo elettrico uniforme E', unit: 'kN/C', min: 0, max: 2000, step: 5 }, () => spec.E ?? 0, v => { spec.E = v; save(); api.reset(); }, 'scene.E'));
+  body.appendChild(api.control({ key: 'Eangle', label: 'Direzione del campo', unit: '°', min: -180, max: 180, step: 1 }, () => spec.Eangle ?? 0, v => { spec.Eangle = v; save(); api.reset(); }, 'scene.Ea'));
+  body.appendChild(api.control({ key: 'field', type: 'toggle', label: 'Linee di campo elettrico' }, () => spec.show.field ?? true, v => { spec.show.field = v; save(); api.refresh(); }, 'show.field'));
+  body.appendChild(el('div', 'hint', 'Dai una carica q a blocchi e sfere selezionandoli, oppure aggiungi cariche fisse.'));
   body.appendChild(el('div', 'sub', 'Esempi'));
   const chips = el('div', 'chips');
   for (const ex of EXAMPLES) {
@@ -943,6 +1090,34 @@ const EXAMPLES = [
     addLink(s, { type: 'force', o: blk.id, F: 20, angle: 20 });
     return s;
   } },
+  { label: 'Pendoli carichi', make() {
+    // Due sferette con la stessa carica appese allo stesso punto: si respingono finché tensione, peso e forza di Coulomb si equilibrano.
+    const s = newSpec(), L = 2, a0 = 5 * deg;
+    const anc = addObj(s, MAKE.anchor(0, 4.5));
+    for (const sg of [-1, 1]) {
+      const b = addObj(s, { ...MAKE.ball(sg * L * Math.sin(a0), 4.5 - L * Math.cos(a0)), r: 0.12, m: 0.05, e: 0, q: 3 });
+      addLink(s, { type: 'rope', a: { o: anc.id, lx: 0, ly: 0 }, b: { o: b.id, lx: 0, ly: 0 }, L });
+    }
+    return s;
+  } },
+  { label: 'Pendolo in un campo uniforme', make() {
+    // Sfera carica appesa a un filo in un campo orizzontale: all'equilibrio tan α = qE/(mg).
+    const s = newSpec();
+    s.E = 245; s.Eangle = 0;
+    const anc = addObj(s, MAKE.anchor(0, 4.5));
+    const b = addObj(s, { ...MAKE.ball(0, 2), r: 0.15, m: 0.1, e: 0, q: 2 });
+    addLink(s, { type: 'rope', a: { o: anc.id, lx: 0, ly: 0 }, b: { o: b.id, lx: 0, ly: 0 }, L: 2.5 });
+    return s;
+  } },
+  { label: 'Orbita attorno a una carica (g = 0)', make() {
+    // Senza gravità, una carica negativa lanciata con la velocità giusta gira attorno a una carica fissa positiva:
+    // k·Q·|q|/r² = m·v²/r con r = 1 m dà v ≈ 3 m/s.
+    const s = newSpec();
+    s.g = 0; s.muFloor = 0; s.show.vel = true; s.show.trail = true;
+    addObj(s, { ...MAKE.chargePos(0, 3), q: 20 });
+    addObj(s, { ...MAKE.ball(0, 4), r: 0.1, m: 0.1, e: 0, mu: 0, q: -5, vx: Math.sqrt(K * 20e-6 * 5e-6 / 0.1) });
+    return s;
+  } },
   { label: 'Urto tra due sfere', make() {
     const s = newSpec();
     s.muFloor = 0;
@@ -958,7 +1133,7 @@ const EXAMPLES = [
 export default {
   id: 'builder',
   title: 'Costruttore libero',
-  subtitle: 'Componi blocchi, piani, molle, funi e carrucole',
+  subtitle: 'Componi blocchi, piani, molle, funi, carrucole e cariche',
   panelTitle: 'Costruttore',
   params: [],
   dt: DT,
@@ -966,7 +1141,13 @@ export default {
 
   mount(api) {
     B.api = api;
-    B.spec ??= store.get('builder.scene', null) ?? EXAMPLES[0].make();
+    if (!B.spec) {
+      const saved = store.get('builder.scene', null);
+      // La prima versione partiva con un esempio: se è rimasto intatto, si riparte dalla scena vuota.
+      const first = EXAMPLES[0].make();
+      delete first.E; delete first.Eangle; delete first.show.field;
+      B.spec = !saved || JSON.stringify(saved) === JSON.stringify(first) ? newSpec() : saved;
+    }
     B.tool = 'select'; B.pending = null;
   },
   unmount() { B.pending = null; B.tool = 'select'; },
@@ -984,7 +1165,7 @@ export default {
 
   sample(s) {
     if (s.t > 0) s.forces = computeForces(s);
-    const E = energy(s), Em = E.K + E.Ug + E.Uel;
+    const E = energy(s), Em = E.K + E.Ug + E.Uel + E.Ue;
     if (s.E0 == null) s.E0 = Em;
     s.energy = { ...E, Em, W: s.Wext, Q: s.E0 + s.Wext - Em };
     const b = {}, l = {};
@@ -1152,8 +1333,18 @@ $$\\sum \\vec F = m\\,\\vec a$$
   <li><b>Attrito</b>: $f \\le \\mu N$. Il valore di $\\mu$ è quello della superficie fissa su cui il corpo appoggia; tra due corpi mobili vale il minore dei due.</li>
 </ul>
 
+<h3>Forze elettriche</h3>
+<ul>
+  <li>Selezionando un blocco o una sfera puoi dargli una <b>carica</b> $q$ (in µC). Con <i>Carica +</i> e <i>Carica −</i> aggiungi cariche fisse.</li>
+  <li>Due cariche si attraggono o si respingono con la <b>legge di Coulomb</b>: $F = k\\,\\dfrac{|q_1 q_2|}{r^2}$.</li>
+  <li>Nella sezione Elettromagnetismo della scena puoi accendere un <b>campo elettrico uniforme</b> $\\vec E$ (come tra le armature di un condensatore): su ogni corpo carico agisce $\\vec F = q\\,\\vec E$.</li>
+  <li>Nel diagramma di corpo libero la forza elettrica compare in viola come $F_e$.</li>
+</ul>
+<p>Esempi: nei <i>Pendoli carichi</i> all'equilibrio $\\tan\\theta = \\dfrac{F_e}{mg}$; nel <i>Pendolo in un campo uniforme</i> $\\tan\\alpha = \\dfrac{qE}{mg}$ (con i valori dell'esempio $\\alpha \\approx 26{,}6^\\circ$); nell'<i>Orbita</i> la forza di Coulomb fa da forza centripeta: $k\\dfrac{Q|q|}{r^2} = m\\dfrac{v^2}{r}$.</p>
+
 <h3>Bilancio energetico</h3>
-$$K + U_g + U_{el} + Q - W = \\text{costante}$$
+$$K + U_g + U_{el} + U_e + Q - W = \\text{costante}$$
+<p>con $U_e = k\\,\\dfrac{q_1 q_2}{r}$ per ogni coppia di cariche, più $-q\\,\\vec E\\cdot\\vec r$ per il campo uniforme.</p>
 <p>dove $Q$ è l'energia dissipata (attriti, urti anelastici, smorzamento) e $W$ il lavoro delle forze esterne (forze applicate e trascinamento con il dito). Nel grafico <i>Energia</i> la linea tratteggiata deve restare orizzontale.</p>
 
 <div class="box"><b>Limiti del modello</b> (utili da discutere con gli studenti): il motore usa un solo coefficiente d'attrito, quindi $\\mu_s = \\mu_d$; gli urti molto lenti (sotto circa 1 m/s) vengono trattati come anelastici; le carrucole sono ideali. I numeri sono ottimi ma non esatti al millesimo come una formula.</div>

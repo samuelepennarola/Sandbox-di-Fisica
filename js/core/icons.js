@@ -37,6 +37,8 @@ export const icons = {
   brush: svg('<path d="M9.1 11.9l8-8.1a2.9 2.9 0 1 1 4.1 4.1l-8.1 8"/><path d="M7.1 14.9c-1.7 0-3 1.4-3 3 0 1.3-2.5 1.5-2 2 1.1 1.1 2.5 2 4 2 2.2 0 4-1.8 4-4a3 3 0 0 0-3-3z"/>'),
   lasso: svg('<path d="M7 22a5 5 0 0 1-2-4"/><path d="M3.3 14A6.8 6.8 0 0 1 2 10c0-4.4 4.5-8 10-8s10 3.6 10 8-4.5 8-10 8c-1.1 0-2.2-.1-3.2-.4"/><circle cx="5" cy="16" r="2"/>'),
   eraserPart: svg('<path d="M7 21l-4.3-4.3a1 1 0 0 1 0-1.4l10-10a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L13 21"/><path d="M22 21H7"/><circle cx="20" cy="4" r="2.2" fill="currentColor"/>'),
+  sidebar: svg('<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M15 4v16"/>'),
+  pin: svg('<path d="M9 4h6l-1 6 3 3H7l3-3z"/><path d="M12 13v7"/>'),
   close: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
 };
 
