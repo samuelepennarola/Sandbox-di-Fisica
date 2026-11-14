@@ -123,9 +123,12 @@ export class Painter {
   sizeHandle(x, y, active) { const [a, b] = this.S(x, y); this.sizeHandleS(a, b, active); }
 
   // Maniglia trascinabile (anello).
+  // Sottile, alla Manim: anello fine e punto pieno; mentre la si trascina compare un alone tenue.
+  // L'area di presa resta quella di main.js (HIT_PX), indipendente dal disegno.
   handle(x, y, active = false) {
-    this.circle(x, y, active ? 13 : 10, { fill: this.c.bg, stroke: 'handle', width: 2.5, alpha: 0.95 });
-    this.circle(x, y, 3.5, { fill: 'handle' });
+    if (active) this.circle(x, y, 15, { fill: 'handle', alpha: 0.16 });
+    this.circle(x, y, active ? 8.5 : 7, { stroke: 'handle', width: 1.4, alpha: 0.95 });
+    this.circle(x, y, 2.6, { fill: 'handle' });
   }
 
   // Suolo: linea netta con il tratteggio obliquo sotto, come nei diagrammi.

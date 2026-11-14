@@ -122,6 +122,11 @@ export function formulaBeside(P, a, b, c, d, src, { gap = 10, size = 17, ...o } 
 }
 
 // Etichette che arrivano alla fine di una crescita g ∈ [0, 1] (l'ultimo 45%).
+// Etichetta "simbolo = valore" (scelta dell'utente): il simbolo nel colore della quota, "= valore" più tenue.
+export const symVal = (P, sym, val) => `${sym}\\color{${(P.M ?? palette(P.c)).muted}}{=${val}}`;
+const degTeX = rad => `${Math.round(rad * 180 / Math.PI)}°`;
+export { degTeX };
+
 export const rate01 = g => rate.smooth(Math.min(1, Math.max(0, (g - 0.55) / 0.45)));
 
 // Parentesi graffa tra i punti mondo a e b, sul lato side (+1: a sinistra andando da a verso b), con etichetta TeX.

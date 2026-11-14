@@ -2,7 +2,7 @@ import { deg, tn, clamp } from '../core/math.js';
 import { crate } from '../core/shapes.js';
 import { tex, texBox } from '../core/manim.js';
 import { uq, un, ut, uf, utn } from '../core/units.js';
-import { Stage, brace, angleMark, rate01, C as Ccol } from '../core/annot.js';
+import { Stage, brace, angleMark, rate01, C as Ccol, symVal, degTeX } from '../core/annot.js';
 
 const stage = new Stage();   // regia: frecce che crescono, graffe, piano che si trasforma, cassa che nasce
 const num = (v, d = 1) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(d).replace('.', ',');
@@ -174,8 +174,8 @@ export default {
     if (alpha > 0.5) {
       const gb = S.grow('braces', 0.8), near = Math.abs(sPos - L / 2) < 2.6;
       const dimL = S.smooth('dimL', [near && p.showComp ? 0.2 : 0.55], 0.25)[0];
-      brace(P, T, B, 'L', { side: -1, gap: 12, grow: gb, alpha: dimL, color: M.muted });
-      angleMark(P, B[0], 0, 46, Math.PI - g.a, Math.PI, '\\alpha', { color: M.text, grow: S.grow('alpha', 0.7) });
+      brace(P, T, B, symVal(P, 'L', uq('m', L, 0)), { side: -1, gap: 12, grow: gb, alpha: Math.min(1, dimL * 1.6), color: M.text });
+      angleMark(P, B[0], 0, 46, Math.PI - g.a, Math.PI, symVal(P, '\\alpha', degTeX(g.a)), { color: M.text, grow: S.grow('alpha', 0.7) });
     }
 
     // Blocco: rettangolo piatto appoggiato al piano (ingrandibile solo nel disegno), con il punto d'applicazione.

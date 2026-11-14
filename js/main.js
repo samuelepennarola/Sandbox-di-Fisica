@@ -5,7 +5,6 @@ import { Panel } from './core/panels.js';
 import { Inspector } from './core/inspector.js';
 import { drawPlot, seriesColor } from './core/plot.js';
 import { palette as manimPalette } from './core/manim.js';
-import { rate } from './core/anim.js';
 import { UNITS, unit, setUnit, onUnitsChange, ut, unitLabel } from './core/units.js';
 import { icons, applyIcons } from './core/icons.js';
 import { store } from './core/store.js';
@@ -480,17 +479,15 @@ function expSnapshot(exp, w, h) {
 
 // Regia del cambio di scena, come in un video di 3Blue1Brown. Una tela sopra la scena (non riceve tocchi, quindi
 // la nuova scena è subito utilizzabile):
-//  - sceneFade: la copia dell'ultimo fotogramma sfuma in 0,35 s (cambio di tema);
-//  - sceneIntro: la scena vecchia sfuma nel nero, il titolo del nuovo esperimento si scrive al centro (Write di
-//    Manim: prima il contorno delle lettere, una dopo l'altra, poi il pieno) e infine sfuma scoprendo la scena.
-// Entrambe rispettano "riduci movimento".
+// sceneFade: la copia dell'ultimo fotogramma sfuma in 0,35 s (cambio di esperimento o di tema). Rispetta
+// "riduci movimento". Il titolo scritto all'apertura è stato tolto su richiesta dell'utente.
 const fadeCv = document.createElement('canvas');
 fadeCv.id = 'sceneFade';
 canvas.after(fadeCv);
-let fadeTimer = 0, introRaf = 0;
+let fadeTimer = 0;
 const noMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 function fadeSetup() {
-  cancelAnimationFrame(introRaf); clearTimeout(fadeTimer);
+  clearTimeout(fadeTimer);
   fadeCv.width = canvas.width; fadeCv.height = canvas.height;
   fadeCv.style.width = canvas.style.width; fadeCv.style.height = canvas.style.height;
   fadeCv.style.transition = 'none'; fadeCv.style.opacity = '1';
@@ -505,47 +502,6 @@ function sceneFade(ms = 350) {
   fadeCv.style.opacity = '0';
   fadeTimer = setTimeout(() => fadeCv.classList.remove('on'), ms + 50);
 }
-const smooth01 = t => (t <= 0 ? 0 : t >= 1 ? 1 : rate.smooth(t));
-// Scritta che si traccia lettera per lettera (f: 0 → 1), centrata in (x, y).
-function writeText(c, str, x, y, size, color, f, alpha = 1) {
-  if (f <= 0 || alpha <= 0) return;
-  c.save();
-  c.font = `${size}px KaTeX_Main, "Times New Roman", serif`;
-  c.textBaseline = 'middle'; c.textAlign = 'left'; c.lineJoin = c.lineCap = 'round';
-  c.fillStyle = c.strokeStyle = color; c.lineWidth = Math.max(1, size * 0.022);
-  const chars = [...str], n = chars.length, per = size * 5;
-  let cx = x - c.measureText(str).width / 2;
-  chars.forEach((ch, i) => {
-    const w = c.measureText(ch).width, g = (f - (i / n) * 0.6) / 0.4;
-    if (g > 0 && ch !== ' ') {
-      const s = smooth01(g / 0.65), fill = smooth01((g - 0.45) / 0.55);
-      if (fill < 1) { c.globalAlpha = alpha * (1 - fill); c.setLineDash([per * s, per]); c.strokeText(ch, cx, y); }
-      if (fill > 0) { c.globalAlpha = alpha * fill; c.fillText(ch, cx, y); }
-    }
-    cx += w;
-  });
-  c.restore();
-}
-function sceneIntro(title, sub, hadScene) {
-  if (noMotion() || !canvas.width) return;
-  let old = null;
-  if (hadScene) { old = document.createElement('canvas'); old.width = canvas.width; old.height = canvas.height; old.getContext('2d').drawImage(canvas, 0, 0); }
-  const c2 = fadeSetup(), t0 = performance.now(), k = canvas.width / cam.w;
-  const step = now => {
-    const t = (now - t0) / 1000, out = smooth01((t - 1.25) / 0.6), M = manimPalette(colors), pad = cam.padFn();
-    const x = (pad.left + cam.w - pad.right) / 2, y = cam.h * 0.46 - out * 14, size = Math.min(58, Math.max(34, cam.w / 16));
-    c2.setTransform(k, 0, 0, k, 0, 0);
-    c2.clearRect(0, 0, cam.w, cam.h);
-    c2.globalAlpha = 1 - out; c2.fillStyle = M.bg; c2.fillRect(0, 0, cam.w, cam.h);
-    if (old && t < 0.3) { c2.globalAlpha = 1 - smooth01(t / 0.3); c2.drawImage(old, 0, 0, cam.w, cam.h); }
-    c2.globalAlpha = 1;
-    writeText(c2, title, x, y, size, M.text, (t - 0.18) / 0.85, 1 - out);
-    if (sub) writeText(c2, sub, x, y + size * 0.95, size * 0.4, M.muted, (t - 0.55) / 0.6, 1 - out);
-    if (t < 1.9) introRaf = requestAnimationFrame(step);
-    else fadeCv.classList.remove('on');
-  };
-  introRaf = requestAnimationFrame(step);
-}
 // I controlli del nuovo esperimento entrano con un breve fade (CSS: #inspector.swap).
 function inspectorSwap() {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -555,13 +511,11 @@ function inspectorSwap() {
 }
 
 function loadExperiment(id) {
-  const hadScene = !!app.exp;
-  if (hadScene) inspectorSwap();
+  if (app.exp) { sceneFade(); inspectorSwap(); }
   ink.end();
   stopSweep();
   app.exp?.unmount?.(api);
   const { exp, area } = findExperiment(id);
-  sceneIntro(exp.title, area.title, hadScene);
   app.exp = exp; app.area = area;
   app.params = { ...defaults(exp), ...store.get('params.' + exp.id, {}) };
   app.sizes = store.get('sizes.' + exp.id, {});

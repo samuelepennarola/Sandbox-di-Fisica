@@ -2,14 +2,13 @@ import { deg, tn, clamp } from '../core/math.js';
 import { ball, palette } from '../core/shapes.js';
 import { tex, texBox } from '../core/manim.js';
 import { uq, un, ut, uf, utn } from '../core/units.js';
-import { Stage, angleMark, rate01, C } from '../core/annot.js';
+import { Stage, angleMark, rate01, C, symVal, degTeX } from '../core/annot.js';
 
 const stage = new Stage();   // regia: frecce che crescono, passaggio morbido tra i punti di vista, corpi che nascono
 
 const Y_HAND = 2;     // treno: quota del punto di lancio (m)
 const Y_DECK = 1;     // treno: quota del pianale (m)
 const CAR = 6;        // treno: semilunghezza del carro pianale (m)
-const T_FREE = 20;    // fiume: durata massima se la barca non punta verso l'altra riva
 const KV_TRAIN = 0.2; // treno: metri di disegno per (m/s)
 
 // Lunghezza della barca in px: della scala dei vettori, così il triangolo delle velocità resta leggibile.
@@ -23,7 +22,7 @@ const start = p => (p.scene === 'river' ? [0, 0] : [0, Y_HAND]);
 function model(p) {
   const vpx = p.vp * Math.cos(p.phi * deg), vpy = p.vp * Math.sin(p.phi * deg);
   let tEnd;
-  if (p.scene === 'river') tEnd = vpy > 1e-9 ? p.L / vpy : T_FREE;
+  if (p.scene === 'river') tEnd = vpy > 1e-9 ? p.L / vpy : (p.tMax ?? 30);   // non arriva all'altra riva: dura quanto scelto
   else tEnd = (vpy + Math.sqrt(vpy * vpy + 2 * p.g * (Y_HAND - Y_DECK))) / p.g;
   return { vpx, vpy, tEnd };
 }
@@ -179,6 +178,7 @@ export default {
     { key: 'vp', label: 'Velocità del corpo in S′, v′', unit: 'm/s', min: 0, max: 20, step: 0.5, value: 3 },
     { key: 'phi', label: 'Direzione di v′ (da +x)', unit: '°', min: -180, max: 180, step: 1, value: 90 },
     { key: 'L', label: 'Larghezza del fiume L', unit: 'm', min: 5, max: 100, step: 1, value: 20 },
+    { key: 'tMax', label: 'Durata se non attraversa', unit: 's', min: 5, max: 300, step: 5, value: 30 },
     { key: 'g', label: 'Gravità g (treno)', unit: 'm/s²', min: 1, max: 25, step: 0.01, value: 9.81 },
     { key: 'showTri', type: 'toggle', label: 'Triangolo delle velocità', value: true, live: true },
   ],
@@ -326,10 +326,11 @@ export default {
       lab.block(x0, y0, bodyR + 2);
       P.arrow(x0, y0, hx, hy, { color: 'applied', key: 'vp0', width: 3.5 });
       if (Math.abs(p.phi) > 0.5 && p.vp > 0) {
-        // Arco oltre il corpo; l'ampiezza vive nel pannello (e nel cursore): sulla scena basta il nome.
+        // Arco oltre il corpo, con l'ampiezza accanto al simbolo.
+        const phiL = symVal(P, '\\varphi', degTeX(p.phi * deg));
         const rArc = Math.max(28, bodyR + 10);
-        angleMark(P, x0, y0, rArc, 0, p.phi * deg, '\\varphi', { color: M.muted, alpha: 0.85, grow: S.grow('phi', 0.7) });
-        const mid = p.phi * deg / 2, [ca, cb] = P.S(x0, y0), B = texBox(P, '\\varphi', 16);
+        angleMark(P, x0, y0, rArc, 0, p.phi * deg, phiL, { color: M.text, alpha: 0.9, grow: S.grow('phi', 0.7) });
+        const mid = p.phi * deg / 2, [ca, cb] = P.S(x0, y0), B = texBox(P, phiL, 16);
         const R = rArc + 12 + Math.abs(Math.cos(mid)) * B.w / 2 + Math.abs(Math.sin(mid)) * (B.bot - B.top) / 2;
         lab.blockS(ca + Math.cos(mid) * R, cb - Math.sin(mid) * R, B.w / 2 + 2, (B.bot - B.top) / 2 + 1);
       }

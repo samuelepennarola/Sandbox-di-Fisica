@@ -2,13 +2,12 @@ import { deg, tn, clamp } from '../core/math.js';
 import { ball, palette } from '../core/shapes.js';
 import { tex, texBox } from '../core/manim.js';
 import { uq, un, ut, uf, utn } from '../core/units.js';
-import { Stage, brace, angleMark, rate01, C } from '../core/annot.js';
+import { Stage, brace, angleMark, rate01, C, symVal, degTeX } from '../core/annot.js';
 
 const stage = new Stage();   // regia: frecce che crescono, ambientazione che nasce dal centro, graffa del raggio
 const num = (v, d = 2) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(d).replace('.', ',');
 
 const TWO_PI = 2 * Math.PI;
-const T_ACCEL = 10;   // con accelerazione tangenziale non nulla la simulazione si ferma dopo 10 s
 const T_REF = 8;      // istante di riferimento per la scala delle frecce
 
 // Leggi orarie esatte del moto circolare uniformemente accelerato.
@@ -16,7 +15,7 @@ const T_REF = 8;      // istante di riferimento per la scala delle frecce
 function kin(p) {
   const w0 = p.v0 / p.R, al = p.at / p.R, th0 = p.th0 * deg;
   const tStop = p.v0 * p.at < 0 ? -p.v0 / p.at : null;
-  const tEnd = tStop ?? (p.at !== 0 ? T_ACCEL : Infinity);
+  const tEnd = tStop ?? (p.tMax ?? 30);   // durata scelta dall'utente (parametro "Durata")
   return { w0, al, th0, tStop, tEnd };
 }
 
@@ -145,6 +144,7 @@ export default {
     { key: 'v0', label: 'Velocità iniziale v₀', unit: 'm/s', min: -30, max: 30, step: 0.1, value: 3 },
     { key: 'at', label: 'Accelerazione tangenziale aₜ', unit: 'm/s²', min: -5, max: 10, step: 0.05, value: 0 },
     { key: 'th0', label: 'Angolo iniziale θ₀', unit: '°', min: 0, max: 360, step: 1, value: 0 },
+    { key: 'tMax', label: 'Durata della simulazione', unit: 's', min: 5, max: 300, step: 5, value: 30 },
     { key: 'showAcc', type: 'toggle', label: 'Vettori accelerazione', value: true, live: true },
     { key: 'showProj', type: 'toggle', label: 'Proiezioni su x e y', value: false, live: true },
     { key: 'strobe', type: 'toggle', label: 'Posizioni ogni 0,25 s', value: false, live: true },
@@ -269,16 +269,16 @@ export default {
     // Raggio vettore e angolo θ (ridotto all'intervallo [0, 2π)): quote tenui.
     P.line([[0, 0], [x, y]], { color: 'muted', width: 1.2, alpha: 0.8 });
     const thm = ((s.th % TWO_PI) + TWO_PI) % TWO_PI;
-    if (thm > 0.02) angleMark(P, 0, 0, 28, 0, thm, '\\theta', { color: M.muted, alpha: 0.85 });
+    if (thm > 0.02) angleMark(P, 0, 0, 28, 0, thm, symVal(P, '\\theta', degTeX(thm)), { color: M.text, alpha: 0.9 });
     // Graffa del raggio sotto l'asse x.
-    brace(P, [0, 0], [R, 0], `R = ${uq('m', R)}`, { side: -1, gap: 9, grow: S.grow('braceR', 0.8), color: M.muted, alpha: 0.75 });
+    brace(P, [0, 0], [R, 0], symVal(P, 'R', uq('m', R)), { side: -1, gap: 9, grow: S.grow('braceR', 0.8), color: M.text, alpha: 0.85 });
     P.circle(0, 0, 3, { fill: 'muted' });
 
     const lab = labeler(S, P);
     // Le scritte fisse (θ e la misura della graffa) fanno da ostacolo alle etichette dei vettori.
     {
       const [o0, o1] = P.S(0, 0), len = Rpx, w = Math.min(11, Math.max(5, len * 0.12));
-      const Bb = texBox(P, `R = ${uq('m', R)}`, 16), hb = (Bb.bot - Bb.top) / 2;
+      const Bb = texBox(P, symVal(P, 'R', uq('m', R)), 16), hb = (Bb.bot - Bb.top) / 2;
       lab.blockS(o0 + len / 2, o1 + 9 + w + 6 + hb, Bb.w / 2 + 2, hb + 1);
       if (thm > 0.02) {
         const Bt = texBox(P, '\\theta', 16), m = thm / 2, ht = (Bt.bot - Bt.top) / 2;

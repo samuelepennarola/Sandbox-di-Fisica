@@ -3,7 +3,7 @@ import { ball } from '../core/shapes.js';
 import { trail } from '../core/look.js';
 import { tex, texBox } from '../core/manim.js';
 import { uq, un, ut, uf, utn } from '../core/units.js';
-import { Stage, createPts, brace, angleMark, dropLines, rate01, C, arrowPx, arrowMag } from '../core/annot.js';
+import { Stage, createPts, brace, angleMark, dropLines, rate01, C, arrowPx, arrowMag, symVal, degTeX } from '../core/annot.js';
 
 const stage = new Stage();   // regia: frecce che crescono, parabola che si disegna, graffe, corpi che nascono
 const num = (v, d = 1) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(d).replace('.', ',');
@@ -176,12 +176,12 @@ export default {
         const ax = id.vx * id.tApex;
         P.line([[ax, 0], [ax, id.hmax]], { color: 'ideal', width: 1, dash: [2, 4], alpha: 0.7 * gb * dim });
         P.circle(ax, id.hmax, 3, { fill: 'muted', alpha: gb });
-        if ((id.hmax) * P.cam.scale > 34) brace(P, [ax, 0], [ax, id.hmax], 'h_{\\mathrm{max}}', { side: 1, grow: gb, alpha: dim, color: M.muted });
+        if ((id.hmax) * P.cam.scale > 34) brace(P, [ax, 0], [ax, id.hmax], symVal(P, 'h_{\\mathrm{max}}', uq('m', id.hmax)), { side: 1, grow: gb, alpha: dim, color: M.text });
       }
       if (id.R > 0.05) {
         P.circle(id.R, 0, 3, { fill: 'muted', alpha: gb });
         // Sotto il suolo, oltre il tratteggio del terreno.
-        brace(P, [0, 0], [id.R, 0], 'R', { side: -1, gap: 20, grow: gb, alpha: dim, color: M.muted });
+        brace(P, [0, 0], [id.R, 0], symVal(P, 'R', uq('m', id.R)), { side: -1, gap: 20, grow: gb, alpha: dim, color: M.text });
       }
     }
 
@@ -195,7 +195,7 @@ export default {
 
     // Vettore v₀ di lancio con angolo θ (trascinabile): l'etichetta sta di lato, non sulla maniglia della punta.
     const L0 = arrowPx(v0, VREF, V0) / P.cam.scale, tipx = L0 * Math.cos(th), tipy = h0 + L0 * Math.sin(th);
-    if (th > 0.01) angleMark(P, 0, h0, 34, 0, th, '\\theta', { color: M.muted, grow: S.grow('theta', 0.7) });
+    if (th > 0.01) angleMark(P, 0, h0, 34, 0, th, symVal(P, '\\theta', degTeX(th)), { color: M.text, grow: S.grow('theta', 0.7) });
     P.line([[0, h0], [L0 * 0.9, h0]], { color: 'muted', width: 1, dash: [3, 4], alpha: 0.6 });
     const a0 = fresh ? 1 : 0.4;
     P.arrow(0, h0, tipx, tipy, { color: 'vel', width: fresh ? 3 : 2, alpha: a0, dash: fresh ? null : [5, 4], key: 'v0' });
