@@ -699,7 +699,8 @@ body.chrome-idle .pin-x { opacity: 0; }
   max-width: calc(100vw - var(--insp-w) - 48px); display: flex; flex-wrap: wrap; gap: 6px; pointer-events: none;
 }
 body.has-rail:not(.lesson) .quickbar { left: calc(env(safe-area-inset-left) + 96px); }
-.quickbar.hidden, body.lesson .quickbar, body.no-sim .quickbar { display: none; }
+.quickbar.hidden, body.lesson .quickbar { display: none; }
+body.no-sim .quickbar { bottom: calc(env(safe-area-inset-bottom) + 14px); }
 .quickbar button {
   pointer-events: auto; display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 0 14px 0 10px;
   border-radius: 20px; border: 1px solid color-mix(in srgb, var(--c-text) 14%, transparent);

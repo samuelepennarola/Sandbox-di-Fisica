@@ -27,7 +27,7 @@ const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
 const cam = new Camera();
 // Margini dell'inquadratura: barra in alto, ispettore a destra (se occupa spazio), moviola in basso.
-cam.padFn = () => ({ top: 76, right: 24 + (insp?.reserved ?? 0), bottom: document.body.classList.contains('no-sim') ? 24 : document.body.classList.contains('has-quick') ? 124 : 72, left: 24 + (document.body.classList.contains('has-rail') && !document.body.classList.contains('lesson') ? 76 : 0) });
+cam.padFn = () => ({ top: 76, right: 24 + (insp?.reserved ?? 0), bottom: document.body.classList.contains('no-sim') ? (document.body.classList.contains('has-quick') ? 96 : 24) : document.body.classList.contains('has-quick') ? 124 : 72, left: 24 + (document.body.classList.contains('has-rail') && !document.body.classList.contains('lesson') ? 76 : 0) });
 const ink = new Ink();
 const lasso = new Lasso(ink);
 let colors = readColors();
@@ -262,8 +262,10 @@ function buildParams() {
   app.syncs = [];
   insp.setTitle(exp.panelTitle ?? 'Parametri');
   // Gli interruttori (sì/no) della scena stanno nella barra sulla scena, non tra i Parametri.
-  const toggles = exp.buildPanel ? [] : (exp.params ?? []).filter(d => d.type === 'toggle' && !d.hidden);
-  app.syncs.push(...buildQuickbar($('quickbar'), toggles, d => app.params[d.key], (d, v) => setParam(d, v)));
+  // Un esperimento con un pannello suo (exp.buildPanel) dichiara i suoi interruttori con exp.toggles(api):
+  // [{ key, label, short?, icon?, get(), set(v) }].
+  const toggles = exp.toggles ? exp.toggles(api) : exp.buildPanel ? [] : (exp.params ?? []).filter(d => d.type === 'toggle' && !d.hidden);
+  app.syncs.push(...buildQuickbar($('quickbar'), toggles, d => (d.get ? d.get() : app.params[d.key]), (d, v) => (d.set ? d.set(v) : setParam(d, v))));
   document.body.classList.toggle('has-quick', toggles.length > 0);
   if (exp.buildPanel) {
     rail.dataset.used = '';
@@ -285,6 +287,8 @@ function buildParams() {
 // Situazione tipica (o i valori iniziali, se pr è null) dell'esperimento aperto.
 function applyPreset(pr) {
   stopSweep();
+  // Situazioni costruite dall'esperimento stesso (pannelli fatti a mano): pr.apply(api).
+  if (pr?.apply) { pr.apply(api); syncParams(); return; }
   if (pr) Object.assign(app.params, pr.values); else app.params = defaults(app.exp);
   syncParams(); resetSim(); fitView();
 }
@@ -398,7 +402,7 @@ function buildDrawer() {
       if (app.exp === e && e.presets?.length) {
         const sub = document.createElement('div');
         sub.className = 'drawer-sub';
-        for (const pr of [...e.presets, null]) {
+        for (const pr of [...e.presets, ...(e.params?.length ? [null] : [])]) {
           const c = document.createElement('button');
           c.textContent = pr ? pr.label : 'Valori iniziali';
           c.onclick = () => { applyPreset(pr); toggleDrawer(false); };

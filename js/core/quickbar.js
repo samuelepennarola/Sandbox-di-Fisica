@@ -42,6 +42,7 @@ const ICONS = {
   contours: SVG('<circle cx="10" cy="10" r="2.5"/><circle cx="10" cy="10" r="5.5" stroke-dasharray="2 1.5"/><circle cx="10" cy="10" r="8.5" stroke-dasharray="2 2"/>'),
   cm: SVG('<circle cx="10" cy="10" r="5"/><path d="M10 5v10M5 10h10"/>'),
   cannon: SVG('<path d="M3 16h14"/><path d="M5 15l6-5" stroke-width="3"/><path d="M11 10q4-4 7 0" stroke-dasharray="1.5 2"/>'),
+  flines: SVG('<circle cx="6" cy="10" r="2" fill="currentColor"/><path d="M8 10h9M8 8.5q5-6 9-5M8 11.5q5 6 9 5"/>'),
   eye: SVG('<path d="M2 10s3-6 8-6 8 6 8 6-3 6-8 6-8-6-8-6z"/><circle cx="10" cy="10" r="2.5"/>'),
 };
 

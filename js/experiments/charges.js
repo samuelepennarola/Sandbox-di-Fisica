@@ -689,18 +689,19 @@ export default {
       }
       inScene.appendChild(list);
     }
-    const showBox = api.section(body, 'Mostra', 'c.show', true);
-    for (const [k, label] of [['lines', 'Linee di campo'], ['E', 'Vettori del campo E'], ['F', 'Forze sulle cariche'], ['comp', 'Componenti x e y delle forze'], ['probe', 'Sonda']]) {
-      showBox.appendChild(api.control({ key: k, type: 'toggle', label }, () => B.spec.show[k], v => { B.spec.show[k] = v; changed(); }, 'charges.show.' + k));
-    }
-    const presets = api.section(body, 'Situazioni tipiche', 'c.presets', true);
-    const chips = el('div', 'chips');
-    for (const p of PRESETS) {
-      const b = el('button', '', p.label);
-      b.onclick = () => { B.spec = p.make(); B.sel = p.sel ?? null; changed(); api.fit(); api.rebuildPanel(); };
-      chips.appendChild(b);
-    }
-    presets.appendChild(chips);
+    // Gli interruttori di «Mostra» stanno nella barra sulla scena (toggles), le situazioni tipiche nel cassetto (presets).
+  },
+
+  // Interruttori della scena, nella barra in basso a sinistra come negli altri esperimenti.
+  toggles() {
+    return [['lines', 'Linee di campo', 'Linee di campo', 'flines'], ['E', 'Vettori del campo E', 'Vettori E', 'field'], ['F', 'Forze sulle cariche', 'Forze', 'force'],
+      ['comp', 'Componenti x e y delle forze', 'Componenti', 'comp'], ['probe', 'Sonda', 'Sonda', 'probe']]
+      .map(([key, label, short, icon]) => ({ key, label, short, icon, get: () => !!B.spec.show[key], set: v => { B.spec.show[key] = v; changed(); } }));
+  },
+
+  // Situazioni tipiche nel cassetto ☰, come sotto-voci dell'esperimento.
+  get presets() {
+    return PRESETS.map(p => ({ label: p.label, apply: api => { B.spec = { ...p.make(), show: B.spec.show }; B.sel = p.sel ?? null; changed(); api.fit(); api.rebuildPanel(); } }));
   },
 
   pointerDown({ wx, wy, api }) {
