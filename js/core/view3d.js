@@ -57,6 +57,8 @@ export class View3D {
 // regia (valori che inseguono con morbidezza, come move_camera di Manim).
 // In vista 3D la camera non sta mai ferma: oscilla piano attorno alla posizione scelta (ambient camera rotation di
 // Manim), ±swing rad in un periodo di `period` secondi. Nelle istantanee e con "riduci movimento" resta ferma.
+// Inclinazione (rad) entro cui la griglia piatta lascia il posto alla stanza a quadretti.
+const FADE = 0.1;
 const tilts = {};   // inclinazione dell'ultima camera di ogni esperimento (per lo sfondo, disegnato prima della scena)
 const orbits = {};  // rotazione scelta con il dito: { dp, dy } in radianti, per esperimento
 
@@ -88,7 +90,8 @@ export function orbit3d(key, on, dx, dy, sign = 1) {
 // nel piano dell'esperimento, così ruota insieme a tutto il resto.
 export const background3d = key => (ctx, cam, colors) => {
   // Mentre la camera si inclina la griglia piatta sfuma e lascia il posto alla stanza a quadretti (room3d).
-  const k = Math.min(1, (tilts[key] ?? 0) / 0.5), M = palette(colors);
+  // Lo scambio con la stanza avviene nei primi gradi d'inclinazione: le due griglie non devono mai convivere.
+  const k = Math.min(1, (tilts[key] ?? 0) / FADE), M = palette(colors);
   ctx.fillStyle = M.bg; ctx.fillRect(0, 0, cam.w, cam.h);
   if (k >= 1) return;
   ctx.save(); ctx.globalAlpha = 1 - k; drawGrid(ctx, cam, colors, k < 0.05); ctx.restore();
@@ -133,7 +136,7 @@ export function grid3d(P, V, { plane = 'xy', extend = 1.8, alpha = 1, zr = 6 } =
 // I quadretti hanno un passo fisso (step), quindi spostando o ruotando la camera la griglia non si ricalcola.
 // A camera di fronte resta lo sfondo piatto di sempre (background3d); compare man mano che la camera si inclina.
 export function room3d(P, V, box, { up = 'y', step = 1, alpha = 1 } = {}) {
-  const k = V.tilt() * alpha;
+  const k = V.tilt(FADE) * alpha;
   if (k <= 0.001) return;
   const M = P.M ?? palette(P.c), ctx = P.ctx, axes = ['x', 'y', 'z'];
   const at = (q, ax, v) => { const r = { ...q }; r[ax] = v; return [r.x, r.y, r.z]; };
