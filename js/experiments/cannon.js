@@ -25,8 +25,8 @@ export default {
   timeScale: () => 10,
 
   params: [
-    { key: 'v', label: 'Velocità di sparo v', unit: 'km/s', min: 0.5, max: 13, step: 0.05, value: 6.5 },
-    { key: 'h', label: 'Altezza della montagna h', unit: 'km', min: 100, max: 3000, step: 10, value: 600, refit: true },
+    { key: 'v', label: 'Velocità di sparo v', unit: 'km/s', min: 0.5, max: 30, step: 0.05, value: 6.5 },
+    { key: 'h', label: 'Altezza della montagna h', unit: 'km', min: 10, max: 20000, step: 10, value: 600, refit: true },
     { key: 'tMax', label: 'Durata della simulazione', unit: 'min', min: 30, max: 2000, step: 10, value: 300 },
     { key: 'keepShots', type: 'toggle', label: 'Colpi precedenti', value: true, live: true },
     { key: 'showConic', type: 'toggle', label: 'Orbita prevista', value: false, live: true },

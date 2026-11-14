@@ -35,14 +35,14 @@ export default {
   dt: 1 / 2000,
 
   params: [
-    { key: 'm1', label: 'Massa del carrello 1  m₁', unit: 'kg', min: 0.2, max: 10, step: 0.1, value: 1 },
-    { key: 'm2', label: 'Massa del carrello 2  m₂', unit: 'kg', min: 0.2, max: 10, step: 0.1, value: 1 },
-    { key: 'v1', label: 'Velocità iniziale v₁', unit: 'm/s', min: -5, max: 5, step: 0.1, value: 2 },
-    { key: 'v2', label: 'Velocità iniziale v₂', unit: 'm/s', min: -5, max: 5, step: 0.1, value: 0 },
+    { key: 'm1', label: 'Massa del carrello 1  m₁', unit: 'kg', min: 0.1, max: 100, step: 0.1, value: 1 },
+    { key: 'm2', label: 'Massa del carrello 2  m₂', unit: 'kg', min: 0.1, max: 100, step: 0.1, value: 1 },
+    { key: 'v1', label: 'Velocità iniziale v₁', unit: 'm/s', min: -20, max: 20, step: 0.1, value: 2 },
+    { key: 'v2', label: 'Velocità iniziale v₂', unit: 'm/s', min: -20, max: 20, step: 0.1, value: 0 },
     { key: 'x1', label: 'Posizione del carrello 1', unit: 'm', min: -4.5, max: 4.5, step: 0.05, value: -3, hidden: true },
     { key: 'x2', label: 'Posizione del carrello 2', unit: 'm', min: -4.5, max: 4.5, step: 0.05, value: 1, hidden: true },
     { key: 'e', label: 'Coefficiente di restituzione e', unit: '', min: 0, max: 1, step: 0.01, value: 1 },
-    { key: 'tMax', label: 'Durata della simulazione', unit: 's', min: 2, max: 30, step: 1, value: 4 },
+    { key: 'tMax', label: 'Durata della simulazione', unit: 's', min: 2, max: 120, step: 1, value: 4 },
     { key: 'slowmo', type: 'toggle', label: 'Rallentatore all\'urto', value: true, live: true },
     { key: 'showBal', type: 'toggle', label: 'Bilancio di p e K', value: true, live: true },
     { key: 'showForce', type: 'toggle', label: 'Forze durante l\'urto', value: true, live: true },
@@ -58,7 +58,8 @@ export default {
 
   view() { return { xmin: -5, xmax: 5, ymin: -0.8, ymax: 3.4 }; },
 
-  init(p) { return { t: 0, x1: p.x1, v1: p.v1, x2: p.x2, v2: p.v2, tc0: null, tEnd: p.tMax }; },
+  // Con masse grandi i carrelli si allargano: se partirebbero sovrapposti, il secondo si sposta a destra.
+  init(p) { const x2 = Math.max(p.x2, p.x1 + (width(p.m1) + width(p.m2)) / 2 + 0.05); return { t: 0, x1: p.x1, v1: p.v1, x2, v2: p.v2, tc0: null, tEnd: p.tMax }; },
 
   step(s, dt, p) {
     const { k, c } = contact(p.m1, p.m2, p.e), wsum = (width(p.m1) + width(p.m2)) / 2;
@@ -113,8 +114,8 @@ export default {
       if (id === 'c1') p.x1 = Math.min(x, p.x2 - gap); else p.x2 = Math.max(x, p.x1 + gap);
       return;
     }
-    const i = id === 'v1' ? 1 : 2, x = p['x' + i], dx = wx - x, r = vref({ ...p, ['v' + i]: 5 });
-    p['v' + i] = clamp(Math.round(Math.sign(dx) * arrowMag(Math.abs(dx) * SC, r, V) * 10) / 10, -5, 5);
+    const i = id === 'v1' ? 1 : 2, x = p['x' + i], dx = wx - x, r = vref({ ...p, ['v' + i]: 20 });
+    p['v' + i] = clamp(Math.round(Math.sign(dx) * arrowMag(Math.abs(dx) * SC, r, V) * 10) / 10, -20, 20);
   },
 
   // I carrelli per il diagramma di corpo libero: peso, reazione della rotaia e forza di contatto durante l'urto.

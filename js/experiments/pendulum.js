@@ -19,11 +19,11 @@ export default {
   axes: true,   // niente numeri sulla griglia: sotto il pendolo scorre la traccia
 
   params: [
-    { key: 'L', label: 'Lunghezza del filo L', unit: 'm', min: 0.2, max: 5, step: 0.05, value: 1.5 },
+    { key: 'L', label: 'Lunghezza del filo L', unit: 'm', min: 0.1, max: 50, step: 0.05, value: 1.5 },
     { key: 'th0', label: 'Angolo iniziale θ₀', unit: '°', min: -170, max: 170, step: 1, value: 20 },
-    { key: 'm', label: 'Massa m', unit: 'kg', min: 0.1, max: 5, step: 0.1, value: 1 },
+    { key: 'm', label: 'Massa m', unit: 'kg', min: 0.1, max: 100, step: 0.1, value: 1 },
     { key: 'g', label: 'Gravità g', unit: 'm/s²', min: 1, max: 25, step: 0.01, value: 9.81 },
-    { key: 'gam', label: 'Smorzamento γ', unit: '1/s', min: 0, max: 1, step: 0.01, value: 0 },
+    { key: 'gam', label: 'Smorzamento γ', unit: '1/s', min: 0, max: 5, step: 0.01, value: 0 },
     { key: 'tMax', label: 'Durata della simulazione', unit: 's', min: 5, max: 300, step: 5, value: 30 },
     { key: 'showPhasor', type: 'toggle', label: 'Fasore (moto circolare)', value: false, live: true, refit: true },
     { key: 'showTrace', type: 'toggle', label: 'Traccia x(t)', value: true, live: true, refit: true },
@@ -97,7 +97,7 @@ export default {
 
   drag(id, wx, wy, p) {
     if (id !== 'bob') return;
-    p.L = clamp(Math.round(Math.hypot(wx, wy) * 20) / 20, 0.2, 5);
+    p.L = clamp(Math.round(Math.hypot(wx, wy) * 20) / 20, 0.1, 50);
     p.th0 = clamp(Math.round(Math.atan2(wx, -wy) / deg), -170, 170);
   },
 

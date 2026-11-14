@@ -59,12 +59,12 @@ export default {
   subtitle: 'Lancio di un proiettile, con o senza aria',
 
   params: [
-    { key: 'v0', label: 'Velocità iniziale v₀', unit: 'm/s', min: 1, max: 40, step: 0.5, value: 18 },
+    { key: 'v0', label: 'Velocità iniziale v₀', unit: 'm/s', min: 1, max: 100, step: 0.5, value: 18 },
     { key: 'theta', label: 'Angolo di lancio θ', unit: '°', min: 0, max: 90, step: 1, value: 50 },
-    { key: 'h0', label: 'Altezza iniziale h₀', unit: 'm', min: 0, max: 30, step: 0.5, value: 0 },
+    { key: 'h0', label: 'Altezza iniziale h₀', unit: 'm', min: 0, max: 200, step: 0.5, value: 0 },
     { key: 'g', label: 'Gravità g', unit: 'm/s²', min: 1, max: 25, step: 0.01, value: 9.81 },
-    { key: 'm', label: 'Massa m', unit: 'kg', min: 0.1, max: 10, step: 0.1, value: 1 },
-    { key: 'k', label: 'Resistenza dell\'aria k', unit: '1/m', min: 0, max: 0.1, step: 0.001, value: 0 },
+    { key: 'm', label: 'Massa m', unit: 'kg', min: 0.1, max: 100, step: 0.1, value: 1 },
+    { key: 'k', label: 'Resistenza dell\'aria k', unit: '1/m', min: 0, max: 0.5, step: 0.001, value: 0 },
     { key: 'showComp', type: 'toggle', label: 'Componenti di v', value: true, live: true },
     { key: 'showAcc', type: 'toggle', label: 'Vettore accelerazione', value: false, live: true },
     { key: 'showIdeal', type: 'toggle', label: 'Parabola ideale', value: true, live: true },
@@ -135,10 +135,10 @@ export default {
   },
 
   drag(id, wx, wy, p) {
-    if (id === 'h0') p.h0 = clamp(Math.round(wy * 2) / 2, 0, 30);
+    if (id === 'h0') p.h0 = clamp(Math.round(wy * 2) / 2, 0, 200);
     if (id === 'v0') {
       const dx = wx, dy = wy - p.h0;
-      p.v0 = clamp(Math.round(arrowMag(Math.hypot(dx, dy) * SC, VREF, V0) * 2) / 2, 1, 40);
+      p.v0 = clamp(Math.round(arrowMag(Math.hypot(dx, dy) * SC, VREF, V0) * 2) / 2, 1, 100);
       p.theta = clamp(Math.round(Math.atan2(dy, dx) / deg), 0, 90);
     }
   },

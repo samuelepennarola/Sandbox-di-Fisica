@@ -29,8 +29,8 @@ export default {
   subtitle: 'Una ruota messa in rotazione da un peso',
 
   params: [
-    { key: 'mh', label: 'Massa appesa m', unit: 'kg', min: 0.05, max: 2, step: 0.05, value: 0.3 },
-    { key: 'mm', label: 'Masse sui raggi (ognuna)', unit: 'kg', min: 0, max: 2, step: 0.05, value: 0.5 },
+    { key: 'mh', label: 'Massa appesa m', unit: 'kg', min: 0.01, max: 20, step: 0.05, value: 0.3 },
+    { key: 'mm', label: 'Masse sui raggi (ognuna)', unit: 'kg', min: 0, max: 10, step: 0.05, value: 0.5 },
     { key: 'r', label: 'Distanza delle masse dall\'asse r', unit: 'm', min: 0.1, max: 0.55, step: 0.01, value: 0.45 },
     { key: 'show3d', type: 'toggle', label: 'Vista 3D: ω e τ come vettori', value: false, live: true },
     { key: 'showForce', type: 'toggle', label: 'Forze e momento', value: true, live: true },

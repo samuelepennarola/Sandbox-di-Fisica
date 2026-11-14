@@ -62,11 +62,11 @@ export default {
   subtitle: 'Forze, attrito statico e dinamico, energia',
 
   params: [
-    { key: 'alpha', label: 'Inclinazione α', unit: '°', min: 0, max: 60, step: 1, value: 30 },
-    { key: 'm', label: 'Massa m', unit: 'kg', min: 0.5, max: 5, step: 0.1, value: 2 },
+    { key: 'alpha', label: 'Inclinazione α', unit: '°', min: 0, max: 85, step: 1, value: 30 },
+    { key: 'm', label: 'Massa m', unit: 'kg', min: 0.1, max: 100, step: 0.1, value: 2 },
     { key: 'mus', label: 'Attrito statico μs', unit: '', min: 0, max: 1.2, step: 0.01, value: 0.5 },
     { key: 'muk', label: 'Attrito dinamico μd', unit: '', min: 0, max: 1.2, step: 0.01, value: 0.3 },
-    { key: 'v0', label: 'Velocità iniziale v₀ (+ giù)', unit: 'm/s', min: -10, max: 10, step: 0.1, value: 0 },
+    { key: 'v0', label: 'Velocità iniziale v₀ (+ giù)', unit: 'm/s', min: -30, max: 30, step: 0.1, value: 0 },
     { key: 's0', label: 'Posizione iniziale s₀', unit: 'm', min: BW / 2, max: L - BW / 2, step: 0.1, value: 1.5 },
     { key: 'g', label: 'Gravità g', unit: 'm/s²', min: 1, max: 25, step: 0.01, value: 9.81 },
     { key: 'showComp', type: 'toggle', label: 'Scomponi il peso', value: true, live: true },

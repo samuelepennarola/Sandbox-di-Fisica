@@ -29,11 +29,11 @@ export default {
 
   params: [
     scaleParam('solar'),
-    { key: 'M', label: 'Massa centrale M', unit: '', min: 0.1, max: 10, step: 0.1, value: 1, refit: true },
-    { key: 'r0', label: 'Distanza iniziale r₀', unit: '', min: 0.2, max: 10, step: 0.01, value: 1, refit: true },
-    { key: 'k', label: 'Velocità iniziale (in v circolari)', unit: '', min: 0, max: 2, step: 0.01, value: 1, refit: true },
+    { key: 'M', label: 'Massa centrale M', unit: '', min: 0.01, max: 1000, step: 0.1, value: 1, refit: true },
+    { key: 'r0', label: 'Distanza iniziale r₀', unit: '', min: 0.05, max: 100, step: 0.01, value: 1, refit: true },
+    { key: 'k', label: 'Velocità iniziale (in v circolari)', unit: '', min: 0, max: 3, step: 0.01, value: 1, refit: true },
     { key: 'phi', label: 'Angolo tra v₀ e il raggio', unit: '°', min: 0, max: 180, step: 1, value: 90, refit: true },
-    { key: 'tMax', label: 'Durata della simulazione', unit: '', min: 1, max: 300, step: 1, value: 20 },
+    { key: 'tMax', label: 'Durata della simulazione', unit: '', min: 1, max: 2000, step: 1, value: 20 },
     { key: 'showAreas', type: 'toggle', label: 'Aree in tempi uguali (II legge)', value: true, live: true },
     { key: 'showConic', type: 'toggle', label: 'Orbita prevista', value: true, live: true },
     { key: 'show3d', type: 'toggle', label: 'Vista 3D: il momento angolare', value: false, live: true },
@@ -100,17 +100,17 @@ export default {
 
   handles(s, p) {
     if (!CAM) return [];
-    const q = init0(p), v = Math.hypot(q.vx, q.vy), L = Math.max(arrowPx(p.k, 2, VA), VA.min) / SC;
+    const q = init0(p), v = Math.hypot(q.vx, q.vy), L = Math.max(arrowPx(p.k, 3, VA), VA.min) / SC;
     const ux = v > 1e-9 ? q.vx / v : Math.cos(p.phi * deg), uy = v > 1e-9 ? q.vy / v : Math.sin(p.phi * deg);
     const [px, py] = CAM.p(q.x, q.y, 0), [tx, ty] = CAM.p(q.x + ux * L, q.y + uy * L, 0);
     return [{ id: 'r0', x: px, y: py }, { id: 'v0', x: tx, y: ty }];
   },
 
   drag(id, wx, wy, p) {
-    if (id === 'r0') p.r0 = clamp(Math.round(Math.max(0.2, wx) * 100) / 100, 0.2, 10);
+    if (id === 'r0') p.r0 = clamp(Math.round(Math.max(0.05, wx) * 100) / 100, 0.05, 100);
     if (id === 'v0') {
       const dx = wx - p.r0, dy = wy;
-      p.k = clamp(Math.round(arrowMag(Math.hypot(dx, dy) * SC, 2, VA) * 100) / 100, 0, 2);
+      p.k = clamp(Math.round(arrowMag(Math.hypot(dx, dy) * SC, 3, VA) * 100) / 100, 0, 3);
       if (Math.hypot(dx, dy) * SC > 8) p.phi = clamp(Math.round(Math.atan2(dy, dx) / deg), 0, 180);
     }
   },
@@ -178,7 +178,7 @@ export default {
     // Velocità del pianeta (scala compressa) e, a simulazione ferma, le maniglie.
     const v = Math.hypot(s.vx, s.vy), vc = vCirc(p);
     if (v > 1e-9) {
-      const L = arrowPx(v / vc, 2, VA) / sc, [tx, ty] = pr(s.x + s.vx / v * L, s.y + s.vy / v * L);
+      const L = arrowPx(v / vc, 3, VA) / sc, [tx, ty] = pr(s.x + s.vx / v * L, s.y + s.vy / v * L);
       P.arrow(X, Y, tx, ty, { color: 'vel', key: 'v', width: 3, label: 'v' });
     }
 

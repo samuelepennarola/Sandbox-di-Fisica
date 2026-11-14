@@ -27,7 +27,8 @@ export class Camera {
   }
 
   // Inquadra un rettangolo del mondo lasciando spazio per la barra in alto e i pannelli.
-  fit({ xmin, xmax, ymin, ymax }, pad) {
+  // Inquadratura che contiene il rettangolo, senza applicarla.
+  target({ xmin, xmax, ymin, ymax }, pad) {
     // Margini predefiniti: quelli del layout (barra, ispettore, moviola) se l'app li fornisce.
     pad ??= this.padFn?.() ?? { top: 80, right: 20, bottom: 20, left: 20 };
     const aw = Math.max(100, this.w - pad.left - pad.right);
@@ -35,7 +36,20 @@ export class Camera {
     const scale = Math.min(aw / (xmax - xmin), ah / (ymax - ymin));
     // Centro del rettangolo disponibile, convertito in coordinate mondo.
     const sx = pad.left + aw / 2, sy = pad.top + ah / 2;
-    const to = { scale, cx: (xmin + xmax) / 2 - (sx - this.w / 2) / scale, cy: (ymin + ymax) / 2 + (sy - this.h / 2) / scale };
+    return { scale, cx: (xmin + xmax) / 2 - (sx - this.w / 2) / scale, cy: (ymin + ymax) / 2 + (sy - this.h / 2) / scale };
+  }
+
+  // Camera che segue un soggetto (per esempio un proiettile che si allontana): ogni fotogramma si avvicina
+  // all'inquadratura del rettangolo con una costante di tempo tau (s); lo zoom varia in modo geometrico.
+  follow(rect, dt, tau = 0.6) {
+    this.stop();
+    const to = this.target(rect), k = 1 - Math.exp(-Math.max(0, dt) / tau);
+    this.scale = Math.exp(Math.log(this.scale) + (Math.log(to.scale) - Math.log(this.scale)) * k);
+    this.cx += (to.cx - this.cx) * k; this.cy += (to.cy - this.cy) * k;
+  }
+
+  fit(rect, pad) {
+    const to = this.target(rect, pad);
     // Scorre solo la camera della scena (quella con i margini del layout), non quelle delle istantanee,
     // e solo tra inquadrature confrontabili: un salto di scala enorme (cambio di esperimento) è immediato.
     const ratio = to.scale / this.scale;
@@ -71,7 +85,7 @@ export class Camera {
   zoomAt(sx, sy, factor) {
     this.stop();
     const [wx, wy] = this.toWorld(sx, sy);
-    this.scale = Math.min(4000, Math.max(1, this.scale * factor));
+    this.scale = Math.min(4000, Math.max(1e-5, this.scale * factor));
     const [nx, ny] = this.toWorld(sx, sy);
     this.cx += wx - nx; this.cy += wy - ny;
   }

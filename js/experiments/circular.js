@@ -181,9 +181,9 @@ export default {
   params: [
     { key: 'scene', type: 'select', label: 'Ambientazione', value: 'carousel', live: true,
       options: [{ label: 'Giostra', value: 'carousel' }, { label: 'Strada', value: 'road' }, { label: 'Ruota', value: 'wheel' }, { label: 'Punto', value: 'point' }] },
-    { key: 'R', label: 'Raggio R', unit: 'm', min: 0.2, max: 60, step: 0.05, value: 4 },
-    { key: 'v0', label: 'Velocità iniziale v₀', unit: 'm/s', min: -30, max: 30, step: 0.1, value: 3 },
-    { key: 'at', label: 'Accelerazione tangenziale aₜ', unit: 'm/s²', min: -5, max: 10, step: 0.05, value: 0 },
+    { key: 'R', label: 'Raggio R', unit: 'm', min: 0.1, max: 200, step: 0.05, value: 4 },
+    { key: 'v0', label: 'Velocità iniziale v₀', unit: 'm/s', min: -100, max: 100, step: 0.1, value: 3 },
+    { key: 'at', label: 'Accelerazione tangenziale aₜ', unit: 'm/s²', min: -20, max: 20, step: 0.05, value: 0 },
     { key: 'th0', label: 'Angolo iniziale θ₀', unit: '°', min: 0, max: 360, step: 1, value: 0 },
     { key: 'tMax', label: 'Durata della simulazione', unit: 's', min: 5, max: 300, step: 5, value: 30 },
     { key: 'showAcc', type: 'toggle', label: 'Vettori accelerazione', value: true, live: true },
@@ -253,7 +253,7 @@ export default {
 
   drag(id, wx, wy, p) {
     if (id === 'pos') {
-      p.R = clamp(Math.round(Math.hypot(wx, wy) * 20) / 20, 0.2, 60);
+      p.R = clamp(Math.round(Math.hypot(wx, wy) * 20) / 20, 0.1, 200);
       p.th0 = (Math.round(Math.atan2(wy, wx) / deg) + 360) % 360;
     }
     if (id === 'v0') {
@@ -261,7 +261,7 @@ export default {
       const k = kin(p), { KV } = scales(p, k);
       const c = Math.cos(k.th0), sn = Math.sin(k.th0);
       const along = (wx - p.R * c) * -sn + (wy - p.R * sn) * c;
-      p.v0 = clamp(Math.round(along / KV * 10) / 10, -30, 30);
+      p.v0 = clamp(Math.round(along / KV * 10) / 10, -100, 100);
     }
   },
 

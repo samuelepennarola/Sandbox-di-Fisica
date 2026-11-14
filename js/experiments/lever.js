@@ -45,16 +45,16 @@ export default {
   subtitle: 'Braccio, momento di una forza, equilibrio',
 
   params: [
-    { key: 'm1', label: 'Massa appesa 1  m₁', unit: 'kg', min: 0, max: 10, step: 0.1, value: 2 },
+    { key: 'm1', label: 'Massa appesa 1  m₁', unit: 'kg', min: 0, max: 100, step: 0.1, value: 2 },
     { key: 'd1', label: 'Posizione di m₁', unit: 'm', min: -2, max: 2, step: 0.05, value: -1 },
-    { key: 'm2', label: 'Massa appesa 2  m₂', unit: 'kg', min: 0, max: 10, step: 0.1, value: 1 },
+    { key: 'm2', label: 'Massa appesa 2  m₂', unit: 'kg', min: 0, max: 100, step: 0.1, value: 1 },
     { key: 'd2', label: 'Posizione di m₂', unit: 'm', min: -2, max: 2, step: 0.05, value: 1.5 },
-    { key: 'F', label: 'Forza applicata F', unit: 'N', min: 0, max: 100, step: 0.5, value: 0 },
+    { key: 'F', label: 'Forza applicata F', unit: 'N', min: 0, max: 1000, step: 0.5, value: 0 },
     { key: 'dF', label: 'Punto di applicazione di F', unit: 'm', min: -2, max: 2, step: 0.05, value: 2 },
     { key: 'phi', label: 'Direzione di F', unit: '°', min: -180, max: 180, step: 1, value: 90 },
     { key: 'xf', label: 'Posizione del fulcro', unit: 'm', min: -2, max: 2, step: 0.05, value: 0 },
-    { key: 'mb', label: 'Massa dell\'asta', unit: 'kg', min: 0, max: 10, step: 0.1, value: 2 },
-    { key: 'tMax', label: 'Durata della simulazione', unit: 's', min: 2, max: 30, step: 1, value: 6 },
+    { key: 'mb', label: 'Massa dell\'asta', unit: 'kg', min: 0, max: 100, step: 0.1, value: 2 },
+    { key: 'tMax', label: 'Durata della simulazione', unit: 's', min: 2, max: 120, step: 1, value: 6 },
     { key: 'show3d', type: 'toggle', label: 'Vista 3D: il momento come vettore', value: false, live: true },
     { key: 'showArm', type: 'toggle', label: 'Bracci e versi di rotazione', value: true, live: true },
   ],
@@ -111,7 +111,7 @@ export default {
     if (id === 'd1' || id === 'd2' || id === 'xf') { p[id] = u; return; }
     if (id === 'F') {
       const dx = wx - p.dF, dy = wy - H;
-      p.F = clamp(Math.round(arrowMag(Math.hypot(dx, dy) * SC, FREF, FA) * 2) / 2, 0, 100);
+      p.F = clamp(Math.round(arrowMag(Math.hypot(dx, dy) * SC, FREF, FA) * 2) / 2, 0, 1000);
       if (Math.hypot(dx, dy) * SC > 8) p.phi = Math.round(Math.atan2(dy, dx) / deg);
     }
   },

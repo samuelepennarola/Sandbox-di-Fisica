@@ -24,12 +24,12 @@ export default {
   axes: true,   // niente numeri sulla griglia: sotto il suolo scorre la traccia, dove l'asse verticale è il tempo
 
   params: [
-    { key: 'm', label: 'Massa m', unit: 'kg', min: 0.1, max: 5, step: 0.05, value: 1 },
-    { key: 'k', label: 'Costante elastica k', unit: 'N/m', min: 1, max: 200, step: 1, value: 40 },
-    { key: 'x0', label: 'Spostamento iniziale x₀', unit: 'm', min: -0.5, max: 0.5, step: 0.01, value: 0.3 },
-    { key: 'b', label: 'Smorzamento b', unit: 'kg/s', min: 0, max: 10, step: 0.05, value: 0 },
-    { key: 'F0', label: 'Forzante F₀', unit: 'N', min: 0, max: 10, step: 0.1, value: 0 },
-    { key: 'ff', label: 'Frequenza della forzante f_F', unit: 'Hz', min: 0.05, max: 3, step: 0.01, value: 0.5 },
+    { key: 'm', label: 'Massa m', unit: 'kg', min: 0.05, max: 50, step: 0.05, value: 1 },
+    { key: 'k', label: 'Costante elastica k', unit: 'N/m', min: 1, max: 2000, step: 1, value: 40 },
+    { key: 'x0', label: 'Spostamento iniziale x₀', unit: 'm', min: -0.8, max: 0.8, step: 0.01, value: 0.3 },
+    { key: 'b', label: 'Smorzamento b', unit: 'kg/s', min: 0, max: 50, step: 0.05, value: 0 },
+    { key: 'F0', label: 'Forzante F₀', unit: 'N', min: 0, max: 100, step: 0.1, value: 0 },
+    { key: 'ff', label: 'Frequenza della forzante f_F', unit: 'Hz', min: 0.05, max: 10, step: 0.01, value: 0.5 },
     { key: 'tMax', label: 'Durata della simulazione', unit: 's', min: 5, max: 300, step: 5, value: 30 },
     { key: 'showPhasor', type: 'toggle', label: 'Fasore (moto circolare)', value: false, live: true, refit: true },
     { key: 'showTrace', type: 'toggle', label: 'Traccia x(t)', value: true, live: true, refit: true },
@@ -89,7 +89,7 @@ export default {
   },
 
   drag(id, wx, wy, p) {
-    if (id === 'x0') p.x0 = clamp(Math.round(wx * 100) / 100, -0.5, 0.5);
+    if (id === 'x0') p.x0 = clamp(Math.round(wx * 100) / 100, -0.8, 0.8);
   },
 
   mount() { stage.reset(); },

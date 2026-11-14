@@ -563,7 +563,7 @@ function resetSim() {
   app.sim = app.exp.init(app.params);
   app.running = false; app.acc = 0;
   app.samples = []; app.history = []; app.lastSampleT = -Infinity;
-  app.view = null; app.viewCache = null; app.trails = {};
+  app.view = null; app.viewCache = null; app.trails = {}; app.camUser = false;
   recordSample();
   app.formulasDirty = true;
   store.set('params.' + app.exp.id, app.params);
@@ -657,7 +657,8 @@ function updatePlayBtn() {
   document.body.classList.toggle('playing', app.running);   // mentre scorre l'interfaccia si attenua (css: chrome-idle)
 }
 
-function fitView() { app.exp.fit ? app.exp.fit(cam, api) : cam.fit(app.exp.view(app.params, app.sim)); }
+function fitView() {
+  app.camUser = false; app.exp.fit ? app.exp.fit(cam, api) : cam.fit(app.exp.view(app.params, app.sim)); }
 
 /* --- Animazione di un parametro: il valore oscilla tra min e max e il moto viene ricalcolato --- */
 
@@ -841,6 +842,8 @@ function drawFrame(ts) {
   if (app.sweep) stepSweep(dt);
   // exp.timeScale: un esperimento può rallentare il proprio tempo (per esempio il rallentatore negli urti).
   else if (app.running) advance(dt * app.speed * (app.exp.timeScale?.(app.sim, app.params) ?? 1));
+  // exp.follow: la camera insegue il soggetto mentre la simulazione scorre, finché l'utente non sposta la vista.
+  if (app.running && app.exp.follow && !app.camUser) cam.follow(app.exp.follow(app.sim, app.params), dt);
   // Le animazioni decorative (polvere) nascono solo mentre la simulazione scorre dal vivo.
   look.live = app.running && app.view == null;
   updateLook(dt * (app.running ? app.speed : 1));
@@ -1143,6 +1146,7 @@ canvas.addEventListener('pointermove', e => {
     if (touches.size < 2) return;
     const [p1, p2] = [...touches.values()];
     const cx = (p1.x + p2.x) / 2, cy = (p1.y + p2.y) / 2, d = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    app.camUser = true;   // l'utente prende la camera: smette di seguire il soggetto
     cam.panBy(cx - gesture.cx, cy - gesture.cy);
     if (gesture.d > 0) cam.zoomAt(cx, cy, d / gesture.d);
     Object.assign(gesture, { cx, cy, d });
@@ -1189,7 +1193,7 @@ canvas.addEventListener('pointermove', e => {
     if (live) app.formulasDirty = true; else resetSim();
   } else if (gesture.type === 'pan') {
     // In vista 3D (exp.orbit) il trascinamento sullo spazio vuoto fa girare la camera; altrimenti sposta la scena.
-    if (!app.exp.orbit?.(x - gesture.lx, y - gesture.ly, app.params)) cam.panBy(x - gesture.lx, y - gesture.ly);
+    if (!app.exp.orbit?.(x - gesture.lx, y - gesture.ly, app.params)) { cam.panBy(x - gesture.lx, y - gesture.ly); app.camUser = true; }
     gesture.lx = x; gesture.ly = y;
   }
 });
@@ -1228,6 +1232,7 @@ canvas.addEventListener('wheel', e => {
   const [x, y] = pos(e);
   if (e.shiftKey && !e.ctrlKey) { cam.panBy(-(dx || dy), 0); return; }
   const d = Math.max(-120, Math.min(120, dy));
+  app.camUser = true;
   cam.zoomAt(x, y, Math.exp(-d * (e.ctrlKey ? 0.01 : 0.002)));
 }, { passive: false });
 

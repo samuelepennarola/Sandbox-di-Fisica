@@ -30,10 +30,10 @@ export default {
   axes: true,
 
   params: [
-    { key: 'm1', label: 'Massa 1  m₁', unit: 'kg', min: 0, max: 20, step: 0.1, value: 10 },
-    { key: 'm2', label: 'Massa 2  m₂', unit: 'kg', min: 0, max: 20, step: 0.1, value: 0 },
-    { key: 'm3', label: 'Massa 3  m₃', unit: 'kg', min: 0, max: 20, step: 0.1, value: 0 },
-    { key: 'v0', label: 'Velocità della massa di prova v₀', unit: 'm/s', min: 0, max: 5, step: 0.05, value: 0 },
+    { key: 'm1', label: 'Massa 1  m₁', unit: 'kg', min: 0, max: 200, step: 0.1, value: 10 },
+    { key: 'm2', label: 'Massa 2  m₂', unit: 'kg', min: 0, max: 200, step: 0.1, value: 0 },
+    { key: 'm3', label: 'Massa 3  m₃', unit: 'kg', min: 0, max: 200, step: 0.1, value: 0 },
+    { key: 'v0', label: 'Velocità della massa di prova v₀', unit: 'm/s', min: 0, max: 20, step: 0.05, value: 0 },
     { key: 'phi', label: 'Direzione di v₀', unit: '°', min: -180, max: 180, step: 1, value: 90 },
     { key: 'tMax', label: 'Durata della simulazione', unit: 's', min: 5, max: 120, step: 5, value: 30 },
     { key: 'x1', label: 'x₁', unit: 'm', min: -8, max: 8, step: 0.05, value: 0, hidden: true },
@@ -93,7 +93,7 @@ export default {
   handles(s, p) {
     const h = masses(p).map(q => ({ id: 'm' + q.i, x: q.x, y: q.y, r: 24 }));
     h.push({ id: 'probe', x: p.px, y: p.py });
-    const L = Math.max(arrowPx(p.v0, 5, VA), VA.min) / SC;
+    const L = Math.max(arrowPx(p.v0, 20, VA), VA.min) / SC;
     h.push({ id: 'v0', x: p.px + L * Math.cos(p.phi * deg), y: p.py + L * Math.sin(p.phi * deg) });
     return h;
   },
@@ -103,7 +103,7 @@ export default {
     if (id === 'probe') { p.px = x; p.py = y; return; }
     if (id === 'v0') {
       const dx = wx - p.px, dy = wy - p.py;
-      p.v0 = clamp(Math.round(arrowMag(Math.hypot(dx, dy) * SC, 5, VA) * 20) / 20, 0, 5);
+      p.v0 = clamp(Math.round(arrowMag(Math.hypot(dx, dy) * SC, 20, VA) * 20) / 20, 0, 20);
       if (Math.hypot(dx, dy) * SC > 8) p.phi = Math.round(Math.atan2(dy, dx) / deg);
       return;
     }
@@ -178,7 +178,7 @@ export default {
     }
     ctx.save(); ctx.fillStyle = M.text; ctx.beginPath(); ctx.arc(a, b, 5.5, 0, 7); ctx.fill(); ctx.restore();
     if (s.t === 0 && p.v0 > 0) {
-      const L = arrowPx(p.v0, 5, VA) / cam.scale;
+      const L = arrowPx(p.v0, 20, VA) / cam.scale;
       P.arrow(p.px, p.py, p.px + L * Math.cos(p.phi * deg), p.py + L * Math.sin(p.phi * deg), { color: 'vel', key: 'v0', width: 3, label: 'v_0' });
     }
     if (s.t === 0) for (const h of this.handles(s, p)) P.handle(h.x, h.y, ui.active === h.id);

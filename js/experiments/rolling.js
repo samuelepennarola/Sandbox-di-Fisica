@@ -29,8 +29,8 @@ export default {
   sweepHorizon: 10,
 
   params: [
-    { key: 'alpha', label: 'Inclinazione α', unit: '°', min: 3, max: 45, step: 1, value: 20, refit: true },
-    { key: 'L', label: 'Lunghezza del piano L', unit: 'm', min: 1, max: 10, step: 0.5, value: 5, refit: true },
+    { key: 'alpha', label: 'Inclinazione α', unit: '°', min: 1, max: 80, step: 1, value: 20, refit: true },
+    { key: 'L', label: 'Lunghezza del piano L', unit: 'm', min: 1, max: 100, step: 0.5, value: 5, refit: true },
     { key: 'b_sphere', type: 'toggle', label: 'Sfera piena', value: true, live: true },
     { key: 'b_cyl', type: 'toggle', label: 'Cilindro pieno', value: true, live: true },
     { key: 'b_ring', type: 'toggle', label: 'Anello', value: true, live: true },

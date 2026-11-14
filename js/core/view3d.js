@@ -62,13 +62,13 @@ const FADE = 0.1;
 const tilts = {};   // inclinazione dell'ultima camera di ogni esperimento (per lo sfondo, disegnato prima della scena)
 const orbits = {};  // rotazione scelta con il dito: { dp, dy } in radianti, per esperimento
 
-// In vista 3D la camera non sta mai ferma: oscilla piano attorno alla posizione scelta (ambient camera rotation di
-// Manim), ±swing rad in un periodo di `period` secondi, finché non la si gira con il dito. Nelle istantanee e con
-// "riduci movimento" resta ferma.
+// In vista 3D la camera va con morbidezza verso (pitch, yaw) e poi resta ferma: si muove solo se la si gira con
+// il dito (orbit3d).
 export function camera3d(S, key, on, pitch, yaw, { tau = 0.32, swing = 0.32, period = 14 } = {}) {
   const o = orbits[key] ??= { dp: 0, dy: 0, user: false };
   if (!on) Object.assign(o, { dp: 0, dy: 0, user: false });
-  const amb = S.still || o.user ? 0 : swing * Math.sin(2 * Math.PI * (S.R?.now ?? 0) / period);
+  // Scelta dell'utente: la camera resta ferma finché non la si gira con il dito (niente rotazione automatica).
+  const amb = 0; void swing; void period;
   const tp = Math.max(-1.45, Math.min(1.45, pitch + o.dp));
   const [a, b] = S.smooth('cam3d:' + key, on ? [tp, yaw + o.dy + amb] : [0, 0], o.user ? 0.06 : tau);
   const V = new View3D().set(a, b);

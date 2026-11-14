@@ -11,7 +11,7 @@ const TC = 0.06, TRAIL_DT = 1 / 60;
 let SC = 50;
 
 const radius = m => 0.3 * Math.cbrt(m);
-const VREF = 6;                               // m/s che danno la freccia più lunga
+const VREF = 20;                               // m/s che danno la freccia più lunga
 const deg = Math.PI / 180;
 // Velocità iniziali in componenti, dai parametri (modulo e direzione in gradi).
 const vel0 = p => [p.v1 * Math.cos(p.a1 * deg), p.v1 * Math.sin(p.a1 * deg), p.v2 * Math.cos(p.a2 * deg), p.v2 * Math.sin(p.a2 * deg)];
@@ -37,18 +37,18 @@ export default {
   dt: 1 / 2000,
 
   params: [
-    { key: 'm1', label: 'Massa del disco 1  m₁', unit: 'kg', min: 0.2, max: 10, step: 0.1, value: 1 },
-    { key: 'm2', label: 'Massa del disco 2  m₂', unit: 'kg', min: 0.2, max: 10, step: 0.1, value: 1 },
-    { key: 'v1', label: 'Velocità del disco 1  v₁', unit: 'm/s', min: 0, max: 6, step: 0.1, value: 2.5 },
+    { key: 'm1', label: 'Massa del disco 1  m₁', unit: 'kg', min: 0.1, max: 100, step: 0.1, value: 1 },
+    { key: 'm2', label: 'Massa del disco 2  m₂', unit: 'kg', min: 0.1, max: 100, step: 0.1, value: 1 },
+    { key: 'v1', label: 'Velocità del disco 1  v₁', unit: 'm/s', min: 0, max: 20, step: 0.1, value: 2.5 },
     { key: 'a1', label: 'Direzione di v₁', unit: '°', min: -180, max: 180, step: 1, value: 0 },
-    { key: 'v2', label: 'Velocità del disco 2  v₂', unit: 'm/s', min: 0, max: 6, step: 0.1, value: 0 },
+    { key: 'v2', label: 'Velocità del disco 2  v₂', unit: 'm/s', min: 0, max: 20, step: 0.1, value: 0 },
     { key: 'a2', label: 'Direzione di v₂', unit: '°', min: -180, max: 180, step: 1, value: 180 },
     { key: 'x1', label: 'Disco 1 x', unit: 'm', min: -5, max: 5, step: 0.05, value: -4, hidden: true },
     { key: 'y1', label: 'Disco 1 y', unit: 'm', min: -3, max: 3, step: 0.05, value: 0, hidden: true },
     { key: 'x2', label: 'Disco 2 x', unit: 'm', min: -5, max: 5, step: 0.05, value: 0, hidden: true },
     { key: 'y2', label: 'Disco 2 y', unit: 'm', min: -3, max: 3, step: 0.05, value: 0.3, hidden: true },
     { key: 'e', label: 'Coefficiente di restituzione e', unit: '', min: 0, max: 1, step: 0.01, value: 1 },
-    { key: 'tMax', label: 'Durata della simulazione', unit: 's', min: 2, max: 30, step: 1, value: 5 },
+    { key: 'tMax', label: 'Durata della simulazione', unit: 's', min: 2, max: 120, step: 1, value: 5 },
     { key: 'slowmo', type: 'toggle', label: 'Rallentatore all\'urto', value: true, live: true },
     { key: 'showBal', type: 'toggle', label: 'Bilancio di p e K', value: true, live: true },
     { key: 'showForce', type: 'toggle', label: 'Forze durante l\'urto', value: true, live: true },
@@ -134,7 +134,7 @@ export default {
     const i = id[1], x = p['x' + i], y = p['y' + i];
     if (id[0] === 'v') {
       const dx = wx - x, dy = wy - y;
-      p['v' + i] = clamp(Math.round(arrowMag(Math.hypot(dx, dy) * SC, VREF, V) * 10) / 10, 0, 6);
+      p['v' + i] = clamp(Math.round(arrowMag(Math.hypot(dx, dy) * SC, VREF, V) * 10) / 10, 0, 20);
       if (Math.hypot(dx, dy) * SC > 8) p['a' + i] = Math.round(Math.atan2(dy, dx) / deg);
       return;
     }

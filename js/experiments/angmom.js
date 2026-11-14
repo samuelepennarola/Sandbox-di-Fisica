@@ -21,10 +21,10 @@ export default {
   subtitle: 'Una piattaforma che gira più veloce stringendo le braccia',
 
   params: [
-    { key: 'Mp', label: 'Massa della piattaforma', unit: 'kg', min: 2, max: 60, step: 1, value: 20 },
-    { key: 'm', label: 'Masse sulle guide (ognuna)', unit: 'kg', min: 0.5, max: 15, step: 0.5, value: 6 },
+    { key: 'Mp', label: 'Massa della piattaforma', unit: 'kg', min: 1, max: 500, step: 1, value: 20 },
+    { key: 'm', label: 'Masse sulle guide (ognuna)', unit: 'kg', min: 0.1, max: 100, step: 0.5, value: 6 },
     { key: 'r', label: 'Distanza delle masse dall\'asse r', unit: 'm', min: RMIN, max: RMAX, step: 0.01, value: 1.3, live: true },
-    { key: 'w0', label: 'Velocità angolare iniziale ω₀', unit: 'rad/s', min: 0.2, max: 6, step: 0.1, value: 1.5 },
+    { key: 'w0', label: 'Velocità angolare iniziale ω₀', unit: 'rad/s', min: 0.1, max: 30, step: 0.1, value: 1.5 },
     { key: 'tMax', label: 'Durata della simulazione', unit: 's', min: 5, max: 120, step: 5, value: 30 },
     { key: 'auto', type: 'toggle', label: 'Avvicina e allontana da sole', value: false, live: true },
     { key: 'show3d', type: 'toggle', label: 'Vista 3D: L e ω come vettori', value: true, live: true },

@@ -46,10 +46,10 @@ export default {
 
   params: [
     scaleParam('simple'),
-    { key: 'm1', label: 'Massa 1', unit: '', min: 0, max: 20, step: 0.001, value: 1 },
-    { key: 'm2', label: 'Massa 2', unit: '', min: 0, max: 20, step: 0.001, value: 1 },
-    { key: 'm3', label: 'Massa 3', unit: '', min: 0, max: 20, step: 0.001, value: 1 },
-    { key: 'tMax', label: 'Durata della simulazione', unit: '', min: 5, max: 300, step: 5, value: 60 },
+    { key: 'm1', label: 'Massa 1', unit: '', min: 0, max: 1000, step: 0.001, value: 1 },
+    { key: 'm2', label: 'Massa 2', unit: '', min: 0, max: 1000, step: 0.001, value: 1 },
+    { key: 'm3', label: 'Massa 3', unit: '', min: 0, max: 1000, step: 0.001, value: 1 },
+    { key: 'tMax', label: 'Durata della simulazione', unit: '', min: 5, max: 2000, step: 5, value: 60 },
     ...[1, 2, 3].flatMap(i => ['x', 'y', 'vx', 'vy'].map(k => ({ key: k + i, label: k + i, unit: '', min: -50, max: 50, step: 0.0001, value: EIGHT.values[k + i], hidden: true }))),
     { key: 'showTrails', type: 'toggle', label: 'Scie', value: true, live: true },
     { key: 'showCM', type: 'toggle', label: 'Centro di massa', value: true, live: true },
