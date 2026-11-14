@@ -22,6 +22,10 @@
       document.documentElement.dataset.theme = t ? JSON.parse(t)
         : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     } catch { document.documentElement.dataset.theme = 'light'; }
+    // Fondo della pagina e barra di stato già nel colore giusto prima che si carichi lo stile: niente lampo chiaro.
+    const dark = document.documentElement.dataset.theme === 'dark';
+    document.documentElement.style.background = dark ? '#0b0b0d' : '#f6f3ea';
+    document.querySelector('meta[name=theme-color]').content = dark ? '#0b0b0d' : '#f6f3ea';
   </script>
 </head>
 <body>
@@ -53,6 +57,7 @@
         <button data-color="inkRed" title="Rosso"></button>
         <button data-color="inkBlue" title="Blu"></button>
         <button data-color="inkGreen" title="Verde"></button>
+        <button data-color="inkYellow" title="Giallo"></button>
       </div>
       <button class="icon-btn" id="undoBtn" data-icon="undo" title="Annulla (⌘Z)"></button>
       <button class="icon-btn" id="redoBtn" data-icon="redo" title="Ripeti (⇧⌘Z)"></button>

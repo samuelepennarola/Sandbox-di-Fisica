@@ -5,8 +5,9 @@ import { el } from '../core/ui.js';
 import { Painter, dragGuides, alignTo } from '../core/render.js';
 import { SceneHistory } from '../core/history.js';
 import { K, MU, pointField, drawFieldGrid } from '../core/electric.js';
-import { palette, mixHex, drawPlaneGrid, drawPlaneAxes, drawFieldLinesM, chargeDisk, arrowS, tex, texWidth, sciTeX } from '../core/manim.js';
+import { palette, mixHex, drawPlaneGrid, drawPlaneAxes, drawFieldLinesM, chargeDisk, arrowS, tex, texWidth, sciTeX, Regia, reducedMotion } from '../core/manim.js';
 import { rate } from '../core/anim.js';
+import { coulombNote } from '../core/annot-charges.js';
 
 // Cariche e campo elettrico (elettrostatica, livello liceo).
 // Sorgenti: cariche puntiformi (Coulomb in 3D), barre cariche uniformi (segmenti nel piano),
@@ -64,6 +65,12 @@ function nameOf(s) {
 }
 function nth(s) { const same = B.spec.sources.filter(o => o.type === s.type); return same.length > 1 ? ' ' + (same.indexOf(s) + 1) : ''; }
 const pIdx = s => B.spec.sources.filter(o => o.type === 'point').indexOf(s) + 1;   // numero della carica, per le formule
+// Formule con gli stessi colori della scena: forze in giallo, componenti x/y, campo, cariche rosse (+) e blu (−).
+const PAL = () => A.M ?? palette({});
+const ct = (hex, s) => `\\textcolor{${hex}}{${s}}`;
+const qCol = o => ((o.q ?? o.Q ?? o.sigma ?? 0) >= 0 ? PAL().pos : PAL().neg);
+const qT = o => ct(qCol(o), `q_{${pIdx(o)}}`);
+const hs = (hex, s) => `<span style="color:${hex}">${s}</span>`;
 const refCharge = () => B.spec.sources.find(o => o.type === 'point');                // q₁: riferimento per distanze e angoli
 const snap = v => +(Math.round(v * 200) / 200).toFixed(4);                                          // posizioni a passi di mezzo centimetro
 const sub = n => String(n).split('').map(d => '₀₁₂₃₄₅₆₇₈₉'[+d]).join('');
@@ -137,7 +144,8 @@ function segDist(x, y, [ax, ay], [bx, by]) {
 // Le linee partono dalle sorgenti positive (o, se prevale la carica negativa, arrivano a quelle negative):
 // il loro numero è proporzionale alla carica. Si ricalcolano solo quando cambiano le sorgenti.
 function fieldLines() {
-  const key = JSON.stringify(B.spec.sources);
+  // Durante il trascinamento il passo è più largo (ricalcolo leggero a ogni fotogramma); al rilascio torna fine.
+  const key = JSON.stringify(B.spec.sources) + (B.drag ? '|d' : '');
   if (key === B.linesKey) return B.lines;
   B.linesKey = key;
   const src = B.spec.sources;
@@ -201,7 +209,7 @@ function trace(seed, dir, [x0, y0, x1, y1]) {
     // Passo più fine vicino alle cariche puntiformi, dove il campo cambia in fretta.
     let near = Infinity;
     for (const s of src) if (s.type === 'point') near = Math.min(near, Math.hypot(x - s.x, y - s.y));
-    const h = clamp(near * 0.2, 0.002, 0.012);
+    const h = B.drag ? clamp(near * 0.3, 0.003, 0.018) : clamp(near * 0.2, 0.002, 0.012);
     const u1 = unit(x, y);
     if (!u1) break;
     const u2 = unit(x + u1[0] * h / 2, y + u1[1] * h / 2);
@@ -224,35 +232,64 @@ function trace(seed, dir, [x0, y0, x1, y1]) {
 /* ---------------- Transizioni (regia alla Manim) ---------------- */
 // Orologio delle animazioni, fatto avanzare da draw(). Nelle istantanee della Lavagna (A.still) tutto è subito
 // al suo stato finale. La fisica non c'entra: qui si anima solo come le cose compaiono e cambiano sullo schermo.
-const A = { M: null, now: 0, dt: 0, last: 0, still: false, vals: new Map(), born: new Map(), on: {}, sig: null, linesT0: -1e9 };
+const A = { M: null, now: 0, dt: 0, last: 0, still: false, vals: new Map(), born: new Map(), on: {} };
 const TAU = 0.09;   // tempo di risposta (s) dei valori mostrati che inseguono quelli veri
 
 // Valore mostrato che insegue il valore vero: un vettore che cambia verso si ritira e ricresce dall'altra parte.
 function smooth(key, target, tau = TAU) {
   const v = A.vals.get(key);
-  if (!v || A.still || B.drag || v.length !== target.length) { A.vals.set(key, target.slice()); return target; }
+  if (!v || A.still || A.rm || B.drag || v.length !== target.length) { A.vals.set(key, target.slice()); return target; }
   const k = 1 - Math.exp(-A.dt / tau);
   for (let i = 0; i < v.length; i++) v[i] += (target[i] - v[i]) * k;
   return v;
 }
 // Fattore di scala di un oggetto appena comparso (rimbalzo di 0,45 s).
 function born(id) {
-  if (A.still) return 1;
+  if (A.still || A.rm) return 1;
   if (!A.born.has(id)) A.born.set(id, A.now);
   return rate.backOut(Math.min(1, (A.now - A.born.get(id)) / 0.45));
 }
 // Avanzamento (0 → 1 in 0,6 s) di un elemento che si accende: forze, componenti, sonda.
-A.p = key => (A.still ? 1 : A.on[key] == null ? 0 : Math.min(1, (A.now - A.on[key]) / 0.6));
+A.p = key => (A.still || A.rm ? 1 : A.on[key] == null ? 0 : Math.min(1, (A.now - A.on[key]) / 0.6));
 
-// Linee di campo alla Manim (kit condiviso): colore in base all'intensità e, quando cambiano le sorgenti
-// (numero o segno) o si accendono, si tracciano una dopo l'altra (Create).
+// Linee di campo alla Manim (kit condiviso): colore in base all'intensità; la regia (Regia.fieldLines) le traccia
+// una dopo l'altra quando compaiono, le fa sfumare nelle nuove quando cambiano numero o segno delle sorgenti
+// e le lascia seguire le cariche, senza ripartire, mentre si trascina.
+const RL = new Regia();
 function drawLinesM(P, lines) {
-  const lag = Math.min(0.05, 0.6 / Math.max(1, lines.length));
-  drawFieldLinesM(P, lines, A.M, { mag: (x, y) => Math.hypot(...fieldAt(x, y)), lo: 1e4, hi: 3e6,
-    progress: i => (A.still ? 1 : Math.min(1, Math.max(0, (A.now - A.linesT0 - i * lag) / 0.8))) });
+  const sig = B.spec.sources.map(o => o.id + (Math.sign(o.type === 'point' ? o.q : o.type === 'rod' ? o.Q : o.sigma))).join(',');
+  const r = RL.fieldLines('lines', sig, lines), opts = { mag: (x, y) => Math.hypot(...fieldAt(x, y)), lo: 1e4, hi: 3e6 };
+  if (r.old) drawFieldLinesM(P, r.old, A.M, { ...opts, alpha: r.oldAlpha });
+  drawFieldLinesM(P, lines, A.M, { ...opts, progress: r.progress });
 }
 
 /* ---------------- Disegno ---------------- */
+
+// Carica selezionata e la più vicina: parentesi graffa con r e legge di Coulomb con i valori dal vivo.
+function nearest(s) {
+  if (s?.type !== 'point') return null;
+  let t = null, best = Infinity;
+  for (const o of B.spec.sources) if (o.type === 'point' && o !== s) { const d = Math.hypot(o.x - s.x, o.y - s.y); if (d < best) { best = d; t = o; } }
+  return t && { t, best };
+}
+function drawPairNote(P) {
+  const s = srcOf(B.sel), pts = B.spec.sources.filter(o => o.type === 'point'), n = nearest(s);
+  const g = RL.on('note', n ? s.id + '-' + n.t.id : null, 0.55);
+  if (!n) return;
+  const { t, best } = n;
+  const M = A.M, C = PAL(), F = K * Math.abs(s.q * t.q) * MU * MU / (best * best);
+  const others = pts.filter(o => o !== s && o !== t), avoid = others.length
+    ? P.S(others.reduce((a, o) => a + o.x, 0) / others.length, others.reduce((a, o) => a + o.y, 0) / others.length) : null;
+  const rpx = o => Math.max(10, radius(o.q) * P.cam.scale);
+  const val = v => fmt(v, v < 0.01 ? 4 : 3);
+  // Le scritte "q = … µC" sotto ogni carica (vedi drawCharge) non vanno coperte.
+  const keepOut = pts.map(o => { const [a, b] = P.S(o.x, o.y), y = b + rpx(o) + 16, w = 90; return [a - w / 2, y - 11, a + w / 2, y + 11]; });
+  coulombNote(P, M, {
+    p1: P.S(s.x, s.y), p2: P.S(t.x, t.y), r1: rpx(s), r2: rpx(t), avoid, g, keepOut,
+    rTeX: `r = ${fmt(best * 100, 1)}\\ \\mathrm{cm}`,
+    lawTeX: `${ct(C.force, 'F')} = k\\frac{|${qT(s)}\\,${qT(t)}|}{r^{2}} = ${ct(C.force, `${val(F)}\\ \\mathrm{N}`)}`,
+  });
+}
 
 // Carica alla Manim: disco pieno con un alone morbido e il segno in bianco. Il colore sfuma quando cambia il segno,
 // e appena creata la carica "sboccia" con un piccolo rimbalzo.
@@ -377,6 +414,7 @@ function drawPolar(P) {
   const R = clamp(r * P.cam.scale * 0.35, 22, 60);
   P.arc(ref.x, ref.y, R, Math.min(0, th), Math.max(0, th), { color: 'handle', width: 1.6 });
   { const m = th / 2, [ra, rb] = P.S(ref.x, ref.y); tex(P, ra + Math.cos(m) * (R + 18), rb - Math.sin(m) * (R + 18), `\\theta = ${fmt(th / deg, 0)}°`, { size: 15, color: A.M.sel, halo: A.M.bg }); }
+  if (nearest(s)?.t === ref) return;   // la distanza la scrive già la parentesi graffa (drawPairNote)
   const [mx, my] = P.S((ref.x + s.x) / 2, (ref.y + s.y) / 2), nx = -Math.sin(th), ny = -Math.cos(th);
   tex(P, mx + nx * 16, my + ny * 16, `r = ${fmt(r * 100, 1)}\\ \\mathrm{cm}`, { size: 15, color: A.M.sel, halo: A.M.bg });
 }
@@ -419,10 +457,11 @@ function sciTex(v, d = 2) { const [m, e] = sciParts(v); return e ? `${tn(m, d)}\
 
 // Tabella delle componenti: ogni forza con modulo, angolo, Fx e Fy; l'ultima riga è la somma (la risultante).
 function compTable(list, R) {
-  const n = v => fmt(v, Math.abs(v) < 0.1 ? 4 : 3), ang = F => fmt(Math.atan2(F[1], F[0]) / deg, 0) + '°';
-  const rows = list.map(f => `<tr><td>${f.s.type === 'point' ? 'da ' + nameOf(f.s) : nameOf(f.s)}</td><td>${n(Math.hypot(...f.F))}</td><td>${ang(f.F)}</td><td>${n(f.F[0])}</td><td>${n(f.F[1])}</td></tr>`).join('');
-  return `<table class="ftable"><tr><td></td><td>F (N)</td><td>θ</td><td>Fx (N)</td><td>Fy (N)</td></tr>${rows}`
-    + `<tr class="sum"><td>Risultante</td><td>${n(Math.hypot(...R))}</td><td>${ang(R)}</td><td>${n(R[0])}</td><td>${n(R[1])}</td></tr></table>`;
+  const n = v => fmt(v, Math.abs(v) < 0.1 ? 4 : 3), ang = F => fmt(Math.atan2(F[1], F[0]) / deg, 0) + '°', C = PAL();
+  const row = (name, F) => `<td>${hs(C.force, n(Math.hypot(...F)))}</td><td>${ang(F)}</td><td>${hs(C.fx, n(F[0]))}</td><td>${hs(C.fy, n(F[1]))}</td>`;
+  const rows = list.map(f => `<tr><td>${f.s.type === 'point' ? 'da ' + hs(qCol(f.s), nameOf(f.s)) : nameOf(f.s)}</td>${row('', f.F)}</tr>`).join('');
+  return `<table class="ftable"><tr><td></td><td>${hs(C.force, 'F (N)')}</td><td>θ</td><td>${hs(C.fx, 'Fx (N)')}</td><td>${hs(C.fy, 'Fy (N)')}</td></tr>${rows}`
+    + `<tr class="sum"><td>Risultante</td>${row('', R)}</tr></table>`;
 }
 
 /* ---------------- Interazione ---------------- */
@@ -507,16 +546,14 @@ export default {
   draw(P0, s, p, ui) {
     const now = performance.now() / 1000;
     A.dt = Math.min(0.1, now - (A.last || now)); A.last = A.now = now;
-    A.still = !!ui?.snapshot;
+    A.still = !!ui?.snapshot; A.rm = reducedMotion();   // istantanea / "riduci movimento": niente transizioni
     const M = A.M = palette(P0.c);
     // Painter con i colori del kit Manim (aloni del colore di fondo, maniglie e guide nel blu di Manim).
     const P = new Painter(P0.ctx, P0.cam, { ...P0.c, bg: M.bg, text: M.text, muted: M.muted, handle: M.sel, acc: M.field });
     if (A.still) { P.arrow = P0.arrow; P.handle = P0.handle; P.sizeHandle = P0.sizeHandle; }
     const show = B.spec.show;
     for (const k of ['F', 'comp', 'probe']) { if (!show[k]) A.on[k] = null; else if (A.on[k] == null) A.on[k] = now; }
-    // Le linee si ridisegnano quando cambiano il numero o il segno delle sorgenti, o quando si accendono.
-    const sig = show.lines + '|' + B.spec.sources.map(o => o.id + (Math.sign(o.type === 'point' ? o.q : o.type === 'rod' ? o.Q : o.sigma))).join(',');
-    if (sig !== A.sig) { A.sig = sig; A.linesT0 = now; }
+    RL.tick(A.still);
     if (!ui?.snapshot) drawPlaneAxes(P, M, { unit: 'cm', k: 100 });
     if (show.lines) drawLinesM(P, fieldLines());
     if (show.E) drawFieldVectors(P);
@@ -524,6 +561,7 @@ export default {
     drawPolar(P);
     if (show.F && !A.still) drawForces(P);
     for (const s of B.spec.sources) if (s.type === 'point') drawCharge(P, s, s.id === B.sel);
+    if (!A.still) drawPairNote(P);
     for (const h of handlesOf(srcOf(B.sel))) P.sizeHandle(h.x, h.y, B.dragHandle === h.i);
     if (show.probe && !A.still) drawProbe(P);
     if (B.drag) dragGuides(P, { x: B.drag.o.x, y: B.drag.o.y, vx: B.drag.vx, hy: B.drag.hy, text: `x = ${fmt(B.drag.o.x * 100, 1)} cm · y = ${fmt(B.drag.o.y * 100, 1)} cm` });
@@ -544,7 +582,7 @@ export default {
   },
 
   formulas() {
-    const out = [], spec = B.spec, s = srcOf(B.sel);
+    const out = [], spec = B.spec, s = srcOf(B.sel), C = PAL(), Fc = x => ct(C.force, x), Ec = x => ct(C.field, x);
     const kTex = `k = 8{,}99\\cdot 10^{9}\\ \\mathrm{\\tfrac{N\\,m^2}{C^2}}`;
     if (s?.type === 'point') {
       const { list, R } = forcesOn(s);
@@ -553,39 +591,39 @@ export default {
         const F = Math.hypot(...f.F);
         if (f.s.type === 'point') {
           const r = Math.hypot(f.s.x - s.x, f.s.y - s.y);
-          out.push({ tex: `F_{${pIdx(f.s)}} = k\\dfrac{|q_{${pIdx(s)}}\\,q_{${pIdx(f.s)}}|}{r^2} = ${tn(K * Math.abs(s.q * f.s.q) * MU * MU / (r * r), 3)}\\ \\mathrm{N}\\quad (r = ${tn(r * 100, 1)}\\ \\mathrm{cm},\\ ${s.q * f.s.q > 0 ? '\\text{repulsiva}' : '\\text{attrattiva}'})` });
+          out.push({ tex: `${Fc(`F_{${pIdx(f.s)}}`)} = k\\dfrac{|${qT(s)}\\,${qT(f.s)}|}{r^2} = ${Fc(`${tn(K * Math.abs(s.q * f.s.q) * MU * MU / (r * r), 3)}\\ \\mathrm{N}`)}\\quad (r = ${tn(r * 100, 1)}\\ \\mathrm{cm},\\ ${s.q * f.s.q > 0 ? '\\text{repulsiva}' : '\\text{attrattiva}'})` });
         } else {
-          out.push({ tex: `F_{\\text{${nameOf(f.s)}}} = q\\,E = ${tn(F, 3)}\\ \\mathrm{N}` });
+          out.push({ tex: `${Fc(`F_{\\text{${nameOf(f.s)}}}`)} = ${qT(s)}\\,${Ec('E')} = ${Fc(`${tn(F, 3)}\\ \\mathrm{N}`)}` });
         }
       }
       if (list.length) {
         out.push({ h: 'Componenti (proiezioni sugli assi)' });
-        out.push({ tex: `F_x = F\\cos\\theta \\qquad F_y = F\\sin\\theta` });
+        out.push({ tex: `${ct(C.fx, 'F_x')} = ${Fc('F')}\\cos\\theta \\qquad ${ct(C.fy, 'F_y')} = ${Fc('F')}\\sin\\theta` });
         out.push({ html: compTable(list, R) });
         out.push({ h: 'Risultante (principio di sovrapposizione)' });
-        out.push({ tex: `\\vec F = \\textstyle\\sum \\vec F_i = (${tn(R[0], 3)},\\ ${tn(R[1], 3)})\\ \\mathrm{N}` });
-        out.push({ tex: `|\\vec F| = ${tn(Math.hypot(...R), 3)}\\ \\mathrm{N}\\qquad \\theta = ${tn(Math.atan2(R[1], R[0]) / deg, 0)}^\\circ` });
+        out.push({ tex: `${Fc('\\vec F')} = \\textstyle\\sum ${Fc('\\vec F_i')} = (${ct(C.fx, tn(R[0], 3))},\\ ${ct(C.fy, tn(R[1], 3))})\\ \\mathrm{N}` });
+        out.push({ tex: `|${Fc('\\vec F')}| = ${Fc(`${tn(Math.hypot(...R), 3)}\\ \\mathrm{N}`)}\\qquad \\theta = ${tn(Math.atan2(R[1], R[0]) / deg, 0)}^\\circ` });
       }
     } else if (s) {
       out.push({ h: nameOf(s) });
       if (s.type === 'rod') out.push({ tex: `\\lambda = \\dfrac{Q}{L} = ${tn(s.Q / s.L, 2)}\\ \\mathrm{\\mu C/m}` });
       else {
-        out.push({ tex: `E_{\\text{vicino al centro}} \\approx \\dfrac{\\sigma}{2\\varepsilon_0} = ${sciTex(Math.abs(s.sigma) * MU / (2 * 8.854e-12))}\\ \\mathrm{N/C}` });
+        out.push({ tex: `${Ec('E_{\\text{vicino al centro}}')} \\approx \\dfrac{\\sigma}{2\\varepsilon_0} = ${sciTex(Math.abs(s.sigma) * MU / (2 * 8.854e-12))}\\ \\mathrm{N/C}` });
         out.push({ html: '<div class="hint">Due lastre opposte formano un condensatore piano: all\'interno E = σ/ε₀, fuori quasi zero.</div>' });
       }
     }
     if (spec.show.probe) {
       const { x, y } = spec.probe, [ex, ey] = fieldAt(x, y), m = Math.hypot(ex, ey), V = potentialAt(x, y);
       out.push({ h: `Sonda in (${fmt(x * 100, 1)} ; ${fmt(y * 100, 1)}) cm` });
-      out.push({ tex: `\\vec E = (${sciTex(ex)},\\ ${sciTex(ey)})\\ \\mathrm{N/C}` });
-      out.push({ tex: `|\\vec E| = ${sciTex(m)}\\ \\mathrm{N/C}\\qquad \\theta = ${tn(Math.atan2(ey, ex) / deg, 0)}^\\circ` });
+      out.push({ tex: `${Ec('\\vec E')} = (${sciTex(ex)},\\ ${sciTex(ey)})\\ \\mathrm{N/C}` });
+      out.push({ tex: `|${Ec('\\vec E')}| = ${Ec(`${sciTex(m)}\\ \\mathrm{N/C}`)}\\qquad \\theta = ${tn(Math.atan2(ey, ex) / deg, 0)}^\\circ` });
       if (V != null) out.push({ tex: `V = \\textstyle\\sum k\\dfrac{q_i}{r_i} = ${sciTex(V)}\\ \\mathrm{V}` });
       const pts = spec.sources.filter(o => o.type === 'point');
       if (pts.length && pts.length <= 4) {
         out.push({ h: 'Contributi delle cariche' });
         for (const o of pts) {
           const r = Math.hypot(x - o.x, y - o.y);
-          out.push({ tex: `E_{${pIdx(o)}} = k\\dfrac{|q_{${pIdx(o)}}|}{r^2} = ${sciTex(K * Math.abs(o.q) * MU / (r * r))}\\ \\mathrm{N/C}\\quad (r = ${tn(r * 100, 1)}\\ \\mathrm{cm})` });
+          out.push({ tex: `${Ec(`E_{${pIdx(o)}}`)} = k\\dfrac{|${qT(o)}|}{r^2} = ${Ec(`${sciTex(K * Math.abs(o.q) * MU / (r * r))}\\ \\mathrm{N/C}`)}\\quad (r = ${tn(r * 100, 1)}\\ \\mathrm{cm})` });
         }
       }
     }

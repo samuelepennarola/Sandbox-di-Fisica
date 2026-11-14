@@ -1,5 +1,8 @@
 import { deg, tn, fmt, clamp } from '../core/math.js';
 import { ball, boatTop, flatcar, grass, person, rails, treeSide, treeTop, water } from '../core/shapes.js';
+import { Stage, angleMark, formulaBeside, rate01, fc, C } from '../core/annot.js';
+
+const stage = new Stage();   // regia: frecce che crescono, passaggio morbido tra i punti di vista, corpi che nascono
 
 const Y_HAND = 2;     // treno: quota del punto di lancio (m)
 const Y_DECK = 1;     // treno: quota del pianale (m)
@@ -123,9 +126,15 @@ export default {
     p.phi = clamp(Math.round(Math.atan2(dy, dx) / deg), -180, 180);
   },
 
+  mount() { stage.reset(); },
+
   draw(P, s, p, ui) {
+    const S = stage.begin(P, ui), M = S.M;
     const river = p.scene === 'river';
-    const off = p.view === 'Sp' ? s.X : 0;             // spostamento di disegno: con «Da S′» S′ resta fermo
+    // Spostamento di disegno: con «Da S′» S′ resta fermo. Al cambio di punto di vista la scena scivola
+    // dall'uno all'altro (si interpola il peso del punto di vista, non lo spostamento, che in corsa cambia di continuo).
+    const [wSp] = S.smooth('view', [p.view === 'Sp' ? 1 : 0], 0.16);
+    const off = wSp * s.X;
     const inS = ([x, y]) => [x - off, y];
     const inP = ([x, y]) => [x + s.X - off, y];
     const b = P.cam.bounds(), kv = kvOf(p);
@@ -158,7 +167,7 @@ export default {
     P.arrow(px0, oy, px0 + ax, oy, { color: 'applied', width: 2, head: 9 });
     P.arrow(px0, oy, px0, oy + ax, { color: 'applied', width: 2, head: 9 });
     P.text(px0, oy, 'S′', { color: 'applied', dx: -14, dy: 12, weight: 700 });
-    if (Math.abs(s.VX) > 1e-9) P.arrow(px0, oy - ax * 0.5, px0 + kv * s.VX, oy - ax * 0.5, { color: 'friction', width: 3.5, label: `V = ${fmt(Math.abs(s.VX), 1)} m/s` });
+    if (Math.abs(s.VX) > 1e-9) P.arrow(px0, oy - ax * 0.5, px0 + kv * s.VX, oy - ax * 0.5, { color: 'friction', key: 'Vframe', width: 3.5, label: `V = ${fmt(Math.abs(s.VX), 1)} m/s` });
 
     // Traiettorie: quella vista da S e quella «disegnata» su S′, che si muove con lui.
     const tS = s.trailS.map(inS), tP = s.trailP.map(inP);
@@ -168,43 +177,56 @@ export default {
 
     // Vettore v′ iniziale trascinabile.
     const [x0, y0] = start(p), m = model(p);
-    if (s.t === 0) P.arrow(x0, y0, x0 + kv * m.vpx, y0 + kv * m.vpy, { color: 'applied', label: 'v′', width: 2.5 });
+    if (s.t === 0) {
+      P.arrow(x0, y0, x0 + kv * m.vpx, y0 + kv * m.vpy, { color: 'applied', label: 'v′', width: 2.5 });
+      if (Math.abs(p.phi) > 0.5 && p.vp > 0) angleMark(P, x0, y0, 30, 0, p.phi * deg, `\\varphi = ${Math.round(p.phi)}°`, { color: M.muted, grow: S.grow('phi', 0.7) });
+    }
     P.handle(x0 + kv * m.vpx, y0 + kv * m.vpy, ui.active === 'vp');
 
     // Corpo e composizione delle velocità v = v′ + V.
     const [bx, by] = inS([s.x, s.y]);
     if (river) {
       // La prua è orientata come v′ (dove punta la barca), non come v.
-      const k = ui.size('body');
+      const k = ui.size('body') * S.born('boat');
       boatTop(P, bx, by, { len: Math.max(2, p.L * 0.09) * k, angle: Math.atan2(s.vpy, s.vpx), minPx: 34 * k });
     } else {
-      const k = ui.size('body');
+      const k = ui.size('body') * S.born('ball');
       ball(P, bx, by, { r: 0.13 * k, color: 'red', minPx: 10 * k, spin: s.t * 6 });
     }
     const lab = (n, vx, vy) => `${n} = ${fmt(Math.hypot(vx, vy), 1)} m/s`;
     if (s.t > 0) {
       const vp = [kv * s.vpx, kv * s.vpy], V = [kv * s.VX, 0], v = [kv * s.vx, kv * s.vy];
       if (p.showTri) {
-        P.arrow(bx, by, bx + vp[0], by + vp[1], { color: 'applied', label: lab('v′', s.vpx, s.vpy), width: 3.5 });
-        P.arrow(bx + vp[0], by + vp[1], bx + v[0], by + v[1], { color: 'friction', label: 'V', width: 3, dash: [6, 4] });
-        P.arrow(bx, by, bx + v[0], by + v[1], { color: 'vel', label: lab('v', s.vx, s.vy), width: 4 });
+        // Triangolo delle velocità: i tre lati crescono uno dopo l'altro, poi accanto alla risultante
+        // compare la composizione galileiana scritta per esteso, con i colori dei vettori.
+        P.arrow(bx, by, bx + vp[0], by + vp[1], { color: 'applied', key: 'vp', label: 'v′', width: 3.5 });
+        P.arrow(bx + vp[0], by + vp[1], bx + v[0], by + v[1], { color: 'friction', key: 'V', label: 'V', width: 3, dash: [6, 4], delay: 0.35 });
+        P.arrow(bx, by, bx + v[0], by + v[1], { color: 'vel', key: 'v', label: 'v', width: 4, delay: 0.7 });
+        const gv = S.grow('arr:v', 0.6, 0.7), [a0, b0] = P.S(bx, by), [c0, d0] = P.S(bx + v[0] * gv, by + v[1] * gv);
+        if (!S.snap && Math.hypot(c0 - a0, d0 - b0) > 24) {
+          const t = (k, x) => `\\textcolor{${fc(k)}}{${x}}`;
+          formulaBeside(P, a0, b0, c0, d0, `${t('vel', '\\vec v')} = ${t('applied', "\\vec v'")} + ${t('friction', '\\vec V')},\\ \\ |${t('vel', '\\vec v')}| = ${fmt(Math.hypot(s.vx, s.vy), 1)}\\ \\mathrm{m/s}`,
+            { size: 16, alpha: rate01(gv) });
+        }
       } else {
-        if (showS) P.arrow(bx, by, bx + v[0], by + v[1], { color: 'vel', label: lab('v', s.vx, s.vy), width: 4 });
-        if (showP) P.arrow(bx, by, bx + vp[0], by + vp[1], { color: 'applied', label: lab('v′', s.vpx, s.vpy), width: 3.5 });
+        if (showS) P.arrow(bx, by, bx + v[0], by + v[1], { color: 'vel', key: 'v', label: lab('v', s.vx, s.vy), width: 4 });
+        if (showP) P.arrow(bx, by, bx + vp[0], by + vp[1], { color: 'applied', key: 'vp', label: lab('v′', s.vpx, s.vpy), width: 3.5 });
       }
       // Forza apparente per unità di massa, se S′ accelera.
-      if (showP && Math.abs(p.A) > 1e-9) P.arrow(bx, by, bx - kv * p.A * 1.5, by, { color: 'acc', label: '−A (apparente)', width: 3 });
+      if (showP && Math.abs(p.A) > 1e-9) P.arrow(bx, by, bx - kv * p.A * 1.5, by, { color: 'acc', key: 'A', label: '−A (apparente)', width: 3 });
     }
   },
 
   formulas(s, p) {
     const m = model(p), river = p.scene === 'river', u = x => `\\ \\mathrm{${x}}`;
     const sgn = x => (x < 0 ? '-' : '+'), abs = Math.abs;
+    // Stessi colori della scena: v (in S) azzurra, v′ (in S′) rosa, V e A di S′.
+    const Vs = x => C('vel', x), Vp = x => C('applied', x), VV = x => C('friction', x);
     const out = [
       { h: 'Composizione galileiana' },
-      { tex: `\\vec v=\\vec{v}'+\\vec V\\qquad \\vec a=\\vec{a}'+\\vec A` },
-      { tex: `v'_x=${tn(s.vpx)}\\quad v'_y=${tn(s.vpy)}\\quad V=${tn(s.VX)}${u('m/s')}` },
-      { tex: `v_x=v'_x+V=${tn(s.vx)}\\quad v_y=${tn(s.vy)}\\quad |\\vec v|=${tn(Math.hypot(s.vx, s.vy))}${u('m/s')}` },
+      { tex: `${Vs('\\vec v')}=${Vp("\\vec{v}'")}+${VV('\\vec V')}\\qquad \\vec a=\\vec{a}'+${C('acc', '\\vec A')}` },
+      { tex: `${Vp("v'_x")}=${tn(s.vpx)}\\quad ${Vp("v'_y")}=${tn(s.vpy)}\\quad ${VV('V')}=${tn(s.VX)}${u('m/s')}` },
+      { tex: `${Vs('v_x')}=${Vp("v'_x")}+${VV('V')}=${tn(s.vx)}\\quad ${Vs('v_y')}=${tn(s.vy)}\\quad |${Vs('\\vec v')}|=${tn(Math.hypot(s.vx, s.vy))}${u('m/s')}` },
     ];
     if (river) {
       out.push({ h: 'Traversata' });

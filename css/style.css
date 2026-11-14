@@ -1,90 +1,99 @@
 /* ---------- Tokens ---------- */
+/* Palette alla 3Blue1Brown (la stessa di js/core/manim.js): nel tema scuro il nero di Manim con grigi neutri
+   e gli accenti del blu di Manim; nel tema chiaro la carta con le stesse tinte, scurite per restare leggibili. */
 :root, :root[data-theme="light"] {
   --c-bg: #f6f3ea;
-  --c-grid: rgba(40, 60, 90, .06);
-  --c-grid-major: rgba(40, 60, 90, .11);
-  --c-axis: rgba(60, 50, 30, .45);
+  --c-grid: rgba(35, 107, 142, .08);
+  --c-grid-major: rgba(35, 107, 142, .16);
+  --c-axis: #23211c;
   --c-text: #23211c;
-  --c-muted: #7a7466;
-  --c-ink: #1f2430;
-  --c-ink-red: #d23c3c;
-  --c-ink-blue: #2563d9;
-  --c-ink-green: #1f8f4e;
-  --c-vel: #2f6fde;
-  --c-acc: #8b46c9;
-  --c-weight: #d64545;
-  --c-normal: #219a5b;
-  --c-friction: #d17c0f;
-  --c-ground: #e2d9c3;
-  --c-ground-edge: #9c8f72;
-  --c-body: #3b3f4a;
-  --c-body-edge: #1d1f25;
-  --c-ideal: rgba(60, 50, 30, .45);
-  --c-handle: #2f6fde;
-  --c-tension: #8a5a2b;
-  --c-spring: #0b8a8a;
-  --c-applied: #c2185b;
-  --c-sky-top: #cfe4f4;
-  --c-sky-bottom: #f6f2e7;
-  --c-soil: #d8bd93;
-  --c-soil-dark: #b0915f;
-  --c-dust: #b89a6e;
-  --c-brick: #c9694d;
+  --c-muted: #6b6658;
+  --c-ink: #23211c;
+  --c-ink-red: #d9443a;
+  --c-ink-blue: #1f86ad;
+  --c-ink-green: #4b8a2a;
+  --c-ink-yellow: #b8860b;
+  --c-vel: #1f86ad;
+  --c-acc: #b8860b;
+  --c-weight: #d9443a;
+  --c-normal: #4b8a2a;
+  --c-friction: #c25e12;
+  --c-ground: #e4ddcc;
+  --c-ground-edge: #3a372f;
+  --c-body: #3a372f;
+  --c-body-edge: #1b1a17;
+  --c-ideal: #6b6658;
+  --c-handle: #1f86ad;
+  --c-tension: #7d55b0;
+  --c-spring: #12876c;
+  --c-applied: #b0359e;
+  --c-sky-top: #f6f3ea;
+  --c-sky-bottom: #f6f3ea;
+  --c-soil: #e4ddcc;
+  --c-soil-dark: #cfc6b2;
+  --c-dust: #9c8f72;
+  --c-brick: #e4ddcc;
   --c-paper: #fbfaf5;
-  --c-paper-line: rgba(80, 125, 190, .22);
+  --c-paper-line: rgba(31, 134, 173, .2);
 
-  --panel-bg: rgba(255, 253, 248, .94);
-  --panel-border: rgba(60, 50, 30, .14);
-  --panel-shadow: 0 6px 24px rgba(40, 30, 10, .12), 0 1px 3px rgba(40, 30, 10, .08);
-  --ui-hover: rgba(60, 50, 30, .07);
-  --ui-active: rgba(47, 111, 222, .14);
-  --accent: #2f6fde;
-  --accent-ink: #fff;
+  --panel-bg: rgba(250, 248, 242, .985);
+  --panel-solid: #faf8f2;
+  --panel-border: rgba(35, 33, 28, .12);
+  --panel-shadow: 0 6px 22px rgba(40, 30, 10, .10), 0 1px 2px rgba(40, 30, 10, .08);
+  --ui-hover: rgba(35, 33, 28, .06);
+  --ui-active: rgba(31, 134, 173, .13);
+  --accent: #1f86ad;
+  --accent-ink: #ffffff;
+  --danger: #d9443a;
   color-scheme: light;
 }
 :root[data-theme="dark"] {
-  --c-bg: #172026;
-  --c-grid: rgba(220, 235, 240, .05);
-  --c-grid-major: rgba(220, 235, 240, .11);
-  --c-axis: rgba(220, 235, 240, .4);
-  --c-text: #ebe8df;
-  --c-muted: #93a0a6;
-  --c-ink: #f3efe2;
-  --c-ink-red: #ff7d7d;
-  --c-ink-blue: #79b8ff;
-  --c-ink-green: #72e0a2;
-  --c-vel: #6fb2ff;
-  --c-acc: #d29cff;
-  --c-weight: #ff7a7a;
-  --c-normal: #62dc9b;
-  --c-friction: #ffbe5c;
-  --c-ground: #2a3740;
-  --c-ground-edge: #5d717c;
-  --c-body: #d9dde3;
+  --c-bg: #0b0b0d;
+  --c-grid: rgba(41, 171, 202, .12);
+  --c-grid-major: rgba(41, 171, 202, .3);
+  --c-axis: #ffffff;
+  --c-text: #ece9e0;
+  --c-muted: #9b9b9b;
+  --c-ink: #ece9e0;
+  --c-ink-red: #FC6255;
+  --c-ink-blue: #58C4DD;
+  --c-ink-green: #83C167;
+  --c-ink-yellow: #F4D345;
+  --c-vel: #58C4DD;
+  --c-acc: #FFFF00;
+  --c-weight: #FC6255;
+  --c-normal: #83C167;
+  --c-friction: #F0AC5F;
+  --c-ground: #2a2c33;
+  --c-ground-edge: #c8c8c8;
+  --c-body: #c8c8c8;
   --c-body-edge: #ffffff;
-  --c-ideal: rgba(220, 235, 240, .4);
-  --c-handle: #6fb2ff;
-  --c-tension: #e0aa6c;
-  --c-spring: #4fd6d6;
-  --c-applied: #ff6fae;
-  --c-sky-top: #0c1624;
-  --c-sky-bottom: #1b2a37;
-  --c-soil: #4a3c2d;
-  --c-soil-dark: #2b231a;
-  --c-dust: #c9b08a;
-  --c-brick: #94503a;
-  --c-paper: #1b252b;
-  --c-paper-line: rgba(190, 215, 235, .09);
+  --c-ideal: #bbbbbb;
+  --c-handle: #58C4DD;
+  --c-tension: #CAA3E8;
+  --c-spring: #5CD0B3;
+  --c-applied: #D147BD;
+  --c-sky-top: #0b0b0d;
+  --c-sky-bottom: #0b0b0d;
+  --c-soil: #16161a;
+  --c-soil-dark: #0b0b0d;
+  --c-dust: #bbbbbb;
+  --c-brick: #2a2c33;
+  --c-paper: #0b0b0d;
+  --c-paper-line: rgba(41, 171, 202, .16);
 
-  --panel-bg: rgba(30, 40, 47, .94);
-  --panel-border: rgba(220, 235, 240, .12);
-  --panel-shadow: 0 8px 28px rgba(0, 0, 0, .4), 0 1px 3px rgba(0, 0, 0, .3);
-  --ui-hover: rgba(220, 235, 240, .08);
-  --ui-active: rgba(111, 178, 255, .18);
-  --accent: #6fb2ff;
-  --accent-ink: #0d1a24;
+  --panel-bg: rgba(17, 17, 20, .985);
+  --panel-solid: #111114;
+  --panel-border: rgba(255, 255, 255, .09);
+  --panel-shadow: 0 10px 30px rgba(0, 0, 0, .55), 0 1px 2px rgba(0, 0, 0, .5);
+  --ui-hover: rgba(255, 255, 255, .06);
+  --ui-active: rgba(88, 196, 221, .15);
+  --accent: #58C4DD;
+  --accent-ink: #0b0b0d;
+  --danger: #FC6255;
   color-scheme: dark;
 }
+:root[data-theme="dark"] body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 
 /* ---------- Base ---------- */
 * { box-sizing: border-box; }
@@ -120,7 +129,7 @@ svg.i { width: 20px; height: 20px; display: block; }
 .topbar .group.tools { margin-left: auto; }
 .topbar .group.sim + .group.tools { margin-left: 0; }
 .speed-btn {
-  min-width: 40px; height: 40px; border: 0; border-radius: 10px; background: transparent; cursor: pointer;
+  min-width: 40px; height: 44px; border: 0; border-radius: 10px; background: transparent; cursor: pointer;
   font-size: 13px; font-weight: 700; color: var(--c-muted); font-variant-numeric: tabular-nums;
 }
 .speed-btn:hover { background: var(--ui-hover); }
@@ -130,13 +139,13 @@ svg.i { width: 20px; height: 20px; display: block; }
 .seg.mode button.on { background: var(--panel-bg); color: var(--accent); box-shadow: 0 1px 3px rgba(0,0,0,.14); }
 #inspBtn.on { color: var(--accent); background: var(--ui-active); }
 body.lesson #inspBtn { display: none; }
-.crumb { padding: 0 8px 0 6px; height: 40px; white-space: nowrap; font-size: 14px; color: var(--c-muted); border: 0; background: transparent; border-radius: 10px; cursor: pointer; display: flex; align-items: center; }
+.crumb { padding: 0 8px 0 6px; height: 44px; white-space: nowrap; font-size: 14px; color: var(--c-muted); border: 0; background: transparent; border-radius: 10px; cursor: pointer; display: flex; align-items: center; }
 .crumb:hover { background: var(--ui-hover); }
 .crumb-chev svg { width: 15px; height: 15px; margin-left: 4px; color: var(--c-muted); }
 .crumb strong { color: var(--c-text); font-weight: 600; }
 .crumb .sep { margin: 0 6px; }
 .icon-btn, .seg button {
-  min-width: 40px; height: 40px; border: 0; border-radius: 10px; background: transparent;
+  min-width: 40px; height: 44px; border: 0; border-radius: 10px; background: transparent;
   display: grid; place-items: center; cursor: pointer; padding: 0 8px;
 }
 .icon-btn:hover, .seg button:hover { background: var(--ui-hover); }
@@ -157,7 +166,15 @@ body.lesson #inspBtn { display: none; }
   .clock { display: none; }
 }
 .crumb { min-width: 0; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
-@media (max-width: 1100px) { .crumb { max-width: 170px; } }
+@media (max-width: 1100px) {
+  /* iPad orizzontale: pulsanti un po' più stretti (restano alti 44 px) perché il nome dell'esperimento ci stia intero. */
+  .crumb { max-width: 190px; padding: 0 4px; }
+  .crumb-chev svg { margin-left: 2px; }
+  .icon-btn, .seg button { min-width: 34px; padding: 0 5px; }
+  .swatches button { width: 24px; }
+  .seg.mode button { padding: 0 9px; }
+  .topbar .group { padding: 0 2px; }
+}
 @media (max-width: 760px) { .crumb { display: none; } }
 @media (max-width: 860px) {
   .swatches button:nth-child(n+3) { display: none; }
@@ -166,7 +183,7 @@ body.lesson #inspBtn { display: none; }
 }
 .swatches { display: flex; gap: 2px; padding: 0 4px; }
 .swatches button {
-  width: 30px; height: 40px; border: 0; background: transparent; cursor: pointer; display: grid; place-items: center;
+  width: 30px; height: 44px; border: 0; background: transparent; cursor: pointer; display: grid; place-items: center;
 }
 .swatches button::before {
   content: ""; width: 18px; height: 18px; border-radius: 50%; background: var(--sw);
@@ -177,6 +194,7 @@ body.lesson #inspBtn { display: none; }
 .swatches button[data-color="inkRed"] { --sw: var(--c-ink-red); }
 .swatches button[data-color="inkBlue"] { --sw: var(--c-ink-blue); }
 .swatches button[data-color="inkGreen"] { --sw: var(--c-ink-green); }
+.swatches button[data-color="inkYellow"] { --sw: var(--c-ink-yellow); }
 
 /* ---------- Drawer ---------- */
 #scrim { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.25); opacity: 0; pointer-events: none; transition: opacity .2s; }
@@ -190,7 +208,7 @@ body.lesson #inspBtn { display: none; }
   padding: calc(env(safe-area-inset-top) + 18px) 14px 24px;
 }
 #drawer.open { transform: none; }
-#drawer h1 { font-size: 20px; margin: 4px 8px 16px; }
+#drawer h1 { font-size: 22px; margin: 4px 8px 16px; font-family: KaTeX_Main, "Latin Modern Roman", "Times New Roman", serif; font-weight: 700; }
 #drawer h2 { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--c-muted); margin: 18px 8px 6px; font-weight: 600; }
 #drawer button {
   display: block; width: 100%; text-align: left; border: 0; background: transparent; border-radius: 10px;
@@ -282,7 +300,7 @@ body.lesson #inspBtn { display: none; }
 .ftable td:not(:first-child) { text-align: right; }
 .ftable .sw { display: inline-block; width: 10px; height: 3px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
 .ftable tr.sum td { font-weight: 700; border-bottom: 0; }
-input[type=range] { width: 100%; height: 28px; margin: 0; accent-color: var(--accent); touch-action: pan-x; }
+input[type=range] { width: 100%; height: 34px; margin: 0; accent-color: var(--accent); touch-action: pan-x; }
 .toggle { display: flex; align-items: center; gap: 10px; font-size: 14px; padding: 6px 0; cursor: pointer; }
 .toggle input { display: none; }
 .toggle .sw { width: 38px; height: 22px; border-radius: 11px; background: var(--ui-hover); border: 1px solid var(--panel-border); position: relative; transition: background .15s; flex: none; }
@@ -409,7 +427,7 @@ body.insp-overlay #inspector { width: min(360px, 92vw); box-shadow: var(--panel-
 .insp-page { flex: 1 1 auto; }
 .insp-tabs { display: flex; gap: 2px; padding: 8px 10px 4px; }
 .insp-tabs button {
-  flex: 1; height: 34px; border: 0; border-radius: 9px; background: transparent; cursor: pointer;
+  flex: 1; height: 40px; border: 0; border-radius: 9px; background: transparent; cursor: pointer;
   font-size: 13.5px; font-weight: 600; color: var(--c-muted);
 }
 .insp-tabs button:hover { background: var(--ui-hover); }
@@ -508,3 +526,32 @@ body.has-rail:not(.lesson) #pins { left: 88px; }
 .sec-body { padding-bottom: 12px; }
 #inspector .chips { gap: 8px; }
 #inspector .chips button { padding: 8px 12px; }
+
+/* ---------- Ritocchi alla 3Blue1Brown ---------- */
+/* Pulsante principale (Play) e stati attivi con l'accento di Manim; bordi sottili e senza ombre pesanti. */
+.icon-btn.primary { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent), 0 2px 10px color-mix(in srgb, var(--accent) 28%, transparent); }
+.icon-btn.on, .seg button.on, .insp-tabs button.on, #drawer button.on { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent); }
+:root[data-theme="dark"] .topbar, :root[data-theme="dark"] #inspector, :root[data-theme="dark"] #drawer { -webkit-backdrop-filter: none; backdrop-filter: none; }
+.btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+
+/* Bersagli di tocco più grandi (≥ 44 px) senza ingrandire i pulsanti piccoli: l'area attiva si allarga oltre il disegno. */
+.param-pin, .param-anim, .pin-x, .panel-head button { position: relative; }
+.param-pin::after, .param-anim::after, .pin-x::after, .panel-head button::after { content: ""; position: absolute; inset: -8px -4px; }
+
+/* Dissolvenza della scena al cambio di esperimento o di tema: una copia dell'ultimo fotogramma sopra la tela,
+   che sfuma con la curva "smooth" di Manim. Non riceve tocchi, quindi l'input non aspetta. */
+#sceneFade { position: fixed; left: 0; top: 0; z-index: 1; pointer-events: none; opacity: 0; display: none; }
+#sceneFade.on { display: block; }
+/* I controlli del nuovo esperimento entrano con un breve fade. */
+@keyframes inspIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+#inspector.swap .insp-body:not(.hidden) { animation: inspIn .32s cubic-bezier(.6, 0, .4, 1); }
+/* Cambio di tema: colori dei pannelli in transizione, senza scatti. */
+html.theme-anim body *, html.theme-anim body *::before {
+  transition: background-color .35s cubic-bezier(.6, 0, .4, 1), color .35s cubic-bezier(.6, 0, .4, 1),
+    border-color .35s cubic-bezier(.6, 0, .4, 1), box-shadow .35s cubic-bezier(.6, 0, .4, 1) !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  #inspector.swap .insp-body { animation: none; }
+  html.theme-anim body *, html.theme-anim body *::before { transition: none !important; }
+  #drawer, #inspector { transition: none; }
+}

@@ -1,6 +1,10 @@
 import { deg, rk4, tn, clamp } from '../core/math.js';
 import { ball, cannon } from '../core/shapes.js';
 import { bricks, trail } from '../core/look.js';
+import { Stage, createPts, brace, angleMark, dropLines, formulaAtTip, rate01, C } from '../core/annot.js';
+
+const stage = new Stage();   // regia: frecce che crescono, parabola che si disegna, graffe, corpi che nascono
+const num = (v, d = 1) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(d).replace('.', ',');
 
 const KV = 0.25; // lunghezza delle frecce di velocità: metri per (m/s)
 const KA = 0.25; // frecce di accelerazione: metri per (m/s²)
@@ -102,82 +106,103 @@ export default {
     }
   },
 
+  mount() { stage.reset(); },
+
   draw(P, s, p, ui) {
-    const th = p.theta * deg;
-    const id = ideal(p);
+    const S = stage.begin(P, ui), M = S.M;
+    // Parametri mostrati: inseguono quelli veri (la parabola si trasforma con morbidezza); mentre si trascina
+    // una maniglia seguono il dito senza ritardo.
+    const [v0, theta, h0, g] = S.smooth('p', [p.v0, p.theta, p.h0, p.g], 0.11, !!ui.active);
+    const q = { ...p, v0, theta, h0, g };
+    const th = theta * deg;
+    const id = ideal(q);
     P.ground(0);
 
     // Torre di lancio in mattoni e cannone, con il perno della canna nel punto di lancio.
     // Dimensioni disegnate (solo estetiche, regolabili con la maniglia): ui.size(chiave) è il fattore di scala.
-    const kc = ui.size('cannon'), kb = ui.size('ball');
+    const kc = ui.size('cannon') * S.born('cannon'), kb = ui.size('ball');
     const CL = 1.2 * kc, cu = Math.max(P.cam.scale, 34 / 1.2) / P.cam.scale, cr = 0.28 * CL * cu;
-    if (p.h0 > 0) bricks(P, -1.4 * Math.max(1, kc), 0.6 * Math.max(1, kc), 0, Math.max(0, p.h0 - cr));
-    cannon(P, 0, p.h0 - cr, { angle: th, len: CL, minPx: 34 * kc });
+    if (h0 > 0) bricks(P, -1.4 * Math.max(1, kc), 0.6 * Math.max(1, kc), 0, Math.max(0, h0 - cr));
+    if (kc > 0.02) cannon(P, 0, h0 - cr, { angle: th, len: CL, minPx: 34 * kc });
 
-    // Traiettoria ideale (senza attrito) con vertice e gittata.
+    // Traiettoria ideale (senza attrito): si disegna quando compare (Create), poi le graffe di h_max e R.
     if (p.showIdeal) {
-      const pts = [];
+      const f = S.grow('ideal', 1.1), pts = [];
       for (let i = 0; i <= 120; i++) {
         const t = id.tv * i / 120;
-        pts.push([id.vx * t, p.h0 + id.vy * t - 0.5 * p.g * t * t]);
+        pts.push([id.vx * t, h0 + id.vy * t - 0.5 * g * t * t]);
       }
-      P.line(pts, { color: 'ideal', width: 1.5, dash: [6, 6] });
-      if (id.vy > 0) {
+      P.line(createPts(pts, f), { color: 'ideal', width: 1.6, dash: [6, 6] });
+      // Le graffe arrivano alla fine del tracciato; durante il volo si attenuano per lasciare spazio al corpo.
+      const gb = Math.min(1, Math.max(0, (f - 0.55) / 0.45)), dim = S.smooth('dim', [s.t > 0 && !s.landed ? 0.35 : 1], 0.25)[0];
+      if (id.vy > 0 && id.hmax > 0.05) {
         const ax = id.vx * id.tApex;
-        P.line([[ax, 0], [ax, id.hmax]], { color: 'ideal', width: 1, dash: [2, 4] });
-        P.circle(ax, id.hmax, 3.5, { fill: 'muted' });
-        P.text(ax, id.hmax, `hmax = ${tn(id.hmax, 1).replace('{,}', ',')} m`, { color: 'muted', size: 12.5, align: 'center', dy: -16 });
+        P.line([[ax, 0], [ax, id.hmax]], { color: 'ideal', width: 1, dash: [2, 4], alpha: gb * dim });
+        P.circle(ax, id.hmax, 3.5, { fill: 'muted', alpha: gb });
+        brace(P, [ax, 0], [ax, id.hmax], `h_{\\max} = ${num(id.hmax)}\\ \\mathrm{m}`, { side: 1, grow: gb, alpha: dim, color: M.muted });
       }
-      P.circle(id.R, 0, 3.5, { fill: 'muted' });
-      P.text(id.R, 0, `R = ${tn(id.R, 1).replace('{,}', ',')} m`, { color: 'muted', size: 12.5, align: 'center', dy: 16 });
+      if (id.R > 0.05) {
+        P.circle(id.R, 0, 3.5, { fill: 'muted', alpha: gb });
+        brace(P, [0, 0], [id.R, 0], `R = ${num(id.R)}\\ \\mathrm{m}`, { side: -1, gap: 10, grow: gb, alpha: dim, color: M.muted });
+      }
     }
 
     // Scia e posizioni stroboscopiche.
     trail(P, s.trail, 'vel', 3);
     if (p.strobe) for (const [x, y] of s.strobe) ball(P, x, y, { r: 0.12 * kb, minPx: 6 * kb, color: 'red' });
 
-    // Vettore v₀ di lancio con angolo (trascinabile).
-    const tipx = KV * p.v0 * Math.cos(th), tipy = p.h0 + KV * p.v0 * Math.sin(th);
+    // Vettore v₀ di lancio con angolo θ (trascinabile).
+    const tipx = KV * v0 * Math.cos(th), tipy = h0 + KV * v0 * Math.sin(th);
     const fresh = s.t === 0;
-    P.arc(0, p.h0, 34, 0, th, { color: 'muted', label: 'θ', labelR: 48 });
-    P.line([[0, p.h0], [KV * p.v0 * 0.9, p.h0]], { color: 'muted', width: 1, dash: [3, 4] });
-    P.arrow(0, p.h0, tipx, tipy, { color: 'vel', width: fresh ? 3 : 2, alpha: fresh ? 1 : 0.4, dash: fresh ? null : [5, 4], label: 'v₀' });
-    P.handle(0, p.h0, ui.active === 'h0');
+    if (th > 0.01) angleMark(P, 0, h0, 34, 0, th, `\\theta = ${Math.round(theta)}°`, { color: M.muted, grow: S.grow('theta', 0.7) });
+    P.line([[0, h0], [KV * v0 * 0.9, h0]], { color: 'muted', width: 1, dash: [3, 4] });
+    P.arrow(0, h0, tipx, tipy, { color: 'vel', width: fresh ? 3 : 2, alpha: fresh ? 1 : 0.4, dash: fresh ? null : [5, 4], label: 'v₀' });
+    P.handle(0, h0, ui.active === 'h0');
     P.handle(tipx, tipy, ui.active === 'v0');
 
-    // Corpo e vettori istantanei.
-    ball(P, s.x, s.y, { r: 0.18 * kb, minPx: 10 * kb, color: 'red', spin: -s.t * 8 });
+    // Corpo e vettori istantanei. A simulazione ferma all'inizio la palla segue il punto di lancio mostrato.
+    const [bx, by] = fresh ? [0, h0] : [s.x, s.y];
+    ball(P, bx, by, { r: 0.18 * kb * S.born('ball'), minPx: 10 * kb * S.born('ball'), color: 'red', spin: -s.t * 8 });
     if (!fresh) {
       if (p.showComp) {
+        dropLines(P, s.x, s.y, { toY: 0, toX: 0, alpha: S.grow('proj', 0.5) });
         P.arrow(s.x, s.y, s.x + KV * s.vx, s.y, { color: 'vel', width: 2, dash: [4, 4], label: 'vx', alpha: 0.85 });
         P.arrow(s.x, s.y, s.x, s.y + KV * s.vy, { color: 'vel', width: 2, dash: [4, 4], label: 'vy', alpha: 0.85 });
       }
-      P.arrow(s.x, s.y, s.x + KV * s.vx, s.y + KV * s.vy, { color: 'vel', label: 'v' });
+      // Velocità con la sua formula dal vivo, accanto alla punta.
+      P.arrow(s.x, s.y, s.x + KV * s.vx, s.y + KV * s.vy, { color: 'vel', key: 'v' });
+      const gv = S.grow('arr:v'), [a, b] = P.S(s.x, s.y), [c, d] = P.S(s.x + KV * s.vx * gv, s.y + KV * s.vy * gv), L = Math.hypot(c - a, d - b);
+      if (!S.snap && L > 18) {
+        const src = `\\vec v = \\sqrt{v_x^2 + v_y^2} = ${num(Math.hypot(s.vx, s.vy))}\\ \\mathrm{m/s}`;
+        formulaAtTip(P, { x: c, y: d, ux: (c - a) / L, uy: (d - b) / L }, src, { color: M.vec.vel, alpha: rate01(gv) });
+      }
     }
     if (p.showAcc) {
       const v = Math.hypot(s.vx, s.vy);
       const ax = -p.k * v * s.vx, ay = -p.g - p.k * v * s.vy;
-      P.arrow(s.x, s.y, s.x + KA * ax, s.y + KA * ay, { color: 'acc', label: p.k > 0 ? 'a' : 'g' });
+      P.arrow(bx, by, bx + KA * ax, by + KA * ay, { color: 'acc', label: p.k > 0 ? 'a' : 'g' });
     }
   },
 
   formulas(s, p) {
     const id = ideal(p), v = Math.hypot(s.vx, s.vy);
     const u = x => `\\ \\mathrm{${x}}`;
+    // Stessi colori della scena: velocità (e componenti) come le frecce v, gravità come la freccia g.
+    const V = x => C('vel', x), G = C('acc', 'g');
     return [
       { h: 'Condizioni iniziali' },
-      { tex: `v_{0x}=v_0\\cos\\theta=${tn(id.vx)}${u('m/s')}` },
-      { tex: `v_{0y}=v_0\\sin\\theta=${tn(id.vy)}${u('m/s')}` },
+      { tex: `${V('v_{0x}')}=${V('v_0')}\\cos\\theta=${tn(id.vx)}${u('m/s')}` },
+      { tex: `${V('v_{0y}')}=${V('v_0')}\\sin\\theta=${tn(id.vy)}${u('m/s')}` },
       { h: 'Leggi orarie' },
       { tex: `x(t)=${tn(id.vx)}\\,t` },
       { tex: `y(t)=${tn(p.h0, 1)}+${tn(id.vy)}\\,t-${tn(p.g / 2, 3)}\\,t^2` },
       { h: p.k > 0 ? 'Previsioni ideali (senza aria)' : 'Previsioni' },
-      { tex: `t_{\\text{volo}}=\\dfrac{v_{0y}+\\sqrt{v_{0y}^2+2gh_0}}{g}=${tn(id.tv)}${u('s')}` },
-      { tex: `h_{\\max}=h_0+\\dfrac{v_{0y}^2}{2g}=${tn(id.hmax)}${u('m')}` },
-      { tex: `R=v_{0x}\\,t_{\\text{volo}}=${tn(id.R)}${u('m')}` },
+      { tex: `t_{\\text{volo}}=\\dfrac{${V('v_{0y}')}+\\sqrt{${V('v_{0y}^2')}+2${G}h_0}}{${G}}=${tn(id.tv)}${u('s')}` },
+      { tex: `h_{\\max}=h_0+\\dfrac{${V('v_{0y}^2')}}{2${G}}=${tn(id.hmax)}${u('m')}` },
+      { tex: `R=${V('v_{0x}')}\\,t_{\\text{volo}}=${tn(id.R)}${u('m')}` },
       { h: s.landed ? 'All\'atterraggio' : 'Istante attuale' },
       { tex: `t=${tn(s.t)}${u('s')}\\qquad x=${tn(s.x)}${u('m')}\\qquad y=${tn(s.y)}${u('m')}` },
-      { tex: `v_x=${tn(s.vx)}\\quad v_y=${tn(s.vy)}\\quad |\\vec v|=${tn(v)}${u('m/s')}` },
+      { tex: `${V('v_x')}=${tn(s.vx)}\\quad ${V('v_y')}=${tn(s.vy)}\\quad |${V('\\vec v')}|=${tn(v)}${u('m/s')}` },
       p.k > 0 && s.landed && { tex: `\\text{gittata reale } ${tn(s.x)}${u('m')}\\ \\ (${tn(100 * s.x / id.R, 0)}\\%\\text{ dell'ideale})`, cls: 'warn' },
     ].filter(Boolean);
   },

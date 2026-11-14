@@ -7,6 +7,7 @@ import { store } from '../core/store.js';
 import { el } from '../core/ui.js';
 import { K, MU as UC, pointField, traceLine, drawFieldGrid } from '../core/electric.js';
 import { trail, dust, BODY_COLORS } from '../core/look.js';
+import { coulombNote } from '../core/annot-charges.js';
 import { palette, drawPlaneGrid, drawPlaneAxes, drawFieldLinesM, chargeDisk, groundM, slabM, blockM, ballM, springM, ropeM, pulleyM, anchorM,
   manimPainter, tex, Regia } from '../core/manim.js';
 
@@ -424,16 +425,44 @@ function chargeNo(spec, id) { return spec.objects.filter(o => o.q && (DYNAMIC.ha
 const shortName = n => n.replace('Carica fissa', 'carica').replace('Sfera', 'sfera').replace('Blocco', 'blocco');
 
 // Distanze tra le cariche: segmento tratteggiato e valore di r a metà.
-function drawDistances(P, st) {
+function drawDistances(P, st, pair = null) {
   const list = chargesOf(st);
   if (list.length > 7) return;
   for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
     const a = list[i], b = list[j], r = Math.hypot(a.x - b.x, a.y - b.y);
     P.line([[a.x, a.y], [b.x, b.y]], { color: 'muted', width: 1.4, dash: [5, 5] });
+    if (pair && pair.includes(a.id) && pair.includes(b.id)) continue;   // questa r la scrive la parentesi graffa
     const [ma, mb] = P.S((a.x + b.x) / 2, (a.y + b.y) / 2), ang = Math.atan2(b.y - a.y, b.x - a.x);
     P.textS(ma - Math.sin(ang) * 12, mb - Math.cos(ang) * 12, `r = ${fmt(r, 2)} m`, { size: 12, align: 'center', color: 'muted' });
   }
   triangleAngles(P, list);
+}
+
+// Coppia annotata: la carica selezionata (fissa o corpo carico) e la carica più vicina.
+function pairOf(st, sel) {
+  const list = chargesOf(st), s = list.find(c => c.id === sel);
+  if (!s) return null;
+  let t = null, best = Infinity;
+  for (const c of list) if (c !== s) { const d = Math.hypot(c.x - s.x, c.y - s.y); if (d < best) { best = d; t = c; } }
+  return t && { s, t, r: best, list };
+}
+function drawPairNote(P, st, { s, t, r, list }) {
+  const C = M, ct = (hex, x) => `\\textcolor{${hex}}{${x}}`, i = chargeNo(st.spec, s.id), j = chargeNo(st.spec, t.id);
+  const qT = (c, k) => ct(c.q >= 0 ? C.pos : C.neg, `q_{${k}}`), F = K * Math.abs(s.q * t.q) / (r * r);
+  const others = list.filter(c => c !== s && c !== t), avoid = others.length
+    ? P.S(others.reduce((a, c) => a + c.x, 0) / others.length, others.reduce((a, c) => a + c.y, 0) / others.length) : null;
+  const rpx = c => Math.max(10, (c.fixed ? CHARGE_R : c.r) * P.cam.scale);
+  // Le scritte "q = … µC" delle cariche fisse (sotto il disco) e dei corpi carichi (in alto a destra) non vanno coperte.
+  const keepOut = list.map(c => {
+    const [a, b] = P.S(c.x, c.y), rp = rpx(c);
+    if (c.fixed) return [a - 55, b + rp + 5, a + 55, b + rp + 27];
+    const h = c.r * P.cam.scale * Math.SQRT1_2; return [a + h + 4, b - h - 11, a + h + 120, b - h + 11];
+  });
+  coulombNote(P, M, {
+    p1: P.S(s.x, s.y), p2: P.S(t.x, t.y), r1: rpx(s), r2: rpx(t), avoid, g: R.on('note', s.id + '-' + t.id, 0.55), keepOut,
+    rTeX: `r = ${fmt(r, 2)}\\ \\mathrm{m}`,
+    lawTeX: `${ct(C.vec.acc, `F_{${i}${j}}`)} = k\\frac{|${qT(s, i)}\\,${qT(t, j)}|}{r^{2}} = ${ct(C.vec.acc, `${fmt(F, F < 0.1 ? 4 : 3)}\\ \\mathrm{N}`)}`,
+  });
 }
 
 // Energia potenziale elettrica: coppie di cariche (k q₁q₂/r) più il campo uniforme (−q E·r).
@@ -450,6 +479,14 @@ function electricEnergy(st) {
     }
   }
   return U;
+}
+
+// Le linee si ricalcolano solo se cambiano le cariche, il campo uniforme o l'inquadratura (non a ogni fotogramma).
+const LC = { key: null, lines: [] };
+function cachedFieldLines(st, box, list) {
+  const key = JSON.stringify([list.map(c => [c.id, c.x, c.y, c.q]), st.spec.E ?? 0, st.spec.Eangle ?? 0, box.map(v => Math.round(v * 20))]);
+  if (key !== LC.key) { LC.key = key; LC.lines = fieldLines(st, box); }
+  return LC.lines;
 }
 
 // Linee di campo: partono dalle cariche (una ogni µC circa) e, se c'è, da una fila di semi lungo il campo uniforme.
@@ -899,18 +936,22 @@ function draw(P0, st, ui = {}) {
   if (!ui.snapshot) drawPlaneAxes(P, M, { unit: 'm' });
   if (show.field ?? true) {
     const { x0, y0, x1, y1 } = P.cam.bounds(), m = 0.2 * (x1 - x0), list = chargesOf(st);
-    const lines = fieldLines(st, [x0 - m, y0 - m, x1 + m, y1 + m]);
-    // Le linee si ridisegnano (una dopo l'altra) quando cambiano il numero o il segno delle cariche, o il campo uniforme.
-    const sig = list.map(c => c.id + Math.sign(c.q)).join(',') + '|' + Math.sign(spec.E ?? 0) + '|' + (spec.Eangle ?? 0);
-    const t = R.since('lines', sig), lag = Math.min(0.04, 0.6 / Math.max(1, lines.length));
-    drawFieldLinesM(P, lines, M, { mag: (x, y) => Math.hypot(...fieldAt(st, x, y, list)), lo: 1e3, hi: 3e5,
-      progress: i => Math.min(1, Math.max(0, (t - i * lag) / 0.7)) });
+    const lines = cachedFieldLines(st, [x0 - m, y0 - m, x1 + m, y1 + m], list);
+    // Regia delle linee: Create alla prima comparsa, dissolvenza incrociata quando cambiano numero o segno delle
+    // cariche (o il verso del campo uniforme), e linee che seguono le cariche senza ripartire durante il moto.
+    const sig = list.map(c => c.id + Math.sign(c.q)).join(',') + '|' + Math.sign(spec.E ?? 0) + '|' + (spec.E ? spec.Eangle ?? 0 : 0);
+    const r = R.fieldLines('lines', sig, lines), opts = { mag: (x, y) => Math.hypot(...fieldAt(st, x, y, list)), lo: 1e3, hi: 3e5 };
+    if (r.old) drawFieldLinesM(P, r.old, M, { ...opts, alpha: r.oldAlpha });
+    drawFieldLinesM(P, lines, M, { ...opts, progress: r.progress });
   }
   if (show.Evec) {
     const list = chargesOf(st);
     if (list.length || spec.E) drawFieldGrid(P, (x, y) => fieldAt(st, x, y, list), (x, y) => y < 0 || list.some(c => Math.hypot(x - c.x, y - c.y) < c.r * 1.6));
   }
-  if (show.dist ?? true) drawDistances(P, st);
+  // Carica selezionata e la più vicina: parentesi graffa con r e legge di Coulomb dal vivo (disegnate più avanti).
+  const note = (show.dist ?? true) && !ui.snapshot ? pairOf(st, sel) : null;
+  R.on('note', note ? note.s.id + '-' + note.t.id : null, 0.55);
+  if (show.dist ?? true) drawDistances(P, st, note && [note.s.id, note.t.id]);
 
   for (const o of spec.objects) {
     if (o.type === 'incline') {
@@ -1007,6 +1048,7 @@ function draw(P0, st, ui = {}) {
   }
 
   arrowGroup = null;
+  if (note) drawPairNote(P, st, note);
   if (B.drag) {
     const o = B.drag.o;
     dragGuides(P, { x: o.x, y: o.y, vx: B.drag.vx, hy: B.drag.hy, text: `x = ${fmt(o.x, 2)} m · y = ${fmt(o.y, 2)} m` });
@@ -1054,14 +1096,18 @@ function electricFormulas(st, item) {
   if (!d || !d.rows.length) return [];
   const out = [{ h: 'Forze elettriche (Coulomb)' }];
   const n = v => fmt(v, Math.abs(v) < 0.1 ? 4 : 3), ang = F => fmt(Math.atan2(F[1], F[0]) / deg, 0) + '°';
+  // Stessi colori della scena: forza elettrica (giallo), cariche rosse (+) e blu (−), campo uniforme.
+  const C = M ?? palette({}), ct = (hex, x) => `\\textcolor{${hex}}{${x}}`, Fc = x => ct(C.vec.acc, x);
+  const qT = (o, k) => ct(o.q >= 0 ? C.pos : C.neg, `q_{${k}}`), hs = (hex, x) => `<span style="color:${hex}">${x}</span>`;
   for (const f of d.rows) {
-    if (f.from === 'E') { out.push({ tex: `F = q\\,E = ${n(Math.hypot(...f.F)).replace(',', '{,}')}\\ \\mathrm{N}` }); continue; }
+    if (f.from === 'E') { out.push({ tex: `${Fc('F')} = ${qT(item, chargeNo(st.spec, item.id))}\\,${ct(C.field, 'E')} = ${Fc(`${n(Math.hypot(...f.F)).replace(',', '{,}')}\\ \\mathrm{N}`)}` }); continue; }
     const o = objOf(st.spec, f.from);
     const i = chargeNo(st.spec, item.id), j = chargeNo(st.spec, o.id);
-    out.push({ tex: `F_{${i}${j}} = k\\dfrac{|q_{${i}}\\,q_{${j}}|}{r^2} = ${n(Math.hypot(...f.F)).replace(',', '{,}')}\\ \\mathrm{N}\\quad (r = ${fmt(f.r, 2).replace(',', '{,}')}\\ \\mathrm{m},\\ \\text{${item.q * o.q > 0 ? 'repulsiva' : 'attrattiva'}})` });
+    out.push({ tex: `${Fc(`F_{${i}${j}}`)} = k\\dfrac{|${qT(item, i)}\\,${qT(o, j)}|}{r^2} = ${Fc(`${n(Math.hypot(...f.F)).replace(',', '{,}')}\\ \\mathrm{N}`)}\\quad (r = ${fmt(f.r, 2).replace(',', '{,}')}\\ \\mathrm{m},\\ \\text{${item.q * o.q > 0 ? 'repulsiva' : 'attrattiva'}})` });
   }
-  const rows = d.rows.map(f => `<tr><td>${f.from === 'E' ? 'qE' : 'F' + subN(chargeNo(st.spec, item.id)) + subN(chargeNo(st.spec, f.from)) + ' (da q' + subN(chargeNo(st.spec, f.from)) + ')'}</td><td>${n(Math.hypot(...f.F))}</td><td>${ang(f.F)}</td><td>${n(f.F[0])}</td><td>${n(f.F[1])}</td></tr>`).join('');
-  out.push({ html: `<table class="ftable"><tr><td></td><td>F (N)</td><td>θ</td><td>Fx (N)</td><td>Fy (N)</td></tr>${rows}<tr class="sum"><td>Risultante</td><td>${n(Math.hypot(...d.R))}</td><td>${ang(d.R)}</td><td>${n(d.R[0])}</td><td>${n(d.R[1])}</td></tr></table>` });
+  const cells = F => `<td>${hs(C.vec.acc, n(Math.hypot(...F)))}</td><td>${ang(F)}</td><td>${n(F[0])}</td><td>${n(F[1])}</td>`;
+  const rows = d.rows.map(f => `<tr><td>${f.from === 'E' ? 'qE' : hs(C.vec.acc, 'F' + subN(chargeNo(st.spec, item.id)) + subN(chargeNo(st.spec, f.from))) + ' (da q' + subN(chargeNo(st.spec, f.from)) + ')'}</td>${cells(f.F)}</tr>`).join('');
+  out.push({ html: `<table class="ftable"><tr><td></td><td>${hs(C.vec.acc, 'F (N)')}</td><td>θ</td><td>Fx (N)</td><td>Fy (N)</td></tr>${rows}<tr class="sum"><td>Risultante</td>${cells(d.R)}</tr></table>` });
   return out;
 }
 

@@ -1,7 +1,7 @@
 import { niceStep } from './math.js';
 import { palette, drawPlaneGrid, manimColors, arrowS, arrowLabel, vecLabel, tex, textToTeX, groundM } from './manim.js';
 
-const COLOR_KEYS = ['bg', 'grid', 'gridMajor', 'axis', 'text', 'muted', 'ink', 'inkRed', 'inkBlue', 'inkGreen',
+const COLOR_KEYS = ['bg', 'grid', 'gridMajor', 'axis', 'text', 'muted', 'ink', 'inkRed', 'inkBlue', 'inkGreen', 'inkYellow',
   'vel', 'acc', 'weight', 'normal', 'friction', 'ground', 'groundEdge', 'body', 'bodyEdge', 'ideal', 'handle',
   'tension', 'spring', 'applied', 'skyTop', 'skyBottom', 'soil', 'soilDark', 'dust', 'brick', 'paper', 'paperLine'];
 

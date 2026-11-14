@@ -3,7 +3,8 @@ import { Painter, readColors, drawGrid } from './core/render.js';
 import { Ink } from './core/ink.js';
 import { Panel } from './core/panels.js';
 import { Inspector } from './core/inspector.js';
-import { drawPlot } from './core/plot.js';
+import { drawPlot, seriesColor } from './core/plot.js';
+import { palette as manimPalette } from './core/manim.js';
 import { icons, applyIcons } from './core/icons.js';
 import { store } from './core/store.js';
 import { fmt } from './core/math.js';
@@ -316,7 +317,7 @@ function buildGraphTabs() {
   });
   const g = list[app.graphIdx];
   graphBody.querySelector('.legend').innerHTML = g
-    ? g.series.map(s => `<span style="--lc:${colors[s.color] || s.color}">${s.label}</span>`).join('')
+    ? g.series.map(s => `<span style="--lc:${seriesColor(manimPalette(colors), colors, s.color)}">${s.label}</span>`).join('')
     : '';
 }
 
@@ -420,7 +421,36 @@ function expSnapshot(exp, w, h) {
   return cv;
 }
 
+// Dissolvenza della scena (cambio di esperimento o di tema), come una transizione di regia di Manim:
+// una copia dell'ultimo fotogramma sopra la tela sfuma in 0,35 s con la curva "smooth". La copia non riceve
+// tocchi, quindi la nuova scena è subito utilizzabile. Rispetta "riduci movimento".
+const fadeCv = document.createElement('canvas');
+fadeCv.id = 'sceneFade';
+canvas.after(fadeCv);
+let fadeTimer = 0;
+function sceneFade(ms = 350) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches || !canvas.width) return;
+  fadeCv.width = canvas.width; fadeCv.height = canvas.height;
+  fadeCv.style.width = canvas.style.width; fadeCv.style.height = canvas.style.height;
+  fadeCv.getContext('2d').drawImage(canvas, 0, 0);
+  fadeCv.style.transition = 'none'; fadeCv.style.opacity = '1';
+  fadeCv.classList.add('on');
+  fadeCv.getBoundingClientRect();   // applica l'opacità piena prima di avviare la transizione
+  fadeCv.style.transition = `opacity ${ms}ms cubic-bezier(.6, 0, .4, 1)`;
+  fadeCv.style.opacity = '0';
+  clearTimeout(fadeTimer);
+  fadeTimer = setTimeout(() => fadeCv.classList.remove('on'), ms + 50);
+}
+// I controlli del nuovo esperimento entrano con un breve fade (CSS: #inspector.swap).
+function inspectorSwap() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  insp.el.classList.remove('swap');
+  void insp.el.offsetWidth;
+  insp.el.classList.add('swap');
+}
+
 function loadExperiment(id) {
+  if (app.exp) { sceneFade(); inspectorSwap(); }
   ink.end();
   stopSweep();
   app.exp?.unmount?.(api);
@@ -1192,10 +1222,18 @@ function setMode(m) {
 }
 function toggleTheme() {
   const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  // Scena in dissolvenza e pannelli che cambiano colore insieme, senza sfarfallii.
+  sceneFade(400);
+  const root = document.documentElement;
+  root.classList.add('theme-anim');
+  root.style.background = '';   // il colore messo da index.html prima dello stile: da qui in poi decide il CSS
+  clearTimeout(toggleTheme.t);
+  toggleTheme.t = setTimeout(() => root.classList.remove('theme-anim'), 450);
   document.documentElement.dataset.theme = t;
   store.set('theme', t);
   colors = readColors();
   document.querySelector('meta[name=theme-color]').content = colors.bg;
+  app.formulasDirty = true;   // le formule sono colorate con la palette del tema
   buildGraphTabs();
 }
 

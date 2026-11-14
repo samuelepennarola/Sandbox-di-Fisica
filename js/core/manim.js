@@ -3,7 +3,7 @@
 // già inclusi offline in vendor/katex) disegnate direttamente sul canvas.
 // Pensato per essere esteso a tutti gli esperimenti: per ora lo usa "Cariche e campo elettrico".
 import { niceStep } from './math.js';
-import { MANIM } from './anim.js';
+import { MANIM, rate } from './anim.js';
 
 export const isDark = () => document.documentElement.dataset.theme === 'dark';
 
@@ -133,48 +133,135 @@ export function arrowS(ctx, a, b, c, d, color, { width = 3, tip = 14, grow = 1, 
 
 /* ---------------- Scritte in LaTeX classico ---------------- */
 
-// Un piccolo sottoinsieme di TeX, abbastanza per le etichette della scena:
+// Un piccolo sottoinsieme di TeX, abbastanza per le etichette e le formule brevi della scena:
 //   lettere latine e greche in corsivo matematico, cifre e segni in tondo, _x _{..} pedici, ^x ^{..} apici,
-//   \vec X (freccia sopra), \mathrm{..} testo in tondo (unità), \cdot, \  (spazio), i pedici Unicode ₀..₉.
-const GREEK = { alpha: 'α', beta: 'β', theta: 'θ', sigma: 'σ', lambda: 'λ', mu: 'μ', omega: 'ω', varepsilon: 'ε', epsilon: 'ε', pi: 'π', Delta: 'Δ', phi: 'φ' };
+//   \vec X (freccia sopra), \mathrm{..} testo in tondo (unità), \cdot, \  (spazio), i pedici Unicode ₀..₉,
+//   \frac{..}{..} frazioni, \sqrt{..} radici, \Delta e le lettere greche comuni.
+const GREEK = { alpha: 'α', beta: 'β', gamma: 'γ', theta: 'θ', sigma: 'σ', lambda: 'λ', mu: 'μ', omega: 'ω', varepsilon: 'ε', epsilon: 'ε', pi: 'π', Delta: 'Δ', phi: 'φ', varphi: 'φ', rho: 'ρ', tau: 'τ' };
+const SYMB = { cdot: ['·', 3], times: ['×', 3.5], approx: ['≈', 3.5], to: ['→', 3.5], Rightarrow: ['⇒', 3.5], parallel: ['∥', 0], perp: ['⊥', 0], infty: ['∞', 0], pm: ['±', 3],
+  le: ['≤', 3.5], ge: ['≥', 3.5], ne: ['≠', 3.5], circ: ['°', 0], prime: ['′', 0], dots: ['…', 1] };
+// Funzioni in tondo con un po' di spazio attorno (\sin\alpha, \cos\theta).
+const FUNCS = new Set(['sin', 'cos', 'tan', 'ln', 'log', 'exp', 'max', 'min']);
 const SUBS = '₀₁₂₃₄₅₆₇₈₉';
 
+// Albero dei nodi: { t: 'ch', s, font, pad, op, vec } · { t: 'sub' | 'sup', body } · { t: 'frac', num, den } · { t: 'sqrt', body }
+//   · { t: 'color', c, body } per \color{#hex}{..} (una parte della formula in un altro colore).
 function parse(src) {
-  src = src.replace(/[₀-₉]+/g, m => '_{' + [...m].map(c => SUBS.indexOf(c)).join('') + '}').replace(/-/g, '−');
+  src = src.replace(/[₀-₉]+/g, m => '_{' + [...m].map(c => SUBS.indexOf(c)).join('') + '}').replace(/'/g, '′');
+  // Il trattino diventa il segno meno, tranne dentro gli argomenti di \color (#hex senza trattini, ma per sicurezza).
+  src = src.replace(/(\\color\{[^}]*\})|-/g, (m, col) => col ?? '−');
+  return parseList(src);
+}
+function parseList(src) {
   const out = [];
   let i = 0;
   const group = () => {
     while (src[i] === ' ') i++;   // come in TeX, gli spazi prima dell'argomento non contano
     if (src[i] === '{') { let depth = 1, j = i + 1; while (j < src.length && depth) { if (src[j] === '{') depth++; else if (src[j] === '}') depth--; j++; } const g = src.slice(i + 1, j - 1); i = j; return g; }
     if (src[i] === '\\') { const m = /^\\[a-zA-Z]+/.exec(src.slice(i)); if (m) { i += m[0].length; return m[0]; } }
-    return src[i++];
+    return src[i++] ?? '';
   };
-  const push = (items, level, extra = {}) => { for (const it of items) out.push({ ...it, level: it.level + level, ...extra }); };
   while (i < src.length) {
     const ch = src[i];
-    if (ch === '_' || ch === '^') { i++; push(parse(group()), 0, { script: ch === '_' ? 'sub' : 'sup' }); continue; }
+    if (ch === '_' || ch === '^') { i++; out.push({ t: ch === '_' ? 'sub' : 'sup', body: parseList(group()) }); continue; }
     if (ch === '\\') {
       const m = /^\\([a-zA-Z]+|.)/.exec(src.slice(i)); i += m[0].length;
       const cmd = m[1];
-      if (cmd === 'vec') { const g = parse(group()); g.forEach((t, k) => { if (k === 0) t.vec = true; }); push(g, 0); }
-      else if (cmd === 'mathrm' || cmd === 'text') out.push({ s: group(), font: 'main', level: 0 });
-      else if (cmd === 'cdot') out.push({ s: '·', font: 'main', level: 0, pad: 3 });
-      else if (cmd === ' ' || cmd === ',') out.push({ s: ' ', font: 'main', level: 0 });
-      else if (GREEK[cmd]) out.push({ s: GREEK[cmd], font: 'math', level: 0 });
-      else out.push({ s: cmd, font: 'main', level: 0 });
+      if (cmd === 'vec') { const g = parseList(group()); if (g[0]?.t === 'ch') g[0].vec = true; out.push(...g); }
+      else if (cmd === 'color' || cmd === 'textcolor') { const c = group(), body = parseList(group()); out.push({ t: 'color', c, body }); }
+      else if (FUNCS.has(cmd)) out.push({ t: 'ch', s: cmd, font: 'main', pad: 2.5 });
+      else if (cmd === 'frac' || cmd === 'dfrac' || cmd === 'tfrac') { const num = parseList(group()), den = parseList(group()); out.push({ t: 'frac', num, den }); }
+      else if (cmd === 'sqrt') out.push({ t: 'sqrt', body: parseList(group()) });
+      else if (cmd === 'mathrm' || cmd === 'text') {
+        // Testo in tondo: le parole restano intere (con i loro spazi); se contiene apici o pedici (m/s^2) si impagina.
+        const g = group();
+        if (/[\^_\\]/.test(g)) out.push(...roman(parseList(g)));
+        else out.push({ t: 'ch', s: g, font: 'main' });
+      }
+      else if (cmd === 'left' || cmd === 'right') { /* \left( \right): basta la parentesi */ }
+      else if (SYMB[cmd]) out.push({ t: 'ch', s: SYMB[cmd][0], font: 'main', pad: SYMB[cmd][1], op: SYMB[cmd][1] > 0 });
+      else if (cmd === ' ' || cmd === ',' || cmd === ';' || cmd === 'quad' || cmd === 'qquad') out.push({ t: 'ch', s: cmd === 'qquad' ? '      ' : cmd === 'quad' ? '   ' : ' ', font: 'main' });
+      else if (GREEK[cmd]) out.push({ t: 'ch', s: GREEK[cmd], font: /^[A-Z]/.test(cmd) ? 'main' : 'math' });
+      else out.push({ t: 'ch', s: cmd, font: 'main' });
       continue;
     }
     i++;
     if (ch === '{' || ch === '}' || ch === ' ') continue;   // spazi: solo con \\  (come in TeX)
-    if (/[A-Za-zα-ωΔ]/.test(ch)) out.push({ s: ch, font: 'math', level: 0 });
-    else if (/[=+−<>]/.test(ch)) {
+    if (ch === '′') { out.push({ t: 'sup', body: [{ t: 'ch', s: '′', font: 'main' }] }); continue; }   // apice, come \prime in TeX
+    if (/[A-Za-zα-ω]/.test(ch)) out.push({ t: 'ch', s: ch, font: 'math' });
+    else if (/[=+−<>≈]/.test(ch)) {
       // Segno unario (all'inizio o dopo un altro segno: "−2,0", "= −2,0") senza spazi attorno.
       const prev = out[out.length - 1], unary = /[+−]/.test(ch) && (!prev || prev.op || prev.s === '(');
-      out.push({ s: ch, font: 'main', level: 0, pad: unary ? 0 : 3.5, op: true });
+      out.push({ t: 'ch', s: ch, font: 'main', pad: unary ? 0 : 3.5, op: true });
     }
-    else out.push({ s: ch, font: 'main', level: 0 });
+    else out.push({ t: 'ch', s: ch, font: 'main' });
   }
   return out;
+}
+
+// Tutti i caratteri di un sottoalbero in tondo (per \mathrm con apici: m/s^2).
+function roman(nodes) {
+  for (const n of nodes) {
+    if (n.t === 'ch') n.font = 'main';
+    for (const k of ['body', 'num', 'den']) if (n[k]) roman(n[k]);
+  }
+  return nodes;
+}
+
+// Impaginazione: un elenco di operazioni di disegno relative alla linea di mezzo (y = 0), con larghezza e ingombro verticale.
+function box(ctx, nodes, size) {
+  const ops = [];
+  let x = 0, top = -size * 0.5, bot = size * 0.5, lastBase = null;
+  const fontOf = (font, sz) => `${font === 'math' ? 'italic ' : ''}${sz}px ${font === 'math' ? 'KaTeX_Math' : 'KaTeX_Main'}, "Times New Roman", serif`;
+  const place = (B, dx, dy) => { for (const o of B.ops) ops.push({ ...o, x: o.x + dx, y: o.y + dy, ...(o.x2 != null ? { x2: o.x2 + dx, y2: o.y2 + dy } : {}), ...(o.pts ? { pts: o.pts.map(([a, b]) => [a + dx, b + dy]) } : {}) }); top = Math.min(top, B.top + dy); bot = Math.max(bot, B.bot + dy); };
+  for (let k = 0; k < nodes.length; k++) {
+    const n = nodes[k];
+    if (n.t === 'ch') {
+      const font = fontOf(n.font, size);
+      ctx.font = font;
+      const pd = (n.pad ?? 0) * size / 16;   // spazi attorno ai segni, proporzionali al corpo del testo
+      x += pd;
+      const w = ctx.measureText(n.s).width;
+      ops.push({ k: 'text', s: n.s, font, x, y: 0, w, vec: n.vec, size });
+      if (n.vec) top = Math.min(top, -size * 0.78);
+      lastBase = { x, w, top: -size * 0.5, bot: size * 0.5 };
+      x += w + pd + (n.font === 'math' ? size * 0.04 : 0);
+    } else if (n.t === 'sub' || n.t === 'sup') {
+      const B = box(ctx, n.body, size * 0.7);
+      const base = lastBase ?? { top: -size * 0.5, bot: size * 0.5 };
+      // Pedice e apice sullo stesso simbolo: l'apice riparte da dove inizia il pedice.
+      const prev = nodes[k - 1], stacked = prev && (prev.t === 'sub' || prev.t === 'sup') && prev.t !== n.t;
+      const x0 = stacked ? lastBase.scriptX : x;
+      const dy = n.t === 'sub' ? Math.max(size * 0.22, base.bot - size * 0.3) : Math.min(-size * 0.38, base.top + size * 0.1);
+      place(B, x0, dy);
+      if (!stacked && lastBase) lastBase.scriptX = x0;
+      x = Math.max(x, x0 + B.w);
+    } else if (n.t === 'frac') {
+      // Numeratore e denominatore quasi a grandezza piena (come \dfrac) e staccati dalla riga più dell'alone (2 px).
+      const fs = size * 0.92, N = box(ctx, n.num, fs), D = box(ctx, n.den, fs), w = Math.max(N.w, D.w) + size * 0.3, gap = Math.max(4, size * 0.24);
+      x += size * 0.12;
+      const axis = -size * 0.04;
+      place(N, x + (w - N.w) / 2, axis - gap - N.bot);
+      place(D, x + (w - D.w) / 2, axis + gap - D.top);
+      ops.push({ k: 'rule', x, y: axis, x2: x + w, y2: axis, lw: Math.max(1, size * 0.06) });
+      lastBase = { x, w, top: axis - gap - N.bot + N.top, bot: axis + gap - D.top + D.bot };
+      x += w + size * 0.12;
+    } else if (n.t === 'color') {
+      const B = box(ctx, n.body, size);
+      for (const o of B.ops) o.col ??= n.c;
+      place(B, x, 0);
+      lastBase = { x, w: B.w, top: B.top, bot: B.bot };
+      x += B.w;
+    } else if (n.t === 'sqrt') {
+      const B = box(ctx, n.body, size), t = B.top - size * 0.14, b = B.bot + size * 0.06, rw = size * 0.55;
+      ops.push({ k: 'path', x: 0, y: 0, lw: Math.max(1, size * 0.06), pts: [[x, (t + b) / 2 + size * 0.05], [x + rw * 0.25, (t + b) / 2 - size * 0.02], [x + rw * 0.55, b], [x + rw, t], [x + rw + B.w + size * 0.08, t]] });
+      place(B, x + rw + size * 0.04, 0);
+      top = Math.min(top, t - 2);
+      lastBase = { x, w: rw + B.w, top: t, bot: b };
+      x += rw + B.w + size * 0.14;
+    }
+  }
+  return { ops, w: x, top, bot };
 }
 
 const cache = new Map();
@@ -182,19 +269,7 @@ function layout(ctx, src, size) {
   const key = src + '|' + size;
   let L = cache.get(key);
   if (L) return L;
-  const toks = parse(src);
-  let x = 0;
-  for (const t of toks) {
-    const sz = t.script ? size * 0.7 : size;
-    t.font = `${t.font === 'math' ? 'italic ' : ''}${sz}px ${t.font === 'math' ? 'KaTeX_Math' : 'KaTeX_Main'}, "Times New Roman", serif`;
-    t.dy = t.script === 'sub' ? size * 0.22 : t.script === 'sup' ? -size * 0.38 : 0;
-    ctx.font = t.font;
-    x += t.pad ?? 0;
-    t.x = x;
-    t.w = ctx.measureText(t.s).width;
-    x += t.w + (t.pad ?? 0) + (t.font.startsWith('italic') && !t.script ? size * 0.04 : 0);
-  }
-  L = { toks, w: x };
+  L = box(ctx, parse(src), size);
   if (cache.size > 600) cache.clear();
   cache.set(key, L);
   return L;
@@ -205,18 +280,30 @@ export function tex(P, a, b, src, { size = 16, color = '#fff', align = 'center',
   const ctx = P.ctx, L = layout(ctx, src, size);
   const x0 = align === 'center' ? a - L.w / 2 : align === 'right' ? a - L.w : a;
   ctx.save();
-  ctx.globalAlpha = alpha; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.lineJoin = 'round';
+  ctx.globalAlpha = alpha; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.lineJoin = ctx.lineCap = 'round';
+  // Prima tutti gli aloni, poi le scritte; le righe (frazioni, radici) per ultime, così nessun alone le copre.
+  const ordered = [...L.ops.filter(o => o.k === 'text'), ...L.ops.filter(o => o.k !== 'text')];
   for (const pass of halo ? ['halo', 'fill'] : ['fill']) {
-    for (const t of L.toks) {
-      ctx.font = t.font;
-      const x = x0 + t.x, y = b + t.dy;
-      if (pass === 'halo') { ctx.strokeStyle = halo; ctx.lineWidth = 4; ctx.strokeText(t.s, x, y); continue; }
-      ctx.fillStyle = color; ctx.fillText(t.s, x, y);
-      if (t.vec) {
-        // Freccetta sopra la lettera, spostata a destra come nel corsivo.
-        const top = y - size * 0.62, l = x + t.w * 0.18, r = x + t.w * 1.02;
-        ctx.strokeStyle = color; ctx.lineWidth = Math.max(1, size * 0.07); ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.moveTo(l, top); ctx.lineTo(r, top); ctx.moveTo(r - size * 0.18, top - size * 0.1); ctx.lineTo(r, top); ctx.lineTo(r - size * 0.18, top + size * 0.1); ctx.stroke();
+    const isHalo = pass === 'halo';
+    for (const o of ordered) {
+      const x = x0 + o.x, y = b + o.y, c = o.col ?? color;
+      ctx.strokeStyle = isHalo ? halo : c; ctx.fillStyle = c;
+      if (o.k === 'text') {
+        ctx.font = o.font;
+        if (isHalo) { ctx.lineWidth = 4; ctx.strokeText(o.s, x, y); }
+        else ctx.fillText(o.s, x, y);
+        if (o.vec) {
+          // Freccetta sopra la lettera, spostata a destra come nel corsivo.
+          const sz = o.size, top = y - sz * 0.62, l = x + o.w * 0.18, r = x + o.w * 1.02;
+          ctx.lineWidth = Math.max(1, sz * 0.07) + (isHalo ? 3 : 0);
+          ctx.beginPath(); ctx.moveTo(l, top); ctx.lineTo(r, top); ctx.moveTo(r - sz * 0.18, top - sz * 0.1); ctx.lineTo(r, top); ctx.lineTo(r - sz * 0.18, top + sz * 0.1); ctx.stroke();
+        }
+      } else if (o.k === 'rule') {
+        ctx.lineWidth = o.lw + (isHalo ? 3 : 0);
+        ctx.beginPath(); ctx.moveTo(x0 + o.x, b + o.y); ctx.lineTo(x0 + o.x2, b + o.y2); ctx.stroke();
+      } else if (o.k === 'path') {
+        ctx.lineWidth = o.lw + (isHalo ? 3 : 0);
+        ctx.beginPath(); o.pts.forEach(([px, py], i) => (i ? ctx.lineTo(x0 + px, b + py) : ctx.moveTo(x0 + px, b + py))); ctx.stroke();
       }
     }
   }
@@ -224,8 +311,9 @@ export function tex(P, a, b, src, { size = 16, color = '#fff', align = 'center',
   return L.w;
 }
 
-// Larghezza in px di una scritta tex().
+// Larghezza in px di una scritta tex(); texBox dà anche l'ingombro verticale (top < 0 < bot, rispetto al centro).
 export const texWidth = (P, src, size = 16) => layout(P.ctx, src, size).w;
+export const texBox = (P, src, size = 16) => { const L = layout(P.ctx, src, size); return { w: L.w, top: L.top, bot: L.bot }; };
 
 // Numero in notazione scientifica per tex(): 452000 → "4,52\cdot10^{5}".
 export function sciTeX(v, d = 2) {
@@ -245,12 +333,13 @@ fontsReady.then(() => cache.clear());   // le misure prese col font di riserva n
 
 /* ---------------- Linee di campo ---------------- */
 
-// Linee colorate in base all'intensità, con la punta del verso a metà. progress(i) ∈ [0, 1] le traccia
-// una dopo l'altra (Create di Manim); mag(x, y) dà |E| in N/C; lo/hi la scala dei colori.
-export function drawFieldLinesM(P, lines, M, { mag, progress = () => 1, lo, hi, width = 1.8 } = {}) {
+// Linee colorate in base all'intensità, con la punta del verso a metà. mag(x, y) dà |E| in N/C; lo/hi la scala
+// dei colori; alpha la dissolvenza d'ingresso; progress(i) ∈ [0, 1] (facoltativo) traccia solo una parte di ogni linea.
+export function drawFieldLinesM(P, lines, M, { mag, progress = () => 1, lo, hi, width = 1.8, alpha = 1 } = {}) {
   const ctx = P.ctx;
+  if (alpha <= 0) return;
   ctx.save();
-  ctx.lineCap = ctx.lineJoin = 'round'; ctx.lineWidth = width; ctx.globalAlpha = M.lineA;
+  ctx.lineCap = ctx.lineJoin = 'round'; ctx.lineWidth = width; ctx.globalAlpha = M.lineA * alpha;
   lines.forEach((L, i) => {
     const f = progress(i);
     if (f <= 0 || L.pts.length < 2) return;
@@ -263,14 +352,15 @@ export function drawFieldLinesM(P, lines, M, { mag, progress = () => 1, lo, hi, 
       for (let j = k; j <= Math.min(k + 3, N - 1); j++) { const [a, b] = P.S(pts[j][0], pts[j][1]); j === k ? ctx.moveTo(a, b) : ctx.lineTo(a, b); }
       ctx.stroke();
     }
-    const m = Math.floor(L.pts.length / 2);
-    if (f > 0.55 && m > 0) {
+    // La punta del verso a metà linea compare (crescendo) quando il tratto l'ha superata.
+    const m = Math.floor(L.pts.length / 2), hs = Math.min(1, Math.max(0, (f - 0.5) / 0.15));
+    if (hs > 0 && m > 0) {
       const p0 = P.S(...L.pts[m - 1]), p1 = P.S(...L.pts[m]);
       let dx = (p1[0] - p0[0]) * L.dir, dy = (p1[1] - p0[1]) * L.dir;
       const d = Math.hypot(dx, dy);
       if (d > 1e-6) {
         dx /= d; dy /= d;
-        const h = 9, w = 4.2;
+        const g = hs * hs * (3 - 2 * hs), h = 9 * g, w = 4.2 * g;
         ctx.fillStyle = rampColor(M, L.mags[m - (m % 3)] || lo, lo, hi);
         ctx.beginPath(); ctx.moveTo(p1[0] + dx * h / 2, p1[1] + dy * h / 2);
         ctx.lineTo(p1[0] - dx * h / 2 - dy * w, p1[1] - dy * h / 2 + dx * w); ctx.lineTo(p1[0] - dx * h / 2 + dy * w, p1[1] - dy * h / 2 - dx * w);
@@ -486,11 +576,15 @@ export function manimPainter(P0, M, PainterClass, { grow = () => 1 } = {}) {
 
 // Regia delle transizioni: valori che inseguono, oggetti che compaiono, elementi che si accendono.
 // tick(still) va chiamato a ogni disegno; still = true (istantanee) porta tutto subito allo stato finale.
+const RM = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
+export const reducedMotion = () => !!RM?.matches;
+
 export class Regia {
   constructor() { this.now = 0; this.dt = 0; this.last = 0; this.still = false; this.vals = new Map(); this.bornAt = new Map(); this.onAt = {}; this.sigs = {}; }
+  // still = true (istantanee) oppure "riduci movimento" del sistema: tutto subito allo stato finale.
   tick(still = false) {
     const now = performance.now() / 1000;
-    this.dt = Math.min(0.1, now - (this.last || now)); this.last = this.now = now; this.still = still;
+    this.dt = Math.min(0.1, now - (this.last || now)); this.last = this.now = now; this.still = still || reducedMotion();
   }
   // Valore mostrato che insegue quello vero (tau: tempo di risposta in s). snap: salta subito al valore.
   smooth(key, target, tau = 0.09, snap = false) {
@@ -514,6 +608,33 @@ export class Regia {
     if (this.still) return 1;
     const t = Math.min(1, (this.now - this.onAt[key]) / run);
     return t * t * (3 - 2 * t);
+  }
+  // Regia delle linee di campo (key: un insieme di linee; sig: la loro "struttura", cioè numero e segno delle sorgenti).
+  //  - prima comparsa (o riaccensione): Create alla Manim, le linee si tracciano una dopo l'altra con la curva smooth;
+  //  - cambia la struttura (carica aggiunta, tolta, segno invertito): le linee vecchie sfumano mentre le nuove
+  //    si tracciano più in fretta, così non c'è mai uno stacco brusco;
+  //  - stessa struttura (trascinamento, valore della carica): le linee seguono le sorgenti senza ripartire.
+  // Restituisce { progress(i), old: linee uscenti o null, oldAlpha }.
+  fieldLines(key, sig, lines) {
+    this.fl ??= {};
+    const st = this.fl[key] ??= { sig: undefined, t0: -1e9, seen: -1e9, cur: null, old: null, fast: false };
+    const gone = this.now - st.seen > 0.3;   // non disegnate di recente (spente, altro esperimento): da capo
+    if (sig !== st.sig || gone) {
+      const morph = !gone && !this.still && st.cur?.length && st.sig !== undefined;
+      st.old = morph ? st.cur : null;
+      st.fast = !!morph; st.sig = sig; st.t0 = this.now;
+    }
+    // Stessa struttura ma più linee (carica aumentata): solo quelle in più si tracciano.
+    if (st.n != null && lines.length > st.n && sig === st.sig && !gone) { st.extraFrom = Math.min(st.extraFrom ?? Infinity, st.n); st.extraT0 = this.now; }
+    st.n = lines.length; st.cur = lines; st.seen = this.now;
+    const n = Math.max(1, lines.length), t = this.now - st.t0, rs = t => (t <= 0 ? 0 : t >= 1 ? 1 : rate.smooth(t));
+    const run = st.fast ? 0.55 : 0.95, lag = st.fast ? Math.min(0.012, 0.3 / n) : Math.min(0.045, 0.75 / n);
+    const te = this.now - (st.extraT0 ?? -1e9);
+    if (te > 0.5) st.extraFrom = null;
+    const progress = this.still ? () => 1 : i => Math.min(rs((t - i * lag) / run), st.extraFrom != null && i >= st.extraFrom ? rs(te / 0.45) : 1);
+    const oldAlpha = st.old && !this.still ? 1 - rs(t / 0.45) : 0;
+    if (oldAlpha <= 0) st.old = null;
+    return { progress, old: st.old, oldAlpha };
   }
   // Istante in cui sig è cambiato l'ultima volta (per le linee di campo che si ridisegnano).
   since(key, sig) {

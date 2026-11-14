@@ -1,5 +1,9 @@
 import { deg, tn, fmt, clamp } from '../core/math.js';
 import { ball, carTop, carousel, roadRing, wheel } from '../core/shapes.js';
+import { Stage, brace, angleMark, formulaBeside, rate01, C } from '../core/annot.js';
+
+const stage = new Stage();   // regia: frecce che crescono, ambientazione che nasce dal centro, graffa del raggio
+const num = (v, d = 2) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(d).replace('.', ',');
 
 const TWO_PI = 2 * Math.PI;
 const T_ACCEL = 10;   // con accelerazione tangenziale non nulla la simulazione si ferma dopo 10 s
@@ -131,17 +135,25 @@ export default {
     }
   },
 
+  mount() { stage.reset(); },
+
   draw(P, s, p, ui) {
-    const k = kin(p), { KV, KA, cap } = scales(p, k);
-    const R = p.R;
+    const S = stage.begin(P, ui), M = S.M;
+    // Il raggio mostrato insegue quello vero quando cambia da fermo; in corsa o trascinando segue subito.
+    const [R] = S.smooth('R', [p.R], 0.12, !!ui.active || !!ui.api?.running);
+    const q = { ...p, R }, k = kin(q), { KV, KA, cap } = scales(q, k);
     const x = R * Math.cos(s.th), y = R * Math.sin(s.th);
     const ux = Math.cos(s.th), uy = Math.sin(s.th);   // versore radiale
     const tx = -uy, ty = ux;                          // versore tangente (verso antiorario)
 
     // Ambientazione: ruota insieme al corpo (giostra, ruota) oppure resta ferma (strada).
-    if (p.scene === 'carousel') carousel(P, 0, 0, { R: R * 1.12, angle: s.th });
-    if (p.scene === 'road') roadRing(P, 0, 0, R, Math.max(R * 0.14, 7));
-    if (p.scene === 'wheel') wheel(P, 0, 0, { r: R / 0.94, angle: s.th, spokes: 10, tire: 0.12, minPx: 0 });
+    // Al cambio di ambientazione la nuova cresce dal centro (GrowFromCenter).
+    const gs = S.grow('scene:' + p.scene, 0.7);
+    if (gs > 0.01) {
+      if (p.scene === 'carousel') carousel(P, 0, 0, { R: R * 1.12 * gs, angle: s.th });
+      if (p.scene === 'road') roadRing(P, 0, 0, R * gs, Math.max(R * 0.14, 7) * gs);
+      if (p.scene === 'wheel') wheel(P, 0, 0, { r: R / 0.94 * gs, angle: s.th, spokes: 10, tire: 0.12, minPx: 0 });
+    }
 
     // Assi per il centro e traiettoria.
     const ext = R * 1.3;
@@ -168,7 +180,9 @@ export default {
     // Raggio vettore e angolo θ (ridotto all'intervallo [0, 2π)).
     P.line([[0, 0], [x, y]], { color: 'muted', width: 1.5 });
     const thm = ((s.th % TWO_PI) + TWO_PI) % TWO_PI;
-    if (thm > 0.02) P.arc(0, 0, 30, 0, thm, { color: 'muted', label: 'θ', labelR: 44 });
+    if (thm > 0.02) angleMark(P, 0, 0, 30, 0, thm, '\\theta', { color: M.muted, labelR: 44 });
+    // Graffa del raggio sotto l'asse x.
+    brace(P, [0, 0], [R, 0], `R = ${num(R)}\\ \\mathrm{m}`, { side: -1, gap: 9, grow: S.grow('braceR', 0.8), color: M.muted, alpha: 0.9 });
     P.circle(0, 0, 3.5, { fill: 'muted' });
 
     // Proiezioni: il loro moto è armonico.
@@ -189,20 +203,26 @@ export default {
     }
 
     // Corpo e vettori istantanei.
-    const b = bodyLook(p, ui.size('body'));
+    const b = bodyLook(q, ui.size('body') * S.born('body'));
     if (p.scene === 'road') {
       const dir = Math.sign(s.v || p.v0 || p.at || 1);
       carTop(P, x, y, { angle: s.th + dir * Math.PI / 2, len: b.len, minPx: b.minPx });
     } else ball(P, x, y, { r: b.r, color: b.color, minPx: b.minPx });
     if (s.t === 0) P.handle(x, y, ui.active === 'pos');
     const lab = (n, val, unit) => `${n} = ${fmt(Math.abs(val), Math.abs(val) < 10 ? 2 : 1)} ${unit}`;
-    if (s.t > 0 && Math.abs(s.v) > 1e-9) arrowTo(P, x, y, tx * KV * s.v, ty * KV * s.v, cap, { color: 'vel', label: lab('v', s.v, 'm/s'), width: 4 });
+    if (s.t > 0 && Math.abs(s.v) > 1e-9) arrowTo(P, x, y, tx * KV * s.v, ty * KV * s.v, cap, { color: 'vel', key: 'v', label: lab('v', s.v, 'm/s'), width: 4 });
     if (p.showAcc) {
       const ac = s.v * s.v / R, aT = s.stopped ? 0 : p.at;
-      if (ac > 1e-9) arrowTo(P, x, y, -ux * KA * ac, -uy * KA * ac, cap, { color: 'acc', label: lab('a꜀', ac, 'm/s²'), width: 3.5 });
+      if (ac > 1e-9) {
+        // Centripeta con la sua formula dal vivo accanto all'asta.
+        arrowTo(P, x, y, -ux * KA * ac, -uy * KA * ac, cap, { color: 'acc', key: 'ac', label: 'ac', width: 3.5 });
+        const L = Math.min(KA * ac, cap) * S.grow('arr:ac'), [a0, b0] = P.S(x, y), [c0, d0] = P.S(x - ux * L, y - uy * L);
+        if (!S.snap && Math.hypot(c0 - a0, d0 - b0) > 30) formulaBeside(P, a0, b0, c0, d0, `a_c = \\frac{v^2}{R} = ${num(ac)}\\ \\mathrm{m/s^2}`,
+          { color: M.vec.acc, size: 16, alpha: rate01(S.grow('arr:ac')) });
+      }
       if (Math.abs(aT) > 1e-9) {
-        arrowTo(P, x, y, tx * KA * aT, ty * KA * aT, cap, { color: 'friction', label: lab('aₜ', aT, 'm/s²'), width: 3.5 });
-        arrowTo(P, x, y, (-ux * ac + tx * aT) * KA, (-uy * ac + ty * aT) * KA, cap, { color: 'weight', label: 'a', width: 2.5, dash: [5, 4], alpha: 0.85 });
+        arrowTo(P, x, y, tx * KA * aT, ty * KA * aT, cap, { color: 'friction', key: 'at', label: lab('a_t', aT, 'm/s²'), width: 3.5 });
+        arrowTo(P, x, y, (-ux * ac + tx * aT) * KA, (-uy * ac + ty * aT) * KA, cap, { color: 'weight', key: 'a', label: 'a', width: 2.5, dash: [5, 4], alpha: 0.85 });
       }
     }
   },
@@ -215,10 +235,12 @@ export default {
     const f = w / TWO_PI;
     const uniform = p.at === 0;
     const sgn = x => (x < 0 ? '-' : '+');
+    // Stessi colori della scena: velocità, centripeta, tangenziale e accelerazione totale.
+    const Vv = x => C('vel', x), Ac = C('acc', 'a_c'), At = C('friction', 'a_t');
     return [
       { h: 'Grandezze angolari' },
-      { tex: `\\omega_0=\\dfrac{v_0}{R}=${tn(k.w0, 3)}${u('rad/s')}` },
-      !uniform && { tex: `\\alpha=\\dfrac{a_t}{R}=${tn(k.al, 3)}${u('rad/s^2')}` },
+      { tex: `\\omega_0=\\dfrac{${Vv('v_0')}}{R}=${tn(k.w0, 3)}${u('rad/s')}` },
+      !uniform && { tex: `\\alpha=\\dfrac{${At}}{R}=${tn(k.al, 3)}${u('rad/s^2')}` },
       { h: 'Leggi orarie' },
       { tex: uniform
         ? `\\theta(t)=${tn(k.th0, 3)}${sgn(k.w0)}${tn(Math.abs(k.w0), 3)}\\,t`
@@ -227,12 +249,12 @@ export default {
       { tex: `x=R\\cos\\theta\\qquad y=R\\sin\\theta` },
       { h: s.stopped ? 'All\'arresto' : 'Istante attuale' },
       { tex: `t=${tn(s.t)}${u('s')}\\qquad \\theta=${tn(s.th, 2)}${u('rad')}\\ \\ (${tn((s.th - k.th0) / TWO_PI, 2)}\\ \\text{giri})` },
-      { tex: `v=\\omega R=${tn(v)}${u('m/s')}\\qquad \\omega=${tn(w, 3)}${u('rad/s')}` },
+      { tex: `${Vv('v')}=\\omega R=${tn(v)}${u('m/s')}\\qquad \\omega=${tn(w, 3)}${u('rad/s')}` },
       { tex: `T=\\dfrac{2\\pi}{\\omega}=${T}\\qquad f=\\dfrac1T=${tn(f, 3)}${u('Hz')}` },
       { h: 'Accelerazioni' },
-      { tex: `a_c=\\dfrac{v^2}{R}=\\omega^2R=${tn(ac)}${u('m/s^2')}` },
-      !uniform && { tex: `a_t=\\alpha R=${tn(aT)}${u('m/s^2')}\\qquad |\\vec a|=\\sqrt{a_c^2+a_t^2}=${tn(Math.hypot(ac, aT))}${u('m/s^2')}` },
-      ac > 9.81 && { tex: `a_c\\approx${tn(ac / 9.81, 1)}\\,g`, cls: 'warn' },
+      { tex: `${Ac}=\\dfrac{${Vv('v^2')}}{R}=\\omega^2R=${tn(ac)}${u('m/s^2')}` },
+      !uniform && { tex: `${At}=\\alpha R=${tn(aT)}${u('m/s^2')}\\qquad |${C('weight', '\\vec a')}|=\\sqrt{${C('acc', 'a_c^2')}+${C('friction', 'a_t^2')}}=${tn(Math.hypot(ac, aT))}${u('m/s^2')}` },
+      ac > 9.81 && { tex: `${Ac}\\approx${tn(ac / 9.81, 1)}\\,g`, cls: 'warn' },
       k.tStop != null && { tex: `t_{\\text{stop}}=-\\dfrac{\\omega_0}{\\alpha}=${tn(k.tStop)}${u('s')}\\qquad \\Delta\\theta=\\dfrac{\\omega_0^2}{2|\\alpha|}=${tn(k.w0 * k.w0 / (2 * Math.abs(k.al)), 2)}${u('rad')}` },
     ].filter(Boolean);
   },

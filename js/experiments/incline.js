@@ -1,6 +1,10 @@
 import { deg, tn, clamp } from '../core/math.js';
 import { crate } from '../core/shapes.js';
 import { slab, dust } from '../core/look.js';
+import { Stage, brace, angleMark, formulaAtTip, rate01, C as Ccol } from '../core/annot.js';
+
+const stage = new Stage();   // regia: frecce che crescono, graffe, piano che si trasforma, cassa che nasce
+const num = (v, d = 1) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(d).replace('.', ',');
 
 const L = 10;            // lunghezza del piano (m)
 const BW = 1.0, BH = 0.6; // dimensioni del blocco (m)
@@ -119,42 +123,60 @@ export default {
     }
   },
 
+  mount() { stage.reset(); },
+
   draw(P, st, p, ui) {
-    const g = geom(p), { T, B, d, n } = g;
+    const S = stage.begin(P, ui), M = S.M;
+    // Inclinazione e posizione mostrate inseguono quelle vere quando cambiano da ferme (il piano si trasforma);
+    // durante la corsa o mentre si trascina seguono subito.
+    const live = !!ui.active || !!ui.api?.running;
+    const [alpha] = S.smooth('alpha', [p.alpha], 0.12, live), [sPos] = S.smooth('s', [st.s], 0.12, live);
+    const g = geom({ ...p, alpha }), { T, B, d, n } = g;
     const at = (s, h = 0) => [T[0] + d[0] * s + n[0] * h, T[1] + d[1] * s + n[1] * h];
     const add = (A, v, k) => [A[0] + v[0] * k, A[1] + v[1] * k];
 
     P.ground(0);
     slab(P, [[0, 0], B, T], { topEdge: [T, B] });
-    if (p.alpha > 0) P.arc(B[0], 0, 46, Math.PI - g.a, Math.PI, { color: 'text', label: 'α', labelR: 62 });
+    // Misure del piano: lunghezza lungo l'ipotenusa (dentro il triangolo) e altezza sul lato verticale.
+    if (alpha > 0.5) {
+      const gb = S.grow('braces', 0.8);
+      brace(P, T, B, `L = ${num(L, 0)}\\ \\mathrm{m}`, { side: -1, gap: 10, grow: gb, color: M.muted });
+      brace(P, [0, 0], T, `h = ${num(T[1], 2)}\\ \\mathrm{m}`, { side: -1, gap: 8, grow: gb, color: M.muted });
+      angleMark(P, B[0], 0, 46, Math.PI - g.a, Math.PI, `\\alpha = ${Math.round(alpha)}°`, { color: M.text, grow: S.grow('alpha', 0.7) });
+    }
 
     // Blocco.
-    const C = at(st.s, BH / 2);
+    const C = at(sPos, BH / 2);
     // La cassa disegnata si può ingrandire (solo estetica): resta appoggiata al piano.
-    const kb = ui.size('block'), Cd = at(st.s, BH * kb / 2);
-    crate(P, Cd[0], Cd[1], { w: BW * kb, h: BH * kb, angle: -g.a, minPx: 0, color: 'blue' });
+    const kb = ui.size('block') * S.born('block'), Cd = at(sPos, BH * kb / 2);
+    if (kb > 0.02) crate(P, Cd[0], Cd[1], { w: BW * kb, h: BH * kb, angle: -g.a, minPx: 0, color: 'blue' });
     P.circle(C[0], C[1], 3, { fill: 'bg' });
     // Polvere mentre striscia con attrito dinamico.
     if (st.regime === 'dinamico' && Math.abs(st.v) > 0.05 && p.muk > 0) {
-      const sg = Math.sign(st.v), c0 = at(st.s, 0);
+      const sg = Math.sign(st.v), c0 = at(sPos, 0);
       dust(c0[0], c0[1], d[0] * sg, d[1] * sg, Math.min(1.2, Math.abs(st.f * st.v) * 0.04));
     }
 
-    // Forze.
+    // Forze. Il peso si scompone e accanto alla componente parallela compare la sua formula dal vivo.
     const W = p.m * p.g;
-    if (p.showComp && p.alpha > 0) {
-      P.arrow(C[0], C[1], ...add(C, d, KF * W * g.sn), { color: 'weight', width: 2, dash: [5, 4], label: 'P∥', alpha: 0.8 });
+    if (p.showComp && alpha > 0.5) {
+      const tipPar = add(C, d, KF * W * g.sn);
+      P.arrow(C[0], C[1], ...tipPar, { color: 'weight', width: 2, dash: [5, 4], key: 'Ppar', alpha: 0.8 });
       P.arrow(C[0], C[1], ...add(C, n, -KF * W * g.c), { color: 'weight', width: 2, dash: [5, 4], label: 'P⊥', alpha: 0.8 });
+      const gp = S.grow('arr:Ppar'), [a0, b0] = P.S(C[0], C[1]), [c0, d0] = P.S(C[0] + (tipPar[0] - C[0]) * gp, C[1] + (tipPar[1] - C[1]) * gp);
+      const Lp = Math.hypot(c0 - a0, d0 - b0);
+      if (!S.snap && Lp > 14) formulaAtTip(P, { x: c0, y: d0, ux: (c0 - a0) / Lp, uy: (d0 - b0) / Lp },
+        `\\vec P_{\\parallel} = mg\\sin\\alpha = ${num(W * g.sn, 2)}\\ \\mathrm{N}`, { color: M.vec.weight, size: 16, alpha: rate01(gp) });
     }
     P.arrow(C[0], C[1], C[0], C[1] - KF * W, { color: 'weight', label: 'P' });
     P.arrow(C[0], C[1], ...add(C, n, KF * st.N), { color: 'normal', label: 'N' });
-    const contact = at(st.s, 0);
-    if (Math.abs(st.f) > 1e-6) P.arrow(contact[0], contact[1], ...add(contact, d, KF * st.f), { color: 'friction', label: st.regime === 'statico' ? 'fs' : 'fd' });
+    const contact = at(sPos, 0);
+    if (Math.abs(st.f) > 1e-6) P.arrow(contact[0], contact[1], ...add(contact, d, KF * st.f), { color: 'friction', key: 'f', label: st.regime === 'statico' ? 'fs' : 'fd' });
 
-    const top = at(st.s, BH + 0.25);
+    const top = at(sPos, BH + 0.25);
     if (p.showVel && Math.abs(st.v) > 1e-3) P.arrow(top[0], top[1], ...add(top, d, KV * st.v), { color: 'vel', label: 'v' });
     if (p.showAcc && Math.abs(st.a) > 1e-3) {
-      const ta = at(st.s, BH + 0.6);
+      const ta = at(sPos, BH + 0.6);
       P.arrow(ta[0], ta[1], ...add(ta, d, KA * st.a), { color: 'acc', label: 'a' });
     }
     if (st.regime === 'statico') P.text(C[0], C[1], 'in equilibrio', { color: 'normal', size: 12.5, align: 'center', dy: -54 });
@@ -166,25 +188,27 @@ export default {
   formulas(st, p) {
     const g = geom(p), W = p.m * p.g, N = W * g.c, tan = Math.tan(g.a);
     const u = x => `\\ \\mathrm{${x}}`;
+    // Stessi colori delle frecce sulla scena: peso, normale, attrito, accelerazione.
+    const Pc = x => Ccol('weight', x), Fc = x => Ccol('friction', x), Nc = Ccol('normal', 'N'), Ac = Ccol('acc', 'a');
     const slides = tan > p.mus;
     const aDown = p.g * (g.sn - p.muk * g.c), aUp = -p.g * (g.sn + p.muk * g.c);
     const K = 0.5 * p.m * st.v * st.v, U = W * (L - st.s) * g.sn;
     return [
       { h: 'Scomposizione del peso' },
-      { tex: `P=mg=${tn(W)}${u('N')}` },
-      { tex: `P_{\\parallel}=mg\\sin\\alpha=${tn(W * g.sn)}${u('N')}` },
-      { tex: `P_{\\perp}=mg\\cos\\alpha=${tn(N)}${u('N')}\\quad(=N\\text{, la normale})` },
+      { tex: `${Pc('P')}=mg=${tn(W)}${u('N')}` },
+      { tex: `${Pc('P_{\\parallel}')}=mg\\sin\\alpha=${tn(W * g.sn)}${u('N')}` },
+      { tex: `${Pc('P_{\\perp}')}=mg\\cos\\alpha=${tn(N)}${u('N')}\\quad(=${Nc}\\text{, la normale})` },
       { h: 'Equilibrio statico (da fermo)' },
       { tex: `\\tan\\alpha=${tn(tan, 3)}\\ ${slides ? '>' : '\\le'}\\ \\mu_s=${tn(p.mus)}`, cls: slides ? 'warn' : 'ok' },
       { tex: slides ? `\\Rightarrow\\ \\text{scivola}` : `\\Rightarrow\\ \\text{resta fermo}`, cls: slides ? 'warn' : 'ok' },
       slides && p.muk >= tan && { tex: `\\text{ma }\\mu_d=${tn(p.muk)}\\ \\ge\\ \\tan\\alpha:\\ \\text{si riferma subito (di solito }\\mu_d<\\mu_s)`, cls: 'ok' },
-      { tex: `f_{s,\\max}=\\mu_s N=${tn(p.mus * N)}${u('N')}` },
+      { tex: `${Fc('f_{s,\\max}')}=\\mu_s ${Nc}=${tn(p.mus * N)}${u('N')}` },
       { h: 'Dinamica (asse lungo il piano, + verso il basso)' },
-      { tex: `\\text{discesa: } a=g(\\sin\\alpha-\\mu_d\\cos\\alpha)=${tn(aDown)}${u('m/s^2')}` },
-      { tex: `\\text{salita: } a=-g(\\sin\\alpha+\\mu_d\\cos\\alpha)=${tn(aUp)}${u('m/s^2')}` },
+      { tex: `\\text{discesa: } ${Ac}=g(\\sin\\alpha-\\mu_d\\cos\\alpha)=${tn(aDown)}${u('m/s^2')}` },
+      { tex: `\\text{salita: } ${Ac}=-g(\\sin\\alpha+\\mu_d\\cos\\alpha)=${tn(aUp)}${u('m/s^2')}` },
       { h: 'Istante attuale' },
-      { tex: `t=${tn(st.t)}${u('s')}\\quad s=${tn(st.s)}${u('m')}\\quad v=${tn(st.v)}${u('m/s')}` },
-      { tex: `a=${tn(st.a)}${u('m/s^2')}\\quad f_{${st.regime === 'statico' ? 's' : 'd'}}=${tn(st.f)}${u('N')}` },
+      { tex: `t=${tn(st.t)}${u('s')}\\quad s=${tn(st.s)}${u('m')}\\quad ${Ccol('vel', 'v')}=${tn(st.v)}${u('m/s')}` },
+      { tex: `${Ac}=${tn(st.a)}${u('m/s^2')}\\quad ${Fc(`f_{${st.regime === 'statico' ? 's' : 'd'}}`)}=${tn(st.f)}${u('N')}` },
       { h: 'Energia' },
       { tex: `K=${tn(K)}\\quad U=${tn(U)}\\quad Q=${tn(st.Q)}${u('J')}` },
       { tex: `K+U+Q=${tn(K + U + st.Q)}${u('J')}` },
