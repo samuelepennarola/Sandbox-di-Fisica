@@ -13,11 +13,20 @@ export function palette(c) {
     dark: true, bg: '#0b0b0d', text: '#ece9e0', muted: MANIM.greyB, axis: '#ffffff', plane: MANIM.blueD, planeA: [0.42, 0.13],
     pos: MANIM.red, neg: MANIM.blue, force: MANIM.yellow, fx: MANIM.teal, fy: MANIM.green, field: MANIM.gold, sel: MANIM.blue,
     ramp: [MANIM.blueE, MANIM.blueD, MANIM.blue, MANIM.teal, MANIM.green], lineA: 0.9,
+    // Vettori del costruttore (chiavi dei colori dell'app) e colori dei corpi.
+    vec: { vel: MANIM.blue, acc: MANIM.yellow, weight: MANIM.red, normal: MANIM.green, friction: MANIM.gold, applied: MANIM.pink,
+      tension: '#CAA3E8', spring: MANIM.teal },
+    body: { blue: MANIM.blue, red: MANIM.red, green: MANIM.green, yellow: '#E8C11C', wood: MANIM.maroon },
+    solid: '#2a2c33', solidEdge: '#c8c8c8', rope: '#dddddd', springC: MANIM.teal,
   };
   return {
     dark: false, bg: c.bg, text: '#23211c', muted: '#6b6658', axis: '#23211c', plane: MANIM.blueE, planeA: [0.3, 0.1],
     pos: '#d9443a', neg: '#1f86ad', force: '#b8860b', fx: '#12876c', fy: '#4b8a2a', field: '#c25e12', sel: '#1f86ad',
     ramp: ['#9fbfd0', '#5a9cc0', '#236b8e', '#12876c', '#3f7f22'], lineA: 0.9,
+    vec: { vel: '#1f86ad', acc: '#b8860b', weight: '#d9443a', normal: '#4b8a2a', friction: '#c25e12', applied: '#b0359e',
+      tension: '#7d55b0', spring: '#12876c' },
+    body: { blue: '#2b8fbf', red: '#d9443a', green: '#5c9a35', yellow: '#d4a514', wood: '#a8495e' },
+    solid: '#e4ddcc', solidEdge: '#3a372f', rope: '#3a372f', springC: '#12876c',
   };
 }
 
@@ -98,7 +107,7 @@ export function drawPlaneAxes(P, M, { unit = 'm', k = 1 } = {}) {
 /* ---------------- Frecce ---------------- */
 
 // Freccia alla Manim, in px: asta sottile e punta triangolare piena; grow (0..1) la fa crescere dalla coda.
-export function arrowS(ctx, a, b, c, d, color, { width = 3, tip = 14, grow = 1, alpha = 1, halo = null } = {}) {
+export function arrowS(ctx, a, b, c, d, color, { width = 3, tip = 14, grow = 1, alpha = 1, halo = null, dash = null } = {}) {
   c = a + (c - a) * grow; d = b + (d - b) * grow;
   const len = Math.hypot(c - a, d - b);
   if (len < 1.5) return null;
@@ -114,7 +123,9 @@ export function arrowS(ctx, a, b, c, d, color, { width = 3, tip = 14, grow = 1, 
     tipPath(); ctx.lineWidth = 4; ctx.stroke();
   }
   ctx.globalAlpha = alpha; ctx.strokeStyle = ctx.fillStyle = color; ctx.lineWidth = width;
+  if (dash) ctx.setLineDash(dash);
   ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(...shaftEnd); ctx.stroke();
+  ctx.setLineDash([]);
   tipPath(); ctx.fill();
   ctx.restore();
   return { x: c, y: d, ux, uy, len };
@@ -229,4 +240,270 @@ export function sciTeX(v, d = 2) {
 export const fontsReady = (document.fonts?.load
   ? Promise.all([document.fonts.load('italic 16px KaTeX_Math'), document.fonts.load('16px KaTeX_Main')]).catch(() => {})
   : Promise.resolve());
+
 fontsReady.then(() => cache.clear());   // le misure prese col font di riserva non valgono più
+
+/* ---------------- Linee di campo ---------------- */
+
+// Linee colorate in base all'intensità, con la punta del verso a metà. progress(i) ∈ [0, 1] le traccia
+// una dopo l'altra (Create di Manim); mag(x, y) dà |E| in N/C; lo/hi la scala dei colori.
+export function drawFieldLinesM(P, lines, M, { mag, progress = () => 1, lo, hi, width = 1.8 } = {}) {
+  const ctx = P.ctx;
+  ctx.save();
+  ctx.lineCap = ctx.lineJoin = 'round'; ctx.lineWidth = width; ctx.globalAlpha = M.lineA;
+  lines.forEach((L, i) => {
+    const f = progress(i);
+    if (f <= 0 || L.pts.length < 2) return;
+    L.mags ??= L.pts.map((pt, k) => (k % 3 ? 0 : mag(pt[0], pt[1])));
+    L.acc ??= cumulateLen(L.pts);
+    const pts = f < 1 ? partialLine(L.pts, f, L.acc) : L.pts, N = pts.length;
+    for (let k = 0; k < N - 1; k += 3) {
+      ctx.strokeStyle = rampColor(M, L.mags[k] || lo, lo, hi);
+      ctx.beginPath();
+      for (let j = k; j <= Math.min(k + 3, N - 1); j++) { const [a, b] = P.S(pts[j][0], pts[j][1]); j === k ? ctx.moveTo(a, b) : ctx.lineTo(a, b); }
+      ctx.stroke();
+    }
+    const m = Math.floor(L.pts.length / 2);
+    if (f > 0.55 && m > 0) {
+      const p0 = P.S(...L.pts[m - 1]), p1 = P.S(...L.pts[m]);
+      let dx = (p1[0] - p0[0]) * L.dir, dy = (p1[1] - p0[1]) * L.dir;
+      const d = Math.hypot(dx, dy);
+      if (d > 1e-6) {
+        dx /= d; dy /= d;
+        const h = 9, w = 4.2;
+        ctx.fillStyle = rampColor(M, L.mags[m - (m % 3)] || lo, lo, hi);
+        ctx.beginPath(); ctx.moveTo(p1[0] + dx * h / 2, p1[1] + dy * h / 2);
+        ctx.lineTo(p1[0] - dx * h / 2 - dy * w, p1[1] - dy * h / 2 + dx * w); ctx.lineTo(p1[0] - dx * h / 2 + dy * w, p1[1] - dy * h / 2 - dx * w);
+        ctx.closePath(); ctx.fill();
+      }
+    }
+  });
+  ctx.restore();
+}
+function cumulateLen(pts) {
+  const acc = [0];
+  for (let i = 1; i < pts.length; i++) acc.push(acc[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  return acc;
+}
+function partialLine(pts, f, acc) {
+  const L = acc[acc.length - 1] * f, out = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    if (acc[i] <= L) { out.push(pts[i]); continue; }
+    const k = (L - acc[i - 1]) / ((acc[i] - acc[i - 1]) || 1);
+    out.push([pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * k, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * k]);
+    break;
+  }
+  return out;
+}
+
+/* ---------------- Cariche ---------------- */
+
+// Carica alla Manim: disco pieno con alone e segno bianco. hue: 1 positiva, 0 negativa (valori intermedi
+// durante l'inversione: il colore sfuma e il tratto verticale del + si accorcia).
+export function chargeDisk(ctx, a, b, r, hue, M, selected = false, glow = true) {
+  const col = mixHex(M.neg, M.pos, hue);
+  ctx.save();
+  if (glow) {
+    const g = ctx.createRadialGradient(a, b, r * 0.6, a, b, r * 2.5);
+    g.addColorStop(0, col + (M.dark ? '55' : '33')); g.addColorStop(1, col + '00');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(a, b, r * 2.5, 0, Math.PI * 2); ctx.fill();
+  }
+  if (selected) { ctx.strokeStyle = M.sel; ctx.lineWidth = 2; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.arc(a, b, r + 6, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
+  ctx.fillStyle = col; ctx.globalAlpha = 0.95; ctx.beginPath(); ctx.arc(a, b, r, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = 1; ctx.strokeStyle = mixHex(col, '#ffffff', 0.45); ctx.lineWidth = 1.5; ctx.stroke();
+  const h = r * 0.45;
+  ctx.strokeStyle = '#ffffff'; ctx.lineWidth = Math.max(1.8, r * 0.13); ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(a - h, b); ctx.lineTo(a + h, b);
+  if (hue > 0.03) { ctx.moveTo(a, b - h * hue); ctx.lineTo(a, b + h * hue); }
+  ctx.stroke();
+  ctx.restore();
+}
+
+/* ---------------- Oggetti della meccanica, in stile diagramma ---------------- */
+
+// Suolo: linea netta con il tratteggio obliquo sotto (come nei disegni dei libri) e una fascia appena più chiara.
+export function groundM(P, M, y0 = 0) {
+  const { ctx, cam } = P, [, sy] = P.S(0, y0);
+  if (sy > cam.h) return;
+  ctx.save();
+  ctx.fillStyle = M.dark ? 'rgba(255,255,255,0.035)' : 'rgba(40,30,10,0.05)';
+  ctx.fillRect(0, sy, cam.w, cam.h - sy);
+  ctx.strokeStyle = M.solidEdge; ctx.globalAlpha = 0.5; ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let x = -((sy) % 14) - 20; x < cam.w + 20; x += 14) { ctx.moveTo(x, sy + 16); ctx.lineTo(x + 16, sy); }
+  ctx.stroke();
+  ctx.globalAlpha = 0.9; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(cam.w, sy); ctx.stroke();
+  ctx.restore();
+}
+
+// Piani e superfici: poligono pieno tenue, contorno sottile e tratteggio lungo il bordo d'appoggio.
+export function slabM(P, M, pts, { topEdge, selected = false } = {}) {
+  const { ctx } = P, sp = pts.map(p => P.S(p[0], p[1]));
+  const path = () => { ctx.beginPath(); sp.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); };
+  ctx.save();
+  if (selected) { path(); ctx.strokeStyle = M.sel; ctx.lineWidth = 7; ctx.globalAlpha = 0.4; ctx.lineJoin = 'round'; ctx.stroke(); ctx.globalAlpha = 1; }
+  path(); ctx.fillStyle = M.solid; ctx.globalAlpha = M.dark ? 0.85 : 0.9; ctx.fill();
+  ctx.globalAlpha = 1; ctx.strokeStyle = M.solidEdge; ctx.lineWidth = 1.4; ctx.lineJoin = 'round'; ctx.stroke();
+  if (topEdge) {
+    const [a, b] = topEdge.map(p => P.S(p[0], p[1]));
+    ctx.strokeStyle = M.text; ctx.lineWidth = 2.2; ctx.beginPath(); ctx.moveTo(...a); ctx.lineTo(...b); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// Corpo rigido: rettangolo arrotondato pieno (opacità alla Manim) con bordo più chiaro.
+export function blockM(P, M, x, y, { w, h, angle = 0, color = 'blue', selected = false, grow = 1 }) {
+  const { ctx } = P, [a, b] = P.S(x, y), s = P.cam.scale * grow, col = M.body[color] ?? color;
+  const W = w * s, H = h * s;
+  if (W < 1 || H < 1) return;
+  ctx.save();
+  ctx.translate(a, b); ctx.rotate(-angle);
+  const r = Math.min(W, H) * 0.08;
+  const path = (pad = 0) => { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(-W / 2 - pad, -H / 2 - pad, W + 2 * pad, H + 2 * pad, r + pad) : ctx.rect(-W / 2 - pad, -H / 2 - pad, W + 2 * pad, H + 2 * pad); };
+  if (selected) { path(5); ctx.strokeStyle = M.sel; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.stroke(); ctx.setLineDash([]); }
+  path(); ctx.fillStyle = col; ctx.globalAlpha = M.dark ? 0.72 : 0.8; ctx.fill();
+  ctx.globalAlpha = 1; ctx.strokeStyle = mixHex(col, M.dark ? '#ffffff' : '#000000', M.dark ? 0.35 : 0.25); ctx.lineWidth = 2; ctx.stroke();
+  ctx.restore();
+}
+
+// Sfera: disco pieno con un raggio segnato, così si vede la rotazione.
+export function ballM(P, M, x, y, { r, color = 'red', spin = 0, selected = false, grow = 1 }) {
+  const { ctx } = P, [a, b] = P.S(x, y), R = r * P.cam.scale * grow, col = M.body[color] ?? color;
+  if (R < 1) return;
+  ctx.save();
+  if (selected) { ctx.strokeStyle = M.sel; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.beginPath(); ctx.arc(a, b, R + 5, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
+  ctx.fillStyle = col; ctx.globalAlpha = M.dark ? 0.72 : 0.8; ctx.beginPath(); ctx.arc(a, b, R, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = 1; const edge = mixHex(col, M.dark ? '#ffffff' : '#000000', M.dark ? 0.35 : 0.25);
+  ctx.strokeStyle = edge; ctx.lineWidth = 2; ctx.stroke();
+  ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(a + Math.cos(spin) * R, b - Math.sin(spin) * R); ctx.stroke();
+  ctx.fillStyle = edge; ctx.beginPath(); ctx.arc(a, b, 2.2, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+// Molla a zig-zag: si stringe e si allunga con la lunghezza (strain > 0 tesa).
+export function springM(P, M, p0, p1, { selected = false } = {}) {
+  const { ctx } = P, [x0, y0] = P.S(p0[0], p0[1]), [x1, y1] = P.S(p1[0], p1[1]);
+  const L = Math.hypot(x1 - x0, y1 - y0);
+  if (L < 3) return;
+  const ux = (x1 - x0) / L, uy = (y1 - y0) / L, end = Math.min(12, L * 0.15), n = Math.max(6, Math.round((L - 2 * end) / 9)), amp = 6;
+  ctx.save();
+  ctx.lineJoin = ctx.lineCap = 'round';
+  const path = () => {
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 + ux * end, y0 + uy * end);
+    for (let i = 0; i < n; i++) {
+      const t = end + (L - 2 * end) * (i + 0.5) / n, s = i % 2 ? -1 : 1;
+      ctx.lineTo(x0 + ux * t - uy * amp * s, y0 + uy * t + ux * amp * s);
+    }
+    ctx.lineTo(x1 - ux * end, y1 - uy * end); ctx.lineTo(x1, y1);
+  };
+  if (selected) { path(); ctx.strokeStyle = M.sel; ctx.lineWidth = 8; ctx.globalAlpha = 0.4; ctx.stroke(); ctx.globalAlpha = 1; }
+  path(); ctx.strokeStyle = M.springC; ctx.lineWidth = 2; ctx.stroke();
+  ctx.restore();
+}
+
+// Fune: linea sottile (tratteggiata quando è lenta).
+export function ropeM(P, M, pts, { slack = false, selected = false } = {}) {
+  if (pts.length < 2) return;
+  const { ctx } = P;
+  ctx.save(); ctx.lineJoin = ctx.lineCap = 'round';
+  const path = () => { ctx.beginPath(); pts.forEach(([x, y], i) => { const [a, b] = P.S(x, y); i ? ctx.lineTo(a, b) : ctx.moveTo(a, b); }); };
+  if (selected) { path(); ctx.strokeStyle = M.sel; ctx.lineWidth = 8; ctx.globalAlpha = 0.4; ctx.stroke(); ctx.globalAlpha = 1; }
+  path(); ctx.strokeStyle = M.rope; ctx.lineWidth = 1.8; if (slack) ctx.setLineDash([5, 4]); ctx.stroke();
+  ctx.restore();
+}
+
+// Carrucola: cerchio con i raggi (girano) e il perno.
+export function pulleyM(P, M, x, y, rW, angle = 0, { selected = false } = {}) {
+  const { ctx } = P, [a, b] = P.S(x, y), r = Math.max(6, rW * P.cam.scale);
+  ctx.save();
+  if (selected) { ctx.strokeStyle = M.sel; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.beginPath(); ctx.arc(a, b, r + 6, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
+  ctx.fillStyle = M.solid; ctx.beginPath(); ctx.arc(a, b, r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = M.solidEdge; ctx.lineWidth = 2; ctx.stroke();
+  ctx.lineWidth = 1.2; ctx.globalAlpha = 0.7; ctx.beginPath();
+  for (let i = 0; i < 3; i++) { const t = angle + i * Math.PI / 3; ctx.moveTo(a - Math.cos(t) * r * 0.85, b + Math.sin(t) * r * 0.85); ctx.lineTo(a + Math.cos(t) * r * 0.85, b - Math.sin(t) * r * 0.85); }
+  ctx.stroke();
+  ctx.globalAlpha = 1; ctx.fillStyle = M.solidEdge; ctx.beginPath(); ctx.arc(a, b, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+// Punto fisso: piccola piastra con il tratteggio, come un vincolo nei disegni.
+export function anchorM(P, M, x, y, { selected = false } = {}) {
+  const { ctx } = P, [a, b] = P.S(x, y);
+  ctx.save();
+  if (selected) { ctx.strokeStyle = M.sel; ctx.lineWidth = 2; ctx.setLineDash([5, 4]); ctx.strokeRect(a - 19, b - 19, 38, 26); ctx.setLineDash([]); }
+  ctx.strokeStyle = M.solidEdge; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(a - 14, b - 6); ctx.lineTo(a + 14, b - 6); ctx.stroke();
+  ctx.lineWidth = 1; ctx.beginPath();
+  for (let i = -14; i < 14; i += 6) { ctx.moveTo(a + i, b - 6); ctx.lineTo(a + i + 6, b - 13); }
+  ctx.stroke();
+  ctx.fillStyle = M.solidEdge; ctx.beginPath(); ctx.arc(a, b, 3.5, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+/* ---------------- Painter con lo stile di Manim ---------------- */
+
+// Etichetta di un vettore dell'app ("P", "F₁₂", "qE", "fs") in TeX: \vec P, \vec F_{12}, q\vec E, \vec f_s.
+export function vecLabel(l) {
+  if (!l) return '';
+  l = l.replace(/[₀-₉]+/g, m => [...m].map(c => '₀₁₂₃₄₅₆₇₈₉'.indexOf(c)).join(''));
+  if (/^q[A-Z]$/.test(l)) return `q\\vec ${l[1]}`;
+  const m = /^([A-Za-z])([A-Za-z0-9]*)$/.exec(l);
+  if (!m) return l;
+  return `\\vec ${m[1]}` + (m[2] ? `_{${m[2]}}` : '');
+}
+// Testo semplice dell'app in TeX: l'unità dopo il numero diventa in tondo ("r = 2,00 m" → r = 2,00 \mathrm{m}).
+export const textToTeX = s => String(s).replace(/(\d)\s+([A-Za-zµ°/²³·]+)$/, '$1\\ \\mathrm{$2}').replace(/·/g, '\\cdot ');
+
+// Painter che disegna frecce e scritte alla Manim: le chiamate esistenti (P.arrow, P.textS, P.arc) restano uguali.
+// grow(opts) può restituire il fattore di crescita di una freccia (transizioni).
+export function manimPainter(P0, M, PainterClass, { grow = () => 1 } = {}) {
+  const P = new PainterClass(P0.ctx, P0.cam, { ...P0.c, bg: M.bg, text: M.text, muted: M.muted, handle: M.sel, axis: M.axis, ...M.vec });
+  P.arrow = (x0, y0, x1, y1, { color = 'vel', width = 3.5, label, dash = null, alpha = 1, head = 13 } = {}) => {
+    const [a, b] = P.S(x0, y0), [c, d] = P.S(x1, y1), col = M.vec[color] ?? P.col(color), g = grow({ color, label });
+    const tip = arrowS(P.ctx, a, b, c, d, col, { width: Math.max(2, width * 0.8), tip: Math.max(10, head + 1), grow: g, alpha, halo: M.bg, dash });
+    if (tip && label && tip.len > 18) tex(P, tip.x + tip.ux * 17, tip.y + tip.uy * 17, vecLabel(label), { size: 17, color: col, halo: M.bg, alpha: alpha * g });
+  };
+  P.textS = (a, b, str, { color = 'text', size = 14, align = 'left', dx = 0, dy = 0 } = {}) => {
+    tex(P, a + dx, b + dy, textToTeX(str), { size: size + 3, color: P.col(color), align, halo: M.bg });
+  };
+  return P;
+}
+
+// Regia delle transizioni: valori che inseguono, oggetti che compaiono, elementi che si accendono.
+// tick(still) va chiamato a ogni disegno; still = true (istantanee) porta tutto subito allo stato finale.
+export class Regia {
+  constructor() { this.now = 0; this.dt = 0; this.last = 0; this.still = false; this.vals = new Map(); this.bornAt = new Map(); this.onAt = {}; this.sigs = {}; }
+  tick(still = false) {
+    const now = performance.now() / 1000;
+    this.dt = Math.min(0.1, now - (this.last || now)); this.last = this.now = now; this.still = still;
+  }
+  // Valore mostrato che insegue quello vero (tau: tempo di risposta in s). snap: salta subito al valore.
+  smooth(key, target, tau = 0.09, snap = false) {
+    const v = this.vals.get(key);
+    if (!v || snap || this.still || v.length !== target.length) { this.vals.set(key, target.slice()); return target; }
+    const k = 1 - Math.exp(-this.dt / tau);
+    for (let i = 0; i < v.length; i++) v[i] += (target[i] - v[i]) * k;
+    return v;
+  }
+  // Scala di un oggetto appena comparso: piccolo rimbalzo di 0,45 s.
+  born(id) {
+    if (this.still) return 1;
+    if (!this.bornAt.has(id)) this.bornAt.set(id, this.now);
+    const t = Math.min(1, (this.now - this.bornAt.get(id)) / 0.45), c = 1.70158;
+    return 1 + (c + 1) * (t - 1) ** 3 + c * (t - 1) ** 2;
+  }
+  // Avanzamento 0 → 1 (in run s) di qualcosa che si accende quando sig cambia (sig = null: spento).
+  on(key, sig, run = 0.6) {
+    if (sig == null) { this.sigs[key] = null; return 0; }
+    if (this.sigs[key] !== sig) { this.sigs[key] = sig; this.onAt[key] = this.now; }
+    if (this.still) return 1;
+    const t = Math.min(1, (this.now - this.onAt[key]) / run);
+    return t * t * (3 - 2 * t);
+  }
+  // Istante in cui sig è cambiato l'ultima volta (per le linee di campo che si ridisegnano).
+  since(key, sig) {
+    if (this.sigs[key] !== sig) { this.sigs[key] = sig; this.onAt[key] = this.now; }
+    return this.still ? Infinity : this.now - this.onAt[key];
+  }
+}

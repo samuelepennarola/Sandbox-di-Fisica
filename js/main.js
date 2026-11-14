@@ -410,8 +410,8 @@ function expSnapshot(exp, w, h) {
   const params = { ...defaults(exp), ...store.get('params.' + exp.id, {}) };
   const sim = exp.init(params);
   cm.fit(exp.view(params, sim), { top: 16, right: 16, bottom: 16, left: 16 });
-  drawSky(c2, cm, colors);
-  drawGrid(c2, cm, colors);
+  if (exp.drawBackground) exp.drawBackground(c2, cm, colors);
+  else { drawSky(c2, cm, colors); drawGrid(c2, cm, colors); }
   const sizes = store.get('sizes.' + exp.id, {});
   const P = new Painter(c2, cm, colors);
   // Nelle istantanee niente maniglie né vettori (frecce con le loro etichette): i vettori li disegnano i ragazzi.
@@ -757,7 +757,16 @@ function startPinch() {
 const PALM_AFTER_PEN_MS = 500;   // dopo aver alzato la Pencil il polso resta spesso appoggiato
 const PALM_REVERT_MS = 800;      // un tocco iniziato poco prima della Pencil era quasi certamente il polso
 const PALM_SIZE_PX = 38;         // contatti più larghi di così sono un palmo, non un dito
-const palm = { penDown: false, penUpAt: -Infinity, ignored: new Set() };
+const PEN_STALE_MS = 1500;       // Pencil "appoggiata" ma muta da così tanto: il suo rilascio è andato perso
+const palm = { penDown: false, penUpAt: -Infinity, lastPen: -Infinity, ignored: new Set(), why: '' };
+// Il rilascio della Pencil va registrato anche se avviene fuori dalla scena (sopra una barra o il pannello):
+// altrimenti l'app la crederebbe ancora appoggiata e ignorerebbe il dito per sempre.
+// Lo stesso vale per il gesto in corso (un tratto della Pencil, un trascinamento): se il rilascio cade fuori
+// dalla scena, il gesto si chiude comunque, come se fosse avvenuto sopra.
+for (const type of ['pointerup', 'pointercancel']) document.addEventListener(type, e => {
+  if (e.target !== canvas) endPointer(e);
+}, true);
+document.addEventListener('pointermove', e => { if (e.pointerType === 'pen' && e.buttons) palm.lastPen = performance.now(); }, true);
 
 // La Pencil è arrivata mentre un tocco del dito era in corso: era il polso. Annulla quello che ha fatto.
 function revertTouchGesture() {
@@ -814,15 +823,34 @@ function onPointerDown(e) {
   const [x, y] = pos(e);
   if (e.pointerType === 'pen') {
     if (!app.penSeen) { app.penSeen = true; store.set('penSeen', true); }
-    palm.penDown = true;
+    palm.penDown = true; palm.lastPen = performance.now();
     if (gesture?.touch) revertTouchGesture();
     for (const id of touches.keys()) palm.ignored.add(id);
     touches.clear();
   }
+  if (e.pointerType === 'touch') {
+    // Primo dito sullo schermo: non ci sono altri contatti, quindi quelli rimasti in memoria sono fantasmi
+    // (rilasci persi) e non devono bloccare i gesti. Lo stesso per una Pencil "appoggiata" ma muta da tempo.
+    if (palm.penDown && performance.now() - palm.lastPen > PEN_STALE_MS) palm.penDown = false;
+    if (e.isPrimary) {
+      touches.clear(); palm.ignored.clear();
+      // Un gesto rimasto aperto (dito o Pencil ormai sollevati) va chiuso: altrimenti blocca il dito per sempre.
+      if (gesture && (gesture.touch || !palm.penDown)) {
+        if (gesture.type === 'ink') { ink.end(); recordInk(); }
+        gesture.custom?.up?.({ ...(() => { const [sx, sy] = pos(e), [wx, wy] = cam.toWorld(sx, sy); return { sx, sy, wx, wy }; })(), cancelled: true });
+        app.activeHandle = null;
+        gesture = null;
+      }
+    }
+  }
   if (e.pointerType === 'touch' && app.penSeen) {
     const recent = performance.now() - palm.penUpAt < PALM_AFTER_PEN_MS;
     const big = Math.max(e.width || 0, e.height || 0) > PALM_SIZE_PX;
-    if (palm.penDown || recent || big) { palm.ignored.add(e.pointerId); return; }
+    if (palm.penDown || recent || big) {
+      palm.why = palm.penDown ? 'Pencil appoggiata' : recent ? 'subito dopo la Pencil' : `contatto largo ${Math.round(Math.max(e.width, e.height))} px`;
+      palm.ignored.add(e.pointerId); return;
+    }
+    palm.why = '';
   }
 
   if (e.pointerType === 'touch') {
@@ -1246,7 +1274,9 @@ if (new URLSearchParams(location.search).has('debug')) {
   const t0 = performance.now();
   const show = () => {
     const r = canvas.getBoundingClientRect();
-    box.textContent = `vista ${innerWidth}×${innerHeight}  canvas ${Math.round(r.width)}×${Math.round(r.height)}  dpr ${devicePixelRatio}\n` + log.join('\n');
+    box.textContent = `vista ${innerWidth}×${innerHeight}  canvas ${Math.round(r.width)}×${Math.round(r.height)}  dpr ${devicePixelRatio}\n`
+      + `strumento ${app.tool}  Pencil vista ${app.penSeen ? 'sì' : 'no'}  appoggiata ${palm.penDown ? 'SÌ' : 'no'}  dita ${touches.size}  gesto ${gesture?.type ?? '-'}`
+      + (palm.why ? `  ignorato: ${palm.why}` : '') + '\n' + log.join('\n');
   };
   const push = line => { log.unshift(`${((performance.now() - t0) / 1000).toFixed(2)}s ${line}`); log.length = Math.min(log.length, 18); show(); };
   const name = t => String(t.id || t.className?.baseVal || t.className || t.tagName).slice(0, 16);

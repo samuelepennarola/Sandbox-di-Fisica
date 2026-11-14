@@ -1,13 +1,14 @@
 import * as pl from '../../vendor/planck/planck.mjs';
 import { deg, clamp, fmt } from '../core/math.js';
-import { drawAxes, dragGuides, alignTo } from '../core/render.js';
+import { Painter, dragGuides, alignTo } from '../core/render.js';
 import { SceneHistory } from '../core/history.js';
 import { icons } from '../core/icons.js';
 import { store } from '../core/store.js';
 import { el } from '../core/ui.js';
-import { crate, ball as ballShape } from '../core/shapes.js';
-import { K, MU as UC, pointField, traceLine, drawFieldLines, drawFieldGrid, chargeSphere, chargeBadge } from '../core/electric.js';
-import { slab, spring as springShape, rope as ropeShape, pulley as pulleyShape, anchorPlate, trail, dust, BODY_COLORS } from '../core/look.js';
+import { K, MU as UC, pointField, traceLine, drawFieldGrid } from '../core/electric.js';
+import { trail, dust, BODY_COLORS } from '../core/look.js';
+import { palette, drawPlaneGrid, drawPlaneAxes, drawFieldLinesM, chargeDisk, groundM, slabM, blockM, ballM, springM, ropeM, pulleyM, anchorM,
+  manimPainter, tex, Regia } from '../core/manim.js';
 
 // Costruttore libero: scena composta dall'utente, simulata con Planck.js (Box2D).
 // La "spec" (oggetti + collegamenti) è la fonte di verità; a ogni modifica il mondo fisico viene ricostruito.
@@ -379,11 +380,15 @@ function drawElectricForces(P, st, sel, skip, all = false) {
     const { c } = d;
     if (skip.has(c.id)) continue;
     // Con un solo contributo la freccia tratteggiata coinciderebbe con la risultante.
+    // Le frecce partono dal bordo della carica: centro, etichette e angoli restano leggibili.
+    const edge = F => { const m = Math.hypot(...F) || 1, r = Math.max(10 / P.cam.scale, c.r ?? CHARGE_R); return [c.x + F[0] / m * r, c.y + F[1] / m * r]; };
     if ((all || c.id === sel) && d.rows.length > 1) for (const f of d.rows) {
       // F₁₂ = forza esercitata da q₂ su q₁ (notazione dei libri di testo).
-      P.arrow(c.x, c.y, c.x + kf * f.F[0], c.y + kf * f.F[1], { color: 'acc', width: 2.2, dash: [5, 4], alpha: 0.75, label: f.from === 'E' ? 'qE' : 'F' + subN(chargeNo(st.spec, c.id)) + subN(chargeNo(st.spec, f.from)) });
+      const [ex, ey] = edge(f.F);
+      P.arrow(ex, ey, ex + kf * f.F[0], ey + kf * f.F[1], { color: 'acc', width: 2.2, dash: [5, 4], alpha: 0.75, label: f.from === 'E' ? 'qE' : 'F' + subN(chargeNo(st.spec, c.id)) + subN(chargeNo(st.spec, f.from)) });
     }
-    P.arrow(c.x, c.y, c.x + kf * d.R[0], c.y + kf * d.R[1], { color: 'acc', width: 3.5, label: 'F' + subN(chargeNo(st.spec, c.id)) });
+    const [rx, ry] = edge(d.R);
+    P.arrow(rx, ry, rx + kf * d.R[0], ry + kf * d.R[1], { color: 'acc', width: 3.5, label: 'F' + subN(chargeNo(st.spec, c.id)) });
     forceAngle(P, c.x, c.y, d.R);
   }
 }
@@ -391,13 +396,13 @@ function drawElectricForces(P, st, sel, skip, all = false) {
 // Angolo di una forza rispetto all'asse x: riferimento orizzontale tratteggiato, arco e valore in gradi.
 function forceAngle(P, x, y, F) {
   if (Math.hypot(...F) < 1e-12) return;
-  const th = Math.atan2(F[1], F[0]), [a, b] = P.S(x, y), R = 30;
+  const th = Math.atan2(F[1], F[0]), [a, b] = P.S(x, y), R = 38;
   const ctx = P.ctx;
   ctx.save();
   ctx.strokeStyle = P.c.muted; ctx.lineWidth = 1.2; ctx.setLineDash([3, 4]);
   ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(a + R + 16, b); ctx.stroke();
   ctx.restore();
-  P.arc(x, y, R, Math.min(0, th), Math.max(0, th), { color: 'acc', width: 1.6, label: `${fmt(th / deg, 0)}°`, labelR: R + 15 });
+  P.arc(x, y, R, Math.min(0, th), Math.max(0, th), { color: 'acc', width: 1.6, label: `${fmt(th / deg, 0)}°`, labelR: R + 28 });
 }
 
 // Con tre cariche: angoli interni del triangolo ai vertici.
@@ -874,13 +879,32 @@ function resizeGesture(st, h) {
   };
 }
 
-function draw(P, st, ui = {}) {
+/* ---------------- Regia (transizioni alla Manim) ---------------- */
+// Solo come le cose compaiono e cambiano sullo schermo: la simulazione fisica non viene toccata.
+const R = new Regia();
+let M = null;   // palette di Manim del tema corrente
+
+function draw(P0, st, ui = {}) {
   const spec = st.spec, sel = B.sel, show = B.spec.show;
-  P.ground(0);
-  if (!ui.snapshot) drawAxes(P);
+  R.tick(!!ui.snapshot);
+  M = palette(P0.c);
+  // Frecce che crescono quando compaiono: diagramma di corpo libero (al cambio di selezione), velocità, forze elettriche.
+  const fbdSig = show.fbd ? (show.all ? 'all' : sel) : null;
+  const growOf = { fbd: R.on('fbd', fbdSig), vel: R.on('vel', show.vel ? 1 : null), Fe: R.on('Fe', (show.Fe ?? true) ? 1 : null) };
+  let arrowGroup = 'fbd';
+  const P = manimPainter(P0, M, Painter, { grow: () => growOf[arrowGroup] ?? 1 });
+  if (ui.snapshot) P.arrow = P0.arrow;   // nelle istantanee della Lavagna niente vettori
+  P.handle = P0.handle; P.sizeHandle = P0.sizeHandle;
+  groundM(P, M, 0);
+  if (!ui.snapshot) drawPlaneAxes(P, M, { unit: 'm' });
   if (show.field ?? true) {
-    const { x0, y0, x1, y1 } = P.cam.bounds(), m = 0.2 * (x1 - x0);
-    drawFieldLines(P, fieldLines(st, [x0 - m, y0 - m, x1 + m, y1 + m]), { alpha: 0.35 });
+    const { x0, y0, x1, y1 } = P.cam.bounds(), m = 0.2 * (x1 - x0), list = chargesOf(st);
+    const lines = fieldLines(st, [x0 - m, y0 - m, x1 + m, y1 + m]);
+    // Le linee si ridisegnano (una dopo l'altra) quando cambiano il numero o il segno delle cariche, o il campo uniforme.
+    const sig = list.map(c => c.id + Math.sign(c.q)).join(',') + '|' + Math.sign(spec.E ?? 0) + '|' + (spec.Eangle ?? 0);
+    const t = R.since('lines', sig), lag = Math.min(0.04, 0.6 / Math.max(1, lines.length));
+    drawFieldLinesM(P, lines, M, { mag: (x, y) => Math.hypot(...fieldAt(st, x, y, list)), lo: 1e3, hi: 3e5,
+      progress: i => Math.min(1, Math.max(0, (t - i * lag) / 0.7)) });
   }
   if (show.Evec) {
     const list = chargesOf(st);
@@ -891,14 +915,14 @@ function draw(P, st, ui = {}) {
   for (const o of spec.objects) {
     if (o.type === 'incline') {
       const v = inclineVerts(o).map(([x, y]) => [x + o.x, y + o.y]);
-      slab(P, v, { topEdge: o.dir === -1 ? [v[2], v[1]] : [v[0], v[2]], selected: sel === o.id });
+      slabM(P, M, v, { topEdge: o.dir === -1 ? [v[2], v[1]] : [v[0], v[2]], selected: sel === o.id });
       const foot = o.dir === -1 ? [v[1][0], o.y] : [o.x, o.y];
       const a0 = o.dir === -1 ? Math.PI - o.alpha * deg : 0, a1 = o.dir === -1 ? Math.PI : o.alpha * deg;
       P.arc(foot[0], foot[1], 34, a0, a1, { color: 'text', label: `${fmt(o.alpha, 0)}°`, labelR: 52 });
     } else if (o.type === 'surface') {
       const T = xf(st, o.id);
       const pts = [[-o.L / 2, -SURF_T / 2], [o.L / 2, -SURF_T / 2], [o.L / 2, SURF_T / 2], [-o.L / 2, SURF_T / 2]].map(([x, y]) => toW(T, x, y));
-      slab(P, pts, { topEdge: [pts[3], pts[2]], selected: sel === o.id });
+      slabM(P, M, pts, { topEdge: [pts[3], pts[2]], selected: sel === o.id });
     }
   }
 
@@ -906,50 +930,44 @@ function draw(P, st, ui = {}) {
     const selected = sel === l.id;
     if (l.type === 'spring') {
       const a = epW(st, l.a), b = epW(st, l.b), L = Math.hypot(b[0] - a[0], b[1] - a[1]);
-      springShape(P, a, b, (L - l.L0) / Math.max(l.L0, 0.05), { selected });
+      springM(P, M, a, b, { selected });
     } else if (l.type === 'rope') {
       const { pts, slack } = ropePts(epW(st, l.a), epW(st, l.b), l.L);
-      ropeShape(P, pts, { slack, selected });
+      ropeM(P, M, pts, { slack, selected });
     } else if (l.type === 'pulleyRope') {
       const pts = pulleyRopePts(st, l);
-      if (pts) ropeShape(P, pts, { selected });
+      if (pts) ropeM(P, M, pts, { selected });
     }
   }
 
   for (const o of spec.objects) {
-    if (o.type === 'pulley') pulleyShape(P, o.x, o.y, o.r, pulleyAngle(st, o), { selected: sel === o.id });
-    else if (o.type === 'anchor') anchorPlate(P, o.x, o.y, { selected: sel === o.id });
+    if (o.type === 'pulley') pulleyM(P, M, o.x, o.y, o.r, pulleyAngle(st, o), { selected: sel === o.id });
+    else if (o.type === 'anchor') anchorM(P, M, o.x, o.y, { selected: sel === o.id });
     else if (o.type === 'charge') {
-      const [a, b] = P.S(o.x, o.y), r = Math.max(10, CHARGE_R * P.cam.scale);
-      chargeSphere(P, a, b, r, o.q >= 0, sel === o.id);
-      P.textS(a, b + r + 13, `q${subN(chargeNo(spec, o.id))} = ${fmt(o.q, 1)} µC`, { size: 12, align: 'center' });
+      const [a, b] = P.S(o.x, o.y), r = Math.max(10, CHARGE_R * P.cam.scale) * R.born(o.id);
+      chargeDisk(P.ctx, a, b, r, R.smooth('hue:' + o.id, [o.q >= 0 ? 1 : 0], 0.16)[0], M, sel === o.id);
+      tex(P, a, b + r + 16, `q_{${chargeNo(spec, o.id)}} = ${fmt(o.q, 1)}\\ \\mathrm{µC}`, { size: 16, color: M.text, halo: M.bg });
     }
   }
 
-  if (show.trail) for (const id in st.trails) trail(P, st.trails[id], 'vel', 2.5);
+  if (show.trail) for (const id in st.trails) trail(P, st.trails[id], M.vec.vel, 2);
 
   for (const o of spec.objects) {
     if (!DYNAMIC.has(o.type)) continue;
     const T = xf(st, o.id);
     if (!T) continue;
-    const isSel = sel === o.id, color = colorOf(spec, o);
-    if (o.type === 'block') {
-      if (isSel) {
-        const pad = 4 / P.cam.scale;
-        const pts = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => toW(T, sx * (o.w / 2 + pad), sy * (o.h / 2 + pad)));
-        P.poly(pts, { stroke: 'handle', width: 3 });
-      }
-      crate(P, T.x, T.y, { w: o.w, h: o.h, angle: T.a, minPx: 0, color });
-    } else {
-      if (isSel) P.circle(T.x, T.y, o.r * P.cam.scale + 4, { stroke: 'handle', width: 3 });
-      ballShape(P, T.x, T.y, { r: o.r, minPx: 0, color, spin: T.a });
+    const isSel = sel === o.id, color = colorOf(spec, o), g = R.born(o.id);
+    if (o.type === 'block') blockM(P, M, T.x, T.y, { w: o.w, h: o.h, angle: T.a, color, selected: isSel, grow: g });
+    else ballM(P, M, T.x, T.y, { r: o.r, color, spin: T.a, selected: isSel, grow: g });
+    if (P.cam.scale * Math.min(o.w ?? o.r * 2, o.h ?? o.r * 2) > 30) {
+      const [cx, cy] = P.S(T.x, T.y);
+      tex(P, cx, cy, `${fmt(o.m, o.m < 10 ? 1 : 0)}\\ \\mathrm{kg}`, { size: 15, color: M.dark ? '#ffffff' : '#1b1a17', alpha: g });
     }
-    if (P.cam.scale * Math.min(o.w ?? o.r * 2, o.h ?? o.r * 2) > 24) P.text(T.x, T.y, `${fmt(o.m, o.m < 10 ? 1 : 0)} kg`, { size: 11, align: 'center', weight: 700 });
     if (o.q) {
-      // Corpo carico: distintivo con il segno in alto a destra e valore della carica.
+      // Corpo carico: piccolo disco col segno in alto a destra e valore della carica.
       const [cx, cy] = P.S(T.x, T.y), hw = (o.type === 'ball' ? o.r * Math.SQRT1_2 : o.w / 2) * P.cam.scale, hh = (o.type === 'ball' ? o.r * Math.SQRT1_2 : o.h / 2) * P.cam.scale;
-      chargeBadge(P, cx + hw, cy - hh, o.q > 0);
-      P.textS(cx + hw + 13, cy - hh, `q${subN(chargeNo(spec, o.id))} = ${fmt(o.q, 1)} µC`, { size: 11, weight: 700 });
+      chargeDisk(P.ctx, cx + hw, cy - hh, 9, R.smooth('hue:' + o.id, [o.q >= 0 ? 1 : 0], 0.16)[0], M, false, false);
+      tex(P, cx + hw + 14, cy - hh, `q_{${chargeNo(spec, o.id)}} = ${fmt(o.q, 1)}\\ \\mathrm{µC}`, { size: 15, color: M.text, align: 'left', halo: M.bg });
     }
 
     // Polvere dove il corpo striscia con attrito.
@@ -961,6 +979,7 @@ function draw(P, st, ui = {}) {
   }
 
   const kf = forceScale(st);
+  arrowGroup = 'applied';
   for (const l of spec.links) if (l.type === 'force') {
     const T = xf(st, l.o);
     if (T) P.arrow(T.x, T.y, T.x + kf * l.F * Math.cos(l.angle * deg), T.y + kf * l.F * Math.sin(l.angle * deg), { color: 'applied', width: sel === l.id ? 5 : 3.5, label: 'F', dash: [7, 4] });
@@ -968,13 +987,16 @@ function draw(P, st, ui = {}) {
 
   // I corpi con il diagramma di corpo libero mostrano la forza elettrica lì, nella scala delle altre forze.
   const fbdIds = !show.fbd ? [] : show.all ? spec.objects.filter(o => DYNAMIC.has(o.type)).map(o => o.id) : DYNAMIC.has(objOf(spec, sel)?.type) ? [sel] : [];
+  arrowGroup = 'Fe';
   if (show.Fe ?? true) drawElectricForces(P, st, sel, new Set(fbdIds), show.all);
 
+  arrowGroup = 'vel';
   if (show.vel) for (const o of spec.objects) if (DYNAMIC.has(o.type)) {
     const T = xf(st, o.id), [vx, vy] = velOf(st, o.id);
     P.arrow(T.x, T.y, T.x + KV * vx, T.y + KV * vy, { color: 'vel', label: 'v' });
   }
 
+  arrowGroup = 'fbd';
   if (show.fbd) {
     const ids = show.all ? spec.objects.filter(o => DYNAMIC.has(o.type)).map(o => o.id)
       : DYNAMIC.has(objOf(spec, sel)?.type) ? [sel] : [];
@@ -984,6 +1006,7 @@ function draw(P, st, ui = {}) {
     }
   }
 
+  arrowGroup = null;
   if (B.drag) {
     const o = B.drag.o;
     dragGuides(P, { x: o.x, y: o.y, vx: B.drag.vx, hy: B.drag.hy, text: `x = ${fmt(o.x, 2)} m · y = ${fmt(o.y, 2)} m` });
@@ -1309,6 +1332,13 @@ export default {
   subtitle: 'Componi blocchi, piani, molle, funi, carrucole e cariche',
   panelTitle: 'Costruttore',
   axes: true,
+  // Fondo quasi nero (o carta nel tema chiaro) con la griglia del piano di Manim.
+  drawBackground(ctx, cam, c) {
+    const Mb = palette(c);
+    ctx.fillStyle = Mb.bg;
+    ctx.fillRect(0, 0, cam.w, cam.h);
+    drawPlaneGrid(ctx, cam, Mb);
+  },
   params: [],
   dt: DT,
   sweepHorizon: 4,

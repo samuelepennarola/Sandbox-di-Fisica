@@ -5,8 +5,8 @@ import { el } from '../core/ui.js';
 import { Painter, dragGuides, alignTo } from '../core/render.js';
 import { SceneHistory } from '../core/history.js';
 import { K, MU, pointField, drawFieldGrid } from '../core/electric.js';
-import { palette, rampColor, mixHex, drawPlaneGrid, drawPlaneAxes, arrowS, tex, texWidth, sciTeX } from '../core/manim.js';
-import { rate, cumulate, partial } from '../core/anim.js';
+import { palette, mixHex, drawPlaneGrid, drawPlaneAxes, drawFieldLinesM, chargeDisk, arrowS, tex, texWidth, sciTeX } from '../core/manim.js';
+import { rate } from '../core/anim.js';
 
 // Cariche e campo elettrico (elettrostatica, livello liceo).
 // Sorgenti: cariche puntiformi (Coulomb in 3D), barre cariche uniformi (segmenti nel piano),
@@ -244,42 +244,12 @@ function born(id) {
 // Avanzamento (0 → 1 in 0,6 s) di un elemento che si accende: forze, componenti, sonda.
 A.p = key => (A.still ? 1 : A.on[key] == null ? 0 : Math.min(1, (A.now - A.on[key]) / 0.6));
 
-// Linee di campo alla Manim: colore in base all'intensità del campo e, quando cambiano le sorgenti
+// Linee di campo alla Manim (kit condiviso): colore in base all'intensità e, quando cambiano le sorgenti
 // (numero o segno) o si accendono, si tracciano una dopo l'altra (Create).
 function drawLinesM(P, lines) {
-  const M = A.M, ctx = P.ctx, n = lines.length;
-  const lag = Math.min(0.05, 0.6 / Math.max(1, n)), dur = 0.8;
-  ctx.save();
-  ctx.lineCap = ctx.lineJoin = 'round'; ctx.lineWidth = 1.8; ctx.globalAlpha = M.lineA;
-  lines.forEach((L, i) => {
-    const f = A.still ? 1 : Math.min(1, Math.max(0, (A.now - A.linesT0 - i * lag) / dur));
-    if (f <= 0 || L.pts.length < 2) return;
-    L.mags ??= L.pts.map((pt, k) => (k % 3 ? 0 : Math.hypot(...fieldAt(pt[0], pt[1]))));
-    L.acc ??= cumulate(L.pts);
-    const pts = f < 1 ? partial(L.pts, f, L.acc) : L.pts, N = pts.length;
-    for (let k = 0; k < N - 1; k += 3) {
-      ctx.strokeStyle = rampColor(M, L.mags[k] || 1e4);
-      ctx.beginPath();
-      for (let j = k; j <= Math.min(k + 3, N - 1); j++) { const [a, b] = P.S(pts[j][0], pts[j][1]); j === k ? ctx.moveTo(a, b) : ctx.lineTo(a, b); }
-      ctx.stroke();
-    }
-    // Punta del verso a metà linea, quando la linea è stata tracciata oltre la metà.
-    const m = Math.floor(L.pts.length / 2);
-    if (f > 0.55 && m > 0) {
-      const p0 = P.S(...L.pts[m - 1]), p1 = P.S(...L.pts[m]);
-      let dx = (p1[0] - p0[0]) * L.dir, dy = (p1[1] - p0[1]) * L.dir;
-      const d = Math.hypot(dx, dy);
-      if (d > 1e-6) {
-        dx /= d; dy /= d;
-        const h = 9, w = 4.2;
-        ctx.fillStyle = rampColor(M, L.mags[m - (m % 3)] || 1e4);
-        ctx.beginPath(); ctx.moveTo(p1[0] + dx * h / 2, p1[1] + dy * h / 2);
-        ctx.lineTo(p1[0] - dx * h / 2 - dy * w, p1[1] - dy * h / 2 + dx * w); ctx.lineTo(p1[0] - dx * h / 2 + dy * w, p1[1] - dy * h / 2 - dx * w);
-        ctx.closePath(); ctx.fill();
-      }
-    }
-  });
-  ctx.restore();
+  const lag = Math.min(0.05, 0.6 / Math.max(1, lines.length));
+  drawFieldLinesM(P, lines, A.M, { mag: (x, y) => Math.hypot(...fieldAt(x, y)), lo: 1e4, hi: 3e6,
+    progress: i => (A.still ? 1 : Math.min(1, Math.max(0, (A.now - A.linesT0 - i * lag) / 0.8))) });
 }
 
 /* ---------------- Disegno ---------------- */
@@ -287,24 +257,11 @@ function drawLinesM(P, lines) {
 // Carica alla Manim: disco pieno con un alone morbido e il segno in bianco. Il colore sfuma quando cambia il segno,
 // e appena creata la carica "sboccia" con un piccolo rimbalzo.
 function drawCharge(P, s, selected) {
-  const M = A.M, ctx = P.ctx, [a, b] = P.S(s.x, s.y);
+  const M = A.M, [a, b] = P.S(s.x, s.y);
   const hue = smooth('hue:' + s.id, [s.q >= 0 ? 1 : 0], 0.16)[0];
-  const r = Math.max(10, radius(s.q) * P.cam.scale) * born(s.id), col = mixHex(M.neg, M.pos, hue);
+  const r = Math.max(10, radius(s.q) * P.cam.scale) * born(s.id);
   if (r <= 0.5) return;
-  ctx.save();
-  const g = ctx.createRadialGradient(a, b, r * 0.6, a, b, r * 2.5);
-  g.addColorStop(0, col + (M.dark ? '55' : '33')); g.addColorStop(1, col + '00');
-  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(a, b, r * 2.5, 0, Math.PI * 2); ctx.fill();
-  if (selected) { ctx.strokeStyle = M.sel; ctx.lineWidth = 2; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.arc(a, b, r + 6, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
-  ctx.fillStyle = col; ctx.globalAlpha = 0.95; ctx.beginPath(); ctx.arc(a, b, r, 0, Math.PI * 2); ctx.fill();
-  ctx.globalAlpha = 1; ctx.strokeStyle = mixHex(col, '#ffffff', 0.45); ctx.lineWidth = 1.5; ctx.stroke();
-  // Segno: durante l'inversione il tratto verticale si allunga o si accorcia.
-  const h = r * 0.45;
-  ctx.strokeStyle = '#ffffff'; ctx.lineWidth = Math.max(2, r * 0.13); ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(a - h, b); ctx.lineTo(a + h, b);
-  if (hue > 0.03) { ctx.moveTo(a, b - h * hue); ctx.lineTo(a, b + h * hue); }
-  ctx.stroke();
-  ctx.restore();
+  chargeDisk(P.ctx, a, b, r, hue, M, selected);
   tex(P, a, b + r + 16, `${nameOf(s)} = ${fmt(s.q, 1)}\\ \\mathrm{µC}`, { size: 16, color: M.text, halo: M.bg });
 }
 
