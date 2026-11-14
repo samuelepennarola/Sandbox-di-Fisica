@@ -171,7 +171,7 @@ export default {
       }
       P.line(createPts(pts, f), { color: 'ideal', width: 1.4, dash: [6, 6], alpha: 0.75 });
       // Le graffe arrivano alla fine del tracciato; durante il volo si attenuano per lasciare spazio al corpo.
-      const gb = Math.min(1, Math.max(0, (f - 0.55) / 0.45)), dim = S.smooth('dim', [s.t > 0 && !s.landed ? 0.3 : 0.85], 0.25)[0];
+      const gb = Math.min(1, Math.max(0, (f - 0.55) / 0.45)), dim = S.smooth('dim', [s.t > 0 && !s.landed ? 0.65 : 0.9], 0.25)[0];
       if (id.vy > 0 && id.hmax > 0.05) {
         const ax = id.vx * id.tApex;
         P.line([[ax, 0], [ax, id.hmax]], { color: 'ideal', width: 1, dash: [2, 4], alpha: 0.7 * gb * dim });
