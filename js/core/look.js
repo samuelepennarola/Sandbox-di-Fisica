@@ -2,6 +2,7 @@
 // più le animazioni leggere (polvere, scie). Stesso stile piatto con contorno e stessa palette di shapes.js,
 // che resta il kit delle sagome degli oggetti (casse, palle, ruote, persone, veicoli).
 import { palette } from './shapes.js';
+import { slabM, palette as manimPalette } from './manim.js';
 
 export const look = { t: 0, live: false, particles: [] };
 
@@ -110,42 +111,18 @@ export function drawGround(P, y0 = 0) {
 
 /* ---------------- Strutture fisse ---------------- */
 
-// Lastra di legno (piano inclinato, superficie): venature diagonali e bordo d'appoggio evidenziato.
-export function slab(P, pts, { topEdge, selected = false } = {}) {
-  const { ctx, c } = P, pal = palette(), sp = pts.map(p => P.S(p[0], p[1]));
-  const path = () => { ctx.beginPath(); sp.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); };
-  const xs = sp.map(p => p[0]), ys = sp.map(p => p[1]);
-  ctx.save();
-  ctx.lineJoin = 'round';
-  path(); ctx.fillStyle = pal.wood; ctx.fill();
-  ctx.save();
-  path(); ctx.clip();
-  ctx.strokeStyle = pal.woodDark; ctx.globalAlpha = 0.35; ctx.lineWidth = 1.5;
-  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-  ctx.beginPath();
-  for (let x = x0 - (y1 - y0); x < x1; x += 12) { ctx.moveTo(x, y1); ctx.lineTo(x + (y1 - y0) * 0.35, y0); }
-  ctx.stroke();
-  ctx.restore();
-  path(); ctx.strokeStyle = selected ? c.handle : pal.outline; ctx.lineWidth = selected ? 3 : 1.5; ctx.stroke();
-  if (topEdge) {
-    const [a, b] = topEdge.map(p => P.S(p[0], p[1]));
-    ctx.strokeStyle = pal.woodDark; ctx.lineWidth = 3.5; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
-    ctx.strokeStyle = pal.highlight; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.moveTo(a[0], a[1] + 2.5); ctx.lineTo(b[0], b[1] + 2.5); ctx.stroke();
-  }
-  ctx.restore();
-}
+// Piano inclinato o superficie, in stile diagramma: poligono pieno tenue e bordo d'appoggio marcato.
+export function slab(P, pts, opts = {}) { slabM(P, P.M ?? manimPalette(P.c), pts, opts); }
 
-// Torre di mattoni tra x0 e x1, da y0 a y1 (coordinate mondo).
+// Torre (di mattoni) tra x0 e x1, da y0 a y1 (coordinate mondo): blocco pieno con i corsi appena accennati.
 export function bricks(P, x0, x1, y0, y1) {
-  const { ctx, c } = P, pal = palette(), [a, b] = P.S(x0, y1), [cc, d] = P.S(x1, y0);
+  const { ctx } = P, M = P.M ?? manimPalette(P.c), [a, b] = P.S(x0, y1), [cc, d] = P.S(x1, y0);
   const W = cc - a, H = d - b;
   if (W < 2 || H < 2) return;
   ctx.save();
-  ctx.fillStyle = c.brick; ctx.fillRect(a, b, W, H);
+  ctx.fillStyle = M.solid; ctx.globalAlpha = M.dark ? 0.85 : 0.9; ctx.fillRect(a, b, W, H);
   ctx.beginPath(); ctx.rect(a, b, W, H); ctx.clip();
-  ctx.strokeStyle = pal.highlight; ctx.globalAlpha = 0.6; ctx.lineWidth = 1;
+  ctx.strokeStyle = M.solidEdge; ctx.globalAlpha = 0.18; ctx.lineWidth = 1;
   const rh = 9, bw = 20;
   ctx.beginPath();
   for (let y = d, row = 0; y > b; y -= rh, row++) {
@@ -155,7 +132,7 @@ export function bricks(P, x0, x1, y0, y1) {
   ctx.stroke();
   ctx.restore();
   ctx.save();
-  ctx.strokeStyle = pal.outline; ctx.lineWidth = 1.5; ctx.strokeRect(a, b, W, H);
+  ctx.strokeStyle = M.solidEdge; ctx.lineWidth = 1.4; ctx.strokeRect(a, b, W, H);
   ctx.restore();
 }
 

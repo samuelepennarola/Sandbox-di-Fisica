@@ -8,7 +8,7 @@ import { icons, applyIcons } from './core/icons.js';
 import { store } from './core/store.js';
 import { fmt } from './core/math.js';
 import { paramControl } from './core/ui.js';
-import { look, updateLook, drawSky, drawParticles } from './core/look.js';
+import { look, updateLook, drawParticles } from './core/look.js';
 import './core/pwa.js';
 import { Lasso } from './core/lasso.js';
 import { AREAS, findExperiment } from './experiments/registry.js';
@@ -411,7 +411,7 @@ function expSnapshot(exp, w, h) {
   const sim = exp.init(params);
   cm.fit(exp.view(params, sim), { top: 16, right: 16, bottom: 16, left: 16 });
   if (exp.drawBackground) exp.drawBackground(c2, cm, colors);
-  else { drawSky(c2, cm, colors); drawGrid(c2, cm, colors); }
+  else drawGrid(c2, cm, colors, false);
   const sizes = store.get('sizes.' + exp.id, {});
   const P = new Painter(c2, cm, colors);
   // Nelle istantanee niente maniglie né vettori (frecce con le loro etichette): i vettori li disegnano i ragazzi.
@@ -607,7 +607,7 @@ const pressureOf = e => (e.pointerType === 'pen' ? (e.pressure > 0 ? e.pressure 
 function render() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (app.exp.drawBackground) app.exp.drawBackground(ctx, cam, colors);
-  else { drawSky(ctx, cam, colors); drawGrid(ctx, cam, colors, !app.exp.axes); }
+  else drawGrid(ctx, cam, colors, !app.exp.axes);
   const P = new Painter(ctx, cam, colors);
   app.exp.draw(P, viewSim(), app.params, { active: app.activeHandle, api, size: sizeOf });
   const sel = selectedResizable();

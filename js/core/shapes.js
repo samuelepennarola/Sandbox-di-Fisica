@@ -1,27 +1,37 @@
+import { MANIM } from './anim.js';
+import { mixHex } from './manim.js';
+
 // Sagome piatte (flat) per rendere riconoscibili gli oggetti senza modellarli.
 // Ogni sagoma si disegna in coordinate mondo (metri, y verso l'alto) tramite il Painter:
 // le misure sono in metri, con una dimensione minima in px perché resti visibile anche a zoom basso.
 
-const PALETTE = {
-  light: {
-    outline: 'rgba(40, 32, 22, .55)', shadow: 'rgba(40, 30, 10, .16)', highlight: 'rgba(255, 255, 255, .55)',
-    red: '#e4574b', redDark: '#b63c31', blue: '#3f7fd9', blueDark: '#2b5fae', yellow: '#f2b630', yellowDark: '#c98d12',
-    green: '#4fa65a', greenDark: '#357d40', wood: '#c98b4f', woodDark: '#99652f', metal: '#97a1ae', metalDark: '#5f6875',
-    tire: '#30333a', glass: '#bfe3f5', skin: '#f0c39c', shirt: '#3f7fd9', pants: '#3d4556', hair: '#5a3b24',
-    leaf: '#6cb860', leafDark: '#468f42', trunk: '#8a5a33', grass: '#b5d99a', grassEdge: '#7fb069',
-    water: '#bfe0f2', waterLine: 'rgba(255, 255, 255, .85)', asphalt: '#70747b', asphaltEdge: '#4d5056', roadLine: '#f6f2e6',
-    ballast: '#c8bca6',
-  },
+// Palette alla Manim: tinte piene ma "velate" dal fondo (come l'opacità di riempimento di Manim), bordo più acceso.
+// Per ogni colore K ci sono K (riempimento), KDark (parti in ombra) e KEdge (bordo).
+const BASE = {
   dark: {
-    outline: 'rgba(0, 0, 0, .55)', shadow: 'rgba(0, 0, 0, .35)', highlight: 'rgba(255, 255, 255, .35)',
-    red: '#ff6b5e', redDark: '#c4463b', blue: '#5f9df2', blueDark: '#3b72c2', yellow: '#ffc94d', yellowDark: '#d39b1f',
-    green: '#5cc06a', greenDark: '#3d8c49', wood: '#d49b63', woodDark: '#a06a35', metal: '#a9b3c0', metalDark: '#6c7684',
-    tire: '#15171b', glass: '#8fc6e0', skin: '#f0c39c', shirt: '#5f9df2', pants: '#2c3342', hair: '#3b2616',
-    leaf: '#4f9e55', leafDark: '#357a3c', trunk: '#7a5030', grass: '#2f5238', grassEdge: '#4c7d56',
-    water: '#21465c', waterLine: 'rgba(190, 225, 245, .45)', asphalt: '#3a3f46', asphaltEdge: '#25292e', roadLine: '#d9d4c4',
-    ballast: '#4a4a46',
+    bg: '#0b0b0d', red: MANIM.red, blue: MANIM.blue, green: MANIM.green, yellow: '#E8C11C', wood: '#C9925A', metal: MANIM.greyB,
+    tire: MANIM.greyD, glass: MANIM.blueE, skin: '#E9B98F', shirt: MANIM.blue, pants: '#5a6170', hair: '#6b4a30',
+    leaf: MANIM.green, trunk: '#9b6b45', grass: '#4f7f45', water: MANIM.blueE, asphalt: '#3a3c42', ballast: '#55524c',
+  },
+  light: {
+    bg: '#f6f3ea', red: '#d9443a', blue: '#2b8fbf', green: '#5c9a35', yellow: '#d4a514', wood: '#b07a45', metal: '#8f97a3',
+    tire: '#3a3d44', glass: '#9fcfe6', skin: '#e9b98f', shirt: '#2b8fbf', pants: '#4a5263', hair: '#5a3b24',
+    leaf: '#5c9a35', trunk: '#8a5a33', grass: '#7fb069', water: '#3d9ccc', asphalt: '#7b7f86', ballast: '#c8bca6',
   },
 };
+const PALETTE = {};
+for (const theme of ['dark', 'light']) {
+  const B = BASE[theme], dark = theme === 'dark', pal = PALETTE[theme] = {};
+  for (const [k, v] of Object.entries(B)) {
+    if (k === 'bg') continue;
+    pal[k] = mixHex(v, B.bg, dark ? 0.3 : 0.12);
+    pal[k + 'Dark'] = mixHex(v, B.bg, dark ? 0.55 : 0.35);
+    pal[k + 'Edge'] = mixHex(v, dark ? '#ffffff' : '#000000', dark ? 0.25 : 0.3);
+  }
+  Object.assign(pal, dark
+    ? { outline: 'rgba(255, 255, 255, .45)', shadow: 'rgba(0, 0, 0, .3)', highlight: 'rgba(255, 255, 255, .2)', waterLine: 'rgba(190, 230, 250, .35)', roadLine: '#d9d4c4' }
+    : { outline: 'rgba(30, 25, 15, .5)', shadow: 'rgba(40, 30, 10, .12)', highlight: 'rgba(255, 255, 255, .5)', waterLine: 'rgba(255, 255, 255, .85)', roadLine: '#f6f2e6' });
+}
 
 export function palette() {
   return PALETTE[document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'];
@@ -59,20 +69,16 @@ const pick = (pal, c) => pal[c] ?? c;
 
 /* ---------------- Corpi semplici ---------------- */
 
-// Palla con ombreggiatura a due toni; `spin` (rad) ruota una banda per mostrare la rotazione.
+// Palla alla Manim: disco pieno con bordo acceso; `spin` (rad) ruota un raggio per mostrare la rotazione.
 export function ball(P, x, y, { r = 0.15, minPx = 11, color = 'red', spin = null } = {}) {
   local(P, x, y, 0, unitFor(P, r, minPx), (ctx, pal, lw) => {
-    const base = pick(pal, color), dark = pal[color + 'Dark'] ?? base;
-    disc(ctx, 0, 0, r); paint(ctx, dark);
-    ctx.save(); disc(ctx, 0, 0, r); ctx.clip();
-    disc(ctx, -r * 0.18, r * 0.18, r * 0.92); paint(ctx, base);
+    const edge = pal[color + 'Edge'] ?? pal.outline;
+    disc(ctx, 0, 0, r); paint(ctx, pick(pal, color), edge, 2 * lw);
     if (spin != null) {
-      ctx.rotate(spin);
-      ctx.fillStyle = pal.highlight; ctx.fillRect(-r, -r * 0.14, 2 * r, r * 0.28);
+      ctx.strokeStyle = edge; ctx.lineWidth = 1.6 * lw;
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(spin) * r, Math.sin(spin) * r); ctx.stroke();
+      disc(ctx, 0, 0, 2.2 * lw); paint(ctx, edge);
     }
-    ctx.restore();
-    disc(ctx, -r * 0.38, r * 0.4, r * 0.2); paint(ctx, pal.highlight);
-    disc(ctx, 0, 0, r); paint(ctx, null, pal.outline, 1.5 * lw);
   });
 }
 
@@ -85,30 +91,30 @@ export function groundShadow(P, x, yGround, height, { w = 0.5, minPx = 10 } = {}
   });
 }
 
-// Cassa di legno centrata in (x, y), lati w × h, ruotata di angle.
-export function crate(P, x, y, { w = 1, h = 0.7, angle = 0, minPx = 26, color = 'wood' } = {}) {
+// Corpo rigido (cassa) centrato in (x, y), lati w × h, ruotato di angle: rettangolo pieno con bordo acceso.
+export function crate(P, x, y, { w = 1, h = 0.7, angle = 0, minPx = 26, color = 'blue' } = {}) {
   local(P, x, y, angle, unitFor(P, Math.max(w, h), minPx), (ctx, pal, lw) => {
-    const base = pick(pal, color), dark = pal[color + 'Dark'] ?? base;
-    const m = Math.min(w, h) * 0.12;
-    rr(ctx, -w / 2, -h / 2, w, h, m * 0.6); paint(ctx, base, pal.outline, 1.5 * lw);
-    ctx.strokeStyle = dark; ctx.lineWidth = Math.max(m * 0.55, 1.5 * lw);
-    rr(ctx, -w / 2 + m, -h / 2 + m, w - 2 * m, h - 2 * m, m * 0.3); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(-w / 2 + m, -h / 2 + m); ctx.lineTo(w / 2 - m, h / 2 - m); ctx.stroke();
+    rr(ctx, -w / 2, -h / 2, w, h, Math.min(w, h) * 0.08); paint(ctx, pick(pal, color), pal[color + 'Edge'] ?? pal.outline, 2 * lw);
   });
 }
 
-// Ruota con cerchione e raggi; angle = rotazione accumulata (rad).
+// Ruota alla Manim: pneumatico a contorno, disco velato e raggi sottili; angle = rotazione accumulata (rad).
 export function wheel(P, x, y, { r = 0.35, angle = 0, spokes = 8, minPx = 14, tire = 0.18 } = {}) {
   local(P, x, y, angle, unitFor(P, r, minPx), (ctx, pal, lw) => {
-    disc(ctx, 0, 0, r); paint(ctx, pal.tire, pal.outline, 1.5 * lw);
-    disc(ctx, 0, 0, r * (1 - tire)); paint(ctx, pal.metal);
-    ctx.strokeStyle = pal.metalDark; ctx.lineWidth = Math.max(r * 0.06, 1.5 * lw);
+    const ri = r * (1 - tire);
+    ctx.globalAlpha = 0.5; disc(ctx, 0, 0, r); ctx.arc(0, 0, ri, 0, Math.PI * 2, true); paint(ctx, pal.tire);
+    ctx.globalAlpha = 0.15; disc(ctx, 0, 0, ri); paint(ctx, pal.metalEdge);
+    ctx.globalAlpha = 1;
+    disc(ctx, 0, 0, r); paint(ctx, null, pal.metalEdge, 2 * lw);
+    disc(ctx, 0, 0, ri); paint(ctx, null, pal.metalEdge, 1.2 * lw);
+    ctx.strokeStyle = pal.metalEdge; ctx.lineWidth = 1.2 * lw; ctx.globalAlpha = 0.75;
     ctx.beginPath();
-    for (let i = 0; i < spokes; i++) { const a = i * 2 * Math.PI / spokes; ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * r * (1 - tire), Math.sin(a) * r * (1 - tire)); }
+    for (let i = 0; i < spokes; i++) { const a = i * 2 * Math.PI / spokes; ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * ri, Math.sin(a) * ri); }
     ctx.stroke();
-    disc(ctx, 0, 0, r * 0.16); paint(ctx, pal.metalDark);
+    ctx.globalAlpha = 1;
+    disc(ctx, 0, 0, Math.max(r * 0.08, 3 * lw)); paint(ctx, pal.metalEdge);
     // Valvola colorata: rende visibile la rotazione.
-    disc(ctx, r * (1 - tire * 0.5), 0, r * 0.07); paint(ctx, pal.yellow);
+    disc(ctx, r * (1 - tire * 0.5), 0, Math.max(r * 0.05, 2.5 * lw)); paint(ctx, pal.yellowEdge);
   });
 }
 
@@ -225,43 +231,46 @@ export function flatcar(P, x, { len = 12, deck = 1, color = 'blue', rot = 0, min
 
 /* ---------------- Ambienti ---------------- */
 
-// Albero visto dall'alto (chioma a grappolo) o di lato (tronco e chioma).
+// Albero visto dall'alto (chioma velata con il bordo) o di lato (tronco e chioma).
 export function treeTop(P, x, y, { r = 1, minPx = 14 } = {}) {
   local(P, x, y, 0, unitFor(P, r, minPx), (ctx, pal, lw) => {
-    disc(ctx, r * 0.15, -r * 0.15, r); paint(ctx, pal.shadow);
-    disc(ctx, 0, 0, r); paint(ctx, pal.leafDark, pal.outline, 1.2 * lw);
-    disc(ctx, -r * 0.25, r * 0.22, r * 0.62); paint(ctx, pal.leaf);
-    disc(ctx, r * 0.35, r * 0.1, r * 0.35); paint(ctx, pal.leaf);
+    ctx.globalAlpha = 0.55; disc(ctx, 0, 0, r); paint(ctx, pal.leafDark);
+    ctx.globalAlpha = 1; disc(ctx, 0, 0, r); paint(ctx, null, pal.leafEdge, 1.5 * lw);
+    disc(ctx, -r * 0.25, r * 0.22, r * 0.5); paint(ctx, null, pal.leafEdge, 1 * lw);
   });
 }
 export function treeSide(P, x, y, { h = 4, minPx = 30 } = {}) {
   local(P, x, y, 0, unitFor(P, h, minPx), (ctx, pal, lw) => {
-    rr(ctx, -h * 0.05, 0, h * 0.1, h * 0.5, h * 0.03); paint(ctx, pal.trunk, pal.outline, 1.2 * lw);
-    for (const [cx, cy, cr, c] of [[0, 0.62, 0.3, 'leafDark'], [-0.17, 0.55, 0.2, 'leaf'], [0.16, 0.72, 0.18, 'leaf']]) {
-      disc(ctx, cx * h, cy * h, cr * h); paint(ctx, pal[c], c === 'leafDark' ? pal.outline : null, 1.2 * lw);
+    rr(ctx, -h * 0.04, 0, h * 0.08, h * 0.45, h * 0.02); paint(ctx, pal.trunkDark, pal.trunkEdge, 1.5 * lw);
+    for (const [cx, cy, cr] of [[0, 0.62, 0.3], [-0.17, 0.55, 0.2], [0.16, 0.72, 0.18]]) {
+      ctx.globalAlpha = 0.45; disc(ctx, cx * h, cy * h, cr * h); paint(ctx, pal.leafDark);
+      ctx.globalAlpha = 1; disc(ctx, cx * h, cy * h, cr * h); paint(ctx, null, pal.leafEdge, 1.5 * lw);
     }
   });
 }
 
 // Fascia d'acqua tra y0 e y1 con increspature che scorrono: phase in metri (spostamento dell'acqua).
+// Velata come un riempimento di Manim: sotto si vede ancora la griglia.
 export function water(P, y0, y1, { phase = 0 } = {}) {
-  const pal = palette(), b = P.cam.bounds();
-  P.poly([[b.x0, y0], [b.x1, y0], [b.x1, y1], [b.x0, y1]], { fill: pal.water });
+  const pal = palette(), b = P.cam.bounds(), dark = document.documentElement.dataset.theme === 'dark';
+  P.poly([[b.x0, y0], [b.x1, y0], [b.x1, y1], [b.x0, y1]], { fill: pal.waterEdge, alpha: dark ? 0.16 : 0.22 });
+  P.line([[b.x0, y0], [b.x1, y0]], { color: pal.waterEdge, width: 1.5, alpha: 0.8 });
+  P.line([[b.x0, y1], [b.x1, y1]], { color: pal.waterEdge, width: 1.5, alpha: 0.8 });
   const H = y1 - y0, dx = Math.max(H / 4, 30 / P.cam.scale), rows = 5;
   for (let i = 0; i < rows; i++) {
     const yy = y0 + H * (i + 0.5) / rows, sh = phase + (i % 2) * dx / 2;
     for (let u = Math.floor((b.x0 - sh) / dx) * dx; u <= b.x1 - sh; u += dx) {
       const xx = u + sh, w = dx * 0.28, a = H * 0.02;
-      P.line([[xx - w, yy], [xx - w / 2, yy + a], [xx, yy], [xx + w / 2, yy + a], [xx + w, yy]], { color: pal.waterLine, width: 2 });
+      P.line([[xx - w, yy], [xx - w / 2, yy + a], [xx, yy], [xx + w / 2, yy + a], [xx + w, yy]], { color: pal.waterEdge, width: 1.5, alpha: 0.45 });
     }
   }
 }
 
 // Fascia d'erba (riva) tra y0 e y1; edge = quota del bordo da evidenziare.
 export function grass(P, y0, y1, edge) {
-  const pal = palette(), b = P.cam.bounds();
-  P.poly([[b.x0, y0], [b.x1, y0], [b.x1, y1], [b.x0, y1]], { fill: pal.grass });
-  if (edge != null) P.line([[b.x0, edge], [b.x1, edge]], { color: pal.grassEdge, width: 3 });
+  const pal = palette(), b = P.cam.bounds(), dark = document.documentElement.dataset.theme === 'dark';
+  P.poly([[b.x0, y0], [b.x1, y0], [b.x1, y1], [b.x0, y1]], { fill: pal.grassEdge, alpha: dark ? 0.1 : 0.16 });
+  if (edge != null) P.line([[b.x0, edge], [b.x1, edge]], { color: pal.grassEdge, width: 2 });
 }
 
 // Binario a y = 0 con traversine ogni `gap` m; offset sposta le traversine (metri).
@@ -278,32 +287,35 @@ export function rails(P, { offset = 0, gap = 0.8 } = {}) {
   P.line([[b.x0, 0.02], [b.x1, 0.02]], { color: pal.metalDark, width: Math.max(3, 0.06 * P.cam.scale) });
 }
 
-// Anello di strada centrato in (cx, cy) con raggio medio R e larghezza w (metri).
+// Anello di strada centrato in (cx, cy) con raggio medio R e larghezza w (metri): fascia velata e mezzeria tratteggiata.
 export function roadRing(P, cx, cy, R, w) {
   const pal = palette(), ctx = P.ctx, [a, b] = P.S(cx, cy), s = P.cam.scale;
   const ro = (R + w / 2) * s, ri = Math.max(0, R - w / 2) * s;
   ctx.save();
   ctx.beginPath(); ctx.arc(a, b, ro, 0, Math.PI * 2); ctx.arc(a, b, ri, 0, Math.PI * 2, true);
-  ctx.fillStyle = pal.asphalt; ctx.fill();
-  ctx.strokeStyle = pal.roadLine; ctx.lineWidth = Math.max(2, 0.12 * s);
-  for (const r of [ro - ctx.lineWidth, ri + ctx.lineWidth]) if (r > 0) { ctx.beginPath(); ctx.arc(a, b, r, 0, Math.PI * 2); ctx.stroke(); }
+  ctx.fillStyle = pal.asphaltEdge; ctx.globalAlpha = 0.25; ctx.fill();
+  ctx.globalAlpha = 1; ctx.strokeStyle = pal.asphaltEdge; ctx.lineWidth = 1.5;
+  for (const r of [ro, ri]) if (r > 0) { ctx.beginPath(); ctx.arc(a, b, r, 0, Math.PI * 2); ctx.stroke(); }
+  ctx.strokeStyle = pal.roadLine; ctx.globalAlpha = 0.6; ctx.lineWidth = 1.5;
   ctx.setLineDash([Math.max(8, 1.5 * s), Math.max(8, 1.5 * s)]);
   ctx.beginPath(); ctx.arc(a, b, R * s, 0, Math.PI * 2); ctx.stroke();
   ctx.restore();
 }
 
 // Piattaforma di giostra vista dall'alto, ruotata di angle; il bordo esterno è a raggio R.
+// Spicchi velati alternati (rosso e giallo di Manim) con i raggi e il bordo marcati.
 export function carousel(P, cx, cy, { R = 4, angle = 0, sectors = 8 } = {}) {
   local(P, cx, cy, angle, P.cam.scale, (ctx, pal, lw) => {
     for (let i = 0; i < sectors; i++) {
       ctx.beginPath(); ctx.moveTo(0, 0);
       ctx.arc(0, 0, R, i * 2 * Math.PI / sectors, (i + 1) * 2 * Math.PI / sectors); ctx.closePath();
-      paint(ctx, i % 2 ? pal.yellow : pal.red);
+      ctx.globalAlpha = 0.2; paint(ctx, i % 2 ? pal.yellowEdge : pal.redEdge);
     }
-    disc(ctx, 0, 0, R); paint(ctx, null, pal.outline, 2 * lw);
-    ctx.strokeStyle = pal.highlight; ctx.lineWidth = R * 0.04;
-    disc(ctx, 0, 0, R * 0.93); ctx.stroke();
-    disc(ctx, 0, 0, R * 0.14); paint(ctx, pal.metal, pal.outline, 1.5 * lw);
-    disc(ctx, 0, 0, R * 0.06); paint(ctx, pal.metalDark);
+    ctx.globalAlpha = 0.6; ctx.strokeStyle = pal.outline; ctx.lineWidth = 1 * lw; ctx.beginPath();
+    for (let i = 0; i < sectors; i++) { const t = i * 2 * Math.PI / sectors; ctx.moveTo(0, 0); ctx.lineTo(Math.cos(t) * R, Math.sin(t) * R); }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    disc(ctx, 0, 0, R); paint(ctx, null, pal.redEdge, 2 * lw);
+    disc(ctx, 0, 0, R * 0.12); paint(ctx, pal.metalDark, pal.metalEdge, 1.5 * lw);
   });
 }

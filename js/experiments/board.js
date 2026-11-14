@@ -140,14 +140,16 @@ export default {
   },
 
   drawBackground(ctx, cam, c) {
-    ctx.fillStyle = c.paper;
+    // Foglio: carta nel tema chiaro, il nero di Manim nel tema scuro (quadretti in blu tenue, come il NumberPlane).
+    const dark = document.documentElement.dataset.theme === 'dark';
+    ctx.fillStyle = dark ? '#0b0b0d' : c.paper;
     ctx.fillRect(0, 0, cam.w, cam.h);
     if (B.bg !== 'grid') return;
     let step = Q;
     while (step * cam.scale < 9) step *= 2;   // da lontano i quadretti si diradano invece di diventare una macchia
     const { x0, y0, x1, y1 } = cam.bounds();
     ctx.save();
-    ctx.strokeStyle = c.paperLine; ctx.lineWidth = 1;
+    ctx.strokeStyle = dark ? 'rgba(41, 171, 202, .16)' : c.paperLine; ctx.lineWidth = 1;
     ctx.beginPath();
     for (let x = Math.ceil(x0 / step) * step; x <= x1; x += step) { const [a] = cam.toScreen(x, 0); ctx.moveTo(Math.round(a) + .5, 0); ctx.lineTo(Math.round(a) + .5, cam.h); }
     for (let y = Math.ceil(y0 / step) * step; y <= y1; y += step) { const [, b] = cam.toScreen(0, y); ctx.moveTo(0, Math.round(b) + .5); ctx.lineTo(cam.w, Math.round(b) + .5); }
@@ -168,7 +170,7 @@ export default {
       if (e.ready) ctx.drawImage(e.img, a, b, W, H);
       ctx.strokeStyle = P.c.gridMajor; ctx.lineWidth = 1; ctx.strokeRect(a + .5, b + .5, W - 1, H - 1);
       ctx.restore();
-      if (H > 60) P.textS(a + 6, b + H + 12, it.title, { color: 'muted', size: 12, weight: 600 });
+      if (H > 60) P.textS(a + 6, b + H + 12, it.title, { color: 'muted', size: 12, weight: 600, ui: true });
     }
   },
 

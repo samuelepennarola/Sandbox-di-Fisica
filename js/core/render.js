@@ -1,5 +1,5 @@
 import { niceStep } from './math.js';
-import { drawGround } from './look.js';
+import { palette, drawPlaneGrid, manimColors, arrowS, arrowLabel, vecLabel, tex, textToTeX, groundM } from './manim.js';
 
 const COLOR_KEYS = ['bg', 'grid', 'gridMajor', 'axis', 'text', 'muted', 'ink', 'inkRed', 'inkBlue', 'inkGreen',
   'vel', 'acc', 'weight', 'normal', 'friction', 'ground', 'groundEdge', 'body', 'bodyEdge', 'ideal', 'handle',
@@ -13,8 +13,9 @@ export function readColors() {
 }
 
 // Disegno in coordinate mondo: le dimensioni grafiche (spessori, font, raggi) sono in px.
+// Stile alla 3Blue1Brown per tutta l'app: palette di Manim, frecce con punta piena, scritte in LaTeX classico.
 export class Painter {
-  constructor(ctx, cam, colors) { this.ctx = ctx; this.cam = cam; this.c = colors; }
+  constructor(ctx, cam, colors) { this.ctx = ctx; this.cam = cam; this.M = palette(colors); this.c = manimColors(colors, this.M); }
 
   col(k) { return this.c[k] ?? k; }
   S(x, y) { return this.cam.toScreen(x, y); }
@@ -68,39 +69,16 @@ export class Painter {
   }
 
   arrow(x0, y0, x1, y1, { color = 'vel', width = 3.5, label, dash = null, alpha = 1, head = 13 } = {}) {
-    const ctx = this.ctx;
-    const [a, b] = this.S(x0, y0), [c, d] = this.S(x1, y1);
-    const len = Math.hypot(c - a, d - b);
-    if (len < 1.5) return;
-    const ux = (c - a) / len, uy = (d - b) / len, h = Math.min(head, len * 0.6);
-    const col = this.col(color);
-    const headPath = () => {
-      ctx.beginPath();
-      ctx.moveTo(c, d);
-      ctx.lineTo(c - ux * h - uy * h * 0.42, d - uy * h + ux * h * 0.42);
-      ctx.lineTo(c - ux * h + uy * h * 0.42, d - uy * h - ux * h * 0.42);
-      ctx.closePath();
-    };
-    ctx.save();
-    ctx.globalAlpha = alpha; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    // Alone chiaro/scuro sotto la freccia: la stacca dagli oggetti colorati della scena.
-    ctx.strokeStyle = this.c.bg; ctx.globalAlpha = alpha * 0.75;
-    ctx.lineWidth = width + 4;
-    ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(c - ux * h * 0.7, d - uy * h * 0.7); ctx.stroke();
-    headPath(); ctx.lineWidth = 4; ctx.stroke();
-    ctx.globalAlpha = alpha;
-    ctx.strokeStyle = ctx.fillStyle = col; ctx.lineWidth = width;
-    if (dash) ctx.setLineDash(dash);
-    ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(c - ux * h * 0.7, d - uy * h * 0.7); ctx.stroke();
-    ctx.setLineDash([]);
-    headPath(); ctx.fill();
-    ctx.restore();
-    if (label && len > 18) this.textS(c + ux * 16, d + uy * 16, label, { color, align: 'center', weight: 700 });
+    const [a, b] = this.S(x0, y0), [c, d] = this.S(x1, y1), col = this.col(color);
+    const tip = arrowS(this.ctx, a, b, c, d, col, { width: Math.max(2, width * 0.8), tip: Math.max(10, head + 1), alpha, halo: this.M.bg, dash });
+    if (tip && label && tip.len > 18) arrowLabel(this, tip, vecLabel(label), col, this.M, alpha);
   }
 
   text(x, y, str, opts) { const [a, b] = this.S(x, y); this.textS(a, b, str, opts); }
 
-  textS(a, b, str, { color = 'text', size = 14, align = 'left', baseline = 'middle', weight = 600, dx = 0, dy = 0, italic = false } = {}) {
+  // Scritte della scena in LaTeX classico; ui: true per le didascalie nel font dell'interfaccia.
+  textS(a, b, str, { color = 'text', size = 14, align = 'left', baseline = 'middle', weight = 600, dx = 0, dy = 0, italic = false, ui = false } = {}) {
+    if (!ui) { tex(this, a + dx, b + dy, textToTeX(str), { size: size + 3, color: this.col(color), align, halo: this.M.bg }); return; }
     const ctx = this.ctx;
     ctx.save();
     ctx.font = `${italic ? 'italic ' : ''}${weight} ${size}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
@@ -147,43 +125,33 @@ export class Painter {
     this.circle(x, y, 3.5, { fill: 'handle' });
   }
 
-  // Suolo: tutto ciò che sta sotto y = y0 (prato e terra del kit grafico).
-  ground(y0 = 0) { drawGround(this, y0); }
+  // Suolo: linea netta con il tratteggio obliquo sotto, come nei diagrammi.
+  ground(y0 = 0) { groundM(this, this.M, y0); }
 }
 
+// Fondo della scena alla Manim: quasi nero (o carta) con la griglia del NumberPlane.
+// labels: numeri delle linee principali lungo i bordi sinistro e inferiore dell'area libera.
 export function drawGrid(ctx, cam, c, labels = true) {
-  const step = niceStep(44 / cam.scale);
-  const major = step * 5;
-  const { x0, y0, x1, y1 } = cam.bounds();
-  const lines = (s, color, width) => {
-    ctx.strokeStyle = color; ctx.lineWidth = width;
-    ctx.beginPath();
-    for (let x = Math.ceil(x0 / s) * s; x <= x1; x += s) { const [a] = cam.toScreen(x, 0); ctx.moveTo(Math.round(a) + .5, 0); ctx.lineTo(Math.round(a) + .5, cam.h); }
-    for (let y = Math.ceil(y0 / s) * s; y <= y1; y += s) { const [, b] = cam.toScreen(0, y); ctx.moveTo(0, Math.round(b) + .5); ctx.lineTo(cam.w, Math.round(b) + .5); }
-    ctx.stroke();
-  };
-  ctx.save();
-  lines(step, c.grid, 1);
-  lines(major, c.gridMajor, 1);
-
-  if (!labels) { ctx.restore(); return; }
-  // Etichette delle linee principali, lungo i bordi sinistro e inferiore.
-  ctx.font = '500 11px -apple-system, BlinkMacSystemFont, sans-serif';
-  ctx.fillStyle = c.muted;
-  const dec = Math.max(0, -Math.floor(Math.log10(major) + 1e-9));
-  const lab = v => (Math.abs(v) < 1e-9 ? 0 : v).toFixed(dec).replace('.', ',');
-  ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-  for (let x = Math.ceil(x0 / major) * major; x <= x1; x += major) {
+  const M = palette(c);
+  ctx.fillStyle = M.bg;
+  ctx.fillRect(0, 0, cam.w, cam.h);
+  drawPlaneGrid(ctx, cam, M);
+  if (!labels) return;
+  const pad = cam.padFn?.() ?? { top: 70, right: 20, bottom: 20, left: 20 };
+  const step = niceStep(80 / cam.scale), { x0, y0, x1, y1 } = cam.bounds();
+  const dec = Math.max(0, -Math.floor(Math.log10(step) + 1e-9));
+  const lab = v => { const u = Math.abs(v) < 1e-9 ? 0 : v; return (u < 0 ? '−' : '') + Math.abs(u).toFixed(dec).replace('.', ',') + '\\ \\mathrm{m}'; };
+  const P = { ctx };
+  for (let x = Math.ceil(x0 / step) * step; x <= x1; x += step) {
     const [a] = cam.toScreen(x, 0);
-    ctx.fillText(lab(x) + ' m', a, cam.h - 6);
+    if (a < pad.left + 24 || a > cam.w - pad.right - 24) continue;
+    tex(P, a, cam.h - pad.bottom - 10, lab(x), { size: 13, color: M.muted, halo: M.bg, alpha: 0.85 });
   }
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  for (let y = Math.ceil(y0 / major) * major; y <= y1; y += major) {
+  for (let y = Math.ceil(y0 / step) * step; y <= y1; y += step) {
     const [, b] = cam.toScreen(0, y);
-    if (b < 70 || b > cam.h - 24) continue;
-    ctx.fillText(lab(y) + ' m', 6, b - 8);
+    if (b < pad.top + 16 || b > cam.h - pad.bottom - 30) continue;
+    tex(P, pad.left + 8, b - 9, lab(y), { size: 13, color: M.muted, halo: M.bg, align: 'left', alpha: 0.85 });
   }
-  ctx.restore();
 }
 
 // Assi cartesiani con l'origine in (0, 0), tacche numerate e frecce con il nome dell'asse.

@@ -443,29 +443,43 @@ export function anchorM(P, M, x, y, { selected = false } = {}) {
 
 /* ---------------- Painter con lo stile di Manim ---------------- */
 
+// Etichetta oltre la punta di una freccia: se è lunga si allinea dal lato verso cui punta la freccia.
+export function arrowLabel(P, tip, src, col, M, alpha = 1) {
+  const w = texWidth(P, src, 17), d = 17 + Math.max(0, w / 2 - 8) * Math.abs(tip.ux);
+  tex(P, tip.x + tip.ux * d, tip.y + tip.uy * 17, src, { size: 17, color: col, halo: M.bg, alpha, align: 'center' });
+}
+
 // Etichetta di un vettore dell'app ("P", "F₁₂", "qE", "fs") in TeX: \vec P, \vec F_{12}, q\vec E, \vec f_s.
 export function vecLabel(l) {
   if (!l) return '';
   l = l.replace(/[₀-₉]+/g, m => [...m].map(c => '₀₁₂₃₄₅₆₇₈₉'.indexOf(c)).join(''));
   if (/^q[A-Z]$/.test(l)) return `q\\vec ${l[1]}`;
-  const m = /^([A-Za-z])([A-Za-z0-9]*)$/.exec(l);
-  if (!m) return l;
-  return `\\vec ${m[1]}` + (m[2] ? `_{${m[2]}}` : '');
+  const m = /^([−-]?)([A-Za-z])(′?)([A-Za-z0-9∥⊥]*)$/.exec(l);
+  if (!m) return textToTeX(l);
+  return `${m[1]}\\vec ${m[2]}${m[3]}` + (m[4] ? `_{${m[4]}}` : '');
 }
-// Testo semplice dell'app in TeX: l'unità dopo il numero diventa in tondo ("r = 2,00 m" → r = 2,00 \mathrm{m}).
-export const textToTeX = s => String(s).replace(/(\d)\s+([A-Za-zµ°/²³·]+)$/, '$1\\ \\mathrm{$2}').replace(/·/g, '\\cdot ');
+// Testo semplice dell'app in TeX: l'unità dopo il numero diventa in tondo ("r = 2,00 m" → r = 2,00 \mathrm{m});
+// le parole (almeno tre lettere, con gli spazi tra loro) restano in tondo: "−A (apparente)", "in equilibrio".
+export function textToTeX(s) {
+  s = String(s);
+  if (s.includes('\\')) return s;
+  const W = '[A-Za-zÀ-ÿ]';
+  s = s.replace(new RegExp(`${W}{2,}(?:\\s+${W}{2,})*`, 'g'), run => (/[A-Za-zÀ-ÿ]{3,}/.test(run) ? `\\mathrm{${run}}` : run));
+  s = s.replace(/(\d)\s+([A-Za-zµ°/²³·]+)$/, '$1\\ \\mathrm{$2}');
+  return s.replace(/·/g, '\\cdot ');
+}
+
+// Colori dell'app sostituiti da quelli di Manim (vettori, testo, fondo, maniglie).
+export const manimColors = (c, M) => ({ ...c, bg: M.bg, text: M.text, muted: M.muted, handle: M.sel, axis: M.axis, ideal: M.muted, ...M.vec });
 
 // Painter che disegna frecce e scritte alla Manim: le chiamate esistenti (P.arrow, P.textS, P.arc) restano uguali.
 // grow(opts) può restituire il fattore di crescita di una freccia (transizioni).
 export function manimPainter(P0, M, PainterClass, { grow = () => 1 } = {}) {
-  const P = new PainterClass(P0.ctx, P0.cam, { ...P0.c, bg: M.bg, text: M.text, muted: M.muted, handle: M.sel, axis: M.axis, ...M.vec });
+  const P = new PainterClass(P0.ctx, P0.cam, manimColors(P0.c, M));
   P.arrow = (x0, y0, x1, y1, { color = 'vel', width = 3.5, label, dash = null, alpha = 1, head = 13 } = {}) => {
     const [a, b] = P.S(x0, y0), [c, d] = P.S(x1, y1), col = M.vec[color] ?? P.col(color), g = grow({ color, label });
     const tip = arrowS(P.ctx, a, b, c, d, col, { width: Math.max(2, width * 0.8), tip: Math.max(10, head + 1), grow: g, alpha, halo: M.bg, dash });
-    if (tip && label && tip.len > 18) tex(P, tip.x + tip.ux * 17, tip.y + tip.uy * 17, vecLabel(label), { size: 17, color: col, halo: M.bg, alpha: alpha * g });
-  };
-  P.textS = (a, b, str, { color = 'text', size = 14, align = 'left', dx = 0, dy = 0 } = {}) => {
-    tex(P, a + dx, b + dy, textToTeX(str), { size: size + 3, color: P.col(color), align, halo: M.bg });
+    if (tip && label && tip.len > 18) arrowLabel(P, tip, vecLabel(label), col, M, alpha * g);
   };
   return P;
 }
