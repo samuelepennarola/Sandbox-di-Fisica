@@ -5,12 +5,13 @@
 // (avvio istantaneo, anche senza connessione). Quando si pubblica una nuova versione, il nuovo service worker
 // scarica i file aggiornati in sottofondo e aspetta che l'utente tocchi «Aggiorna».
 
-const VERSION = 'd31b630b48';
+const VERSION = 'c3ce946876';
 const FILES = [
   "./",
   "css/style.css",
   "icons/apple-touch-icon.png",
   "icons/icon-512.png",
+  "icons/icon-full.svg",
   "icons/icon.svg",
   "index.html",
   "js/core/anim.js",
