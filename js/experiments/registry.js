@@ -9,12 +9,14 @@ import spring from './spring.js';
 import pendulum from './pendulum.js';
 import string from './string.js';
 import sources from './sources.js';
+import collision1d from './collision1d.js';
+import collision2d from './collision2d.js';
 
 // Mappa dei moduli. Le voci senza esperimenti compaiono come "in arrivo".
 export const AREAS = [
   { id: 'lab', title: 'Laboratorio', experiments: [board, builder], soon: [] },
   { id: 'meccanica', title: 'Meccanica del punto', experiments: [projectile, incline, circular, relative], soon: [] },
-  { id: 'sistemi', title: 'Sistemi e urti', experiments: [], soon: ['Urti 1D e 2D', 'Centro di massa', 'Carrucole e funi'] },
+  { id: 'sistemi', title: 'Sistemi e urti', experiments: [collision1d, collision2d], soon: ['Centro di massa', 'Carrucole e funi'] },
   { id: 'rigido', title: 'Corpo rigido', experiments: [], soon: ['Momenti e leve', 'Rotolamento'] },
   { id: 'oscillazioni', title: 'Oscillazioni e onde', experiments: [spring, pendulum, string, sources], soon: [] },
   { id: 'gravitazione', title: 'Gravitazione', experiments: [], soon: ['Orbite e Keplero', 'Tre corpi'] },

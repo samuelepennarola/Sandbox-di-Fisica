@@ -49,7 +49,7 @@ export function unitView(u) {
 
 // Decimali da mostrare dopo la conversione: le cifre significative restano le stesse (3,25 m → 325 cm).
 export const unitDec = (d, f) => Math.max(0, Math.min(6, d + Math.round(-Math.log10(f))));
-const texUnit = name => `\\mathrm{${name.replace(/²/g, '^2').replace(/³/g, '^3').replace(/[μµ]/g, '\\mu ')}}`;
+const texUnit = name => `\\mathrm{${name.replace(/²/g, '^2').replace(/³/g, '^3').replace(/[μµ]/g, '\\mu ').replace(/·/g, '\\cdot ')}}`;
 
 // Per le formule (KaTeX e mini-TeX della scena): numero convertito, con o senza unità.
 //   uq('m', 3.25)  → "3{,}25\ \mathrm{m}"  oppure "325\ \mathrm{cm}";   un('m/s', v) → solo il numero;   uname('m') → l'unità.

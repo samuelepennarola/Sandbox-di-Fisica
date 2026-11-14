@@ -783,7 +783,8 @@ function drawFrame(ts) {
   const dt = Math.min(0.05, (ts - lastTs) / 1000 || 0);
   lastTs = ts;
   if (app.sweep) stepSweep(dt);
-  else if (app.running) advance(dt * app.speed);
+  // exp.timeScale: un esperimento può rallentare il proprio tempo (per esempio il rallentatore negli urti).
+  else if (app.running) advance(dt * app.speed * (app.exp.timeScale?.(app.sim, app.params) ?? 1));
   // Le animazioni decorative (polvere) nascono solo mentre la simulazione scorre dal vivo.
   look.live = app.running && app.view == null;
   updateLook(dt * (app.running ? app.speed : 1));
@@ -1329,7 +1330,7 @@ function stepFrame() {
   app.running = false; updatePlayBtn();
   if (app.view != null && app.view < app.history.length - 1) { app.view++; return; }
   commitView();
-  if (!isDone()) advance(1 / 30);
+  if (!isDone()) advance(1 / 30 * (app.exp.timeScale?.(app.sim, app.params) ?? 1));
 }
 
 $('menuBtn').onclick = () => toggleDrawer(true);
