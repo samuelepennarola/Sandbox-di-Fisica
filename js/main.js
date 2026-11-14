@@ -727,7 +727,17 @@ function updateTimeline() {
 }
 
 let lastTs = 0, lastFormulaTs = 0, lastPinTs = 0, lastViewShown = null;
+// Un errore in un fotogramma non deve fermare il ciclo: altrimenti la scena si congela e sembra che il tocco
+// non funzioni più (pinch e trascinamenti cambiano la vista, ma nessuno la ridisegna).
+let frameErr = '';
 function frame(ts) {
+  try { drawFrame(ts); } catch (err) {
+    const msg = String(err?.stack || err);
+    if (msg !== frameErr) { frameErr = msg; console.error(err); window.fisicaDebug?.(`ERRORE ${String(err?.message || err).slice(0, 60)}`); }
+  }
+  requestAnimationFrame(frame);
+}
+function drawFrame(ts) {
   const dt = Math.min(0.05, (ts - lastTs) / 1000 || 0);
   lastTs = ts;
   if (app.sweep) stepSweep(dt);
@@ -744,7 +754,6 @@ function frame(ts) {
     renderFormulas(); lastFormulaTs = ts; app.formulasDirty = false;
   }
   if (ts - lastPinTs > 150 && (pinsBox.children.length || pinList().length)) { updatePins(); lastPinTs = ts; }
-  requestAnimationFrame(frame);
 }
 
 /* ---------------- Input: Pencil scrive, dito manipola ---------------- */
@@ -1341,6 +1350,7 @@ if (new URLSearchParams(location.search).has('debug')) {
       + (palm.why ? `  ignorato: ${palm.why}` : '') + '\n' + log.join('\n');
   };
   const push = line => { log.unshift(`${((performance.now() - t0) / 1000).toFixed(2)}s ${line}`); log.length = Math.min(log.length, 18); show(); };
+  window.fisicaDebug = push;   // errori del ciclo di disegno nel riquadro di debug
   const name = t => String(t.id || t.className?.baseVal || t.className || t.tagName).slice(0, 16);
   for (const type of ['pointerdown', 'pointerup', 'pointercancel', 'click']) {
     addEventListener(type, e => {
