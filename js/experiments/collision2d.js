@@ -2,17 +2,22 @@ import { rk4, tn, clamp } from '../core/math.js';
 import { ballM, tex } from '../core/manim.js';
 import { trail } from '../core/look.js';
 import { uq } from '../core/units.js';
-import { Stage, C, arrowPx, arrowMag, angleMark, symVal, degTeX, brace } from '../core/annot.js';
+import { Stage, C, arrowPx, arrowMag, angleMark, symVal, degTeX } from '../core/annot.js';
 import { contact, slowmo, momentumRows, kBars, panelBg } from '../core/collide.js';
 
 const stage = new Stage();
-const X1 = -4;                                 // il disco 1 parte da (X1, 0) verso destra; il 2 è fermo in (0, b)
 const V = { min: 34, max: 120 };
 const TC = 0.06, TRAIL_DT = 1 / 60;
 let SC = 50;
 
 const radius = m => 0.3 * Math.cbrt(m);
-const vref = p => Math.max(Math.abs(p.v1), 0.5);
+const VREF = 6;                               // m/s che danno la freccia più lunga
+const deg = Math.PI / 180;
+// Velocità iniziali in componenti, dai parametri (modulo e direzione in gradi).
+const vel0 = p => [p.v1 * Math.cos(p.a1 * deg), p.v1 * Math.sin(p.a1 * deg), p.v2 * Math.cos(p.a2 * deg), p.v2 * Math.sin(p.a2 * deg)];
+// Punta della freccia di una velocità iniziale (anche a velocità nulla resta a una distanza minima, per afferrarla).
+const tipOf = (x, y, v, a) => { const L = Math.max(arrowPx(v, VREF, V), V.min) / SC; return [x + Math.cos(a * deg) * L, y + Math.sin(a * deg) * L]; };
+const BOX = { x: 5, y: 3 };                    // dove si possono posare i dischi
 
 function overlapOf(s, p) {
   const dx = s.x2 - s.x1, dy = s.y2 - s.y1, d = Math.hypot(dx, dy) || 1e-9;
@@ -34,8 +39,14 @@ export default {
   params: [
     { key: 'm1', label: 'Massa del disco 1  m₁', unit: 'kg', min: 0.2, max: 10, step: 0.1, value: 1 },
     { key: 'm2', label: 'Massa del disco 2  m₂', unit: 'kg', min: 0.2, max: 10, step: 0.1, value: 1 },
-    { key: 'v1', label: 'Velocità del disco 1  v₁', unit: 'm/s', min: 0.2, max: 6, step: 0.1, value: 2.5 },
-    { key: 'b', label: 'Parametro d\'urto b', unit: 'm', min: 0, max: 1.2, step: 0.01, value: 0.3 },
+    { key: 'v1', label: 'Velocità del disco 1  v₁', unit: 'm/s', min: 0, max: 6, step: 0.1, value: 2.5 },
+    { key: 'a1', label: 'Direzione di v₁', unit: '°', min: -180, max: 180, step: 1, value: 0 },
+    { key: 'v2', label: 'Velocità del disco 2  v₂', unit: 'm/s', min: 0, max: 6, step: 0.1, value: 0 },
+    { key: 'a2', label: 'Direzione di v₂', unit: '°', min: -180, max: 180, step: 1, value: 180 },
+    { key: 'x1', label: 'Disco 1 x', unit: 'm', min: -5, max: 5, step: 0.05, value: -4, hidden: true },
+    { key: 'y1', label: 'Disco 1 y', unit: 'm', min: -3, max: 3, step: 0.05, value: 0, hidden: true },
+    { key: 'x2', label: 'Disco 2 x', unit: 'm', min: -5, max: 5, step: 0.05, value: 0, hidden: true },
+    { key: 'y2', label: 'Disco 2 y', unit: 'm', min: -3, max: 3, step: 0.05, value: 0.3, hidden: true },
     { key: 'e', label: 'Coefficiente di restituzione e', unit: '', min: 0, max: 1, step: 0.01, value: 1 },
     { key: 'tMax', label: 'Durata della simulazione', unit: 's', min: 2, max: 30, step: 1, value: 5 },
     { key: 'slowmo', type: 'toggle', label: 'Rallentatore all\'urto', value: true, live: true },
@@ -44,17 +55,19 @@ export default {
   ],
 
   presets: [
-    { label: 'Biliardo: masse uguali', values: { m1: 1, m2: 1, v1: 2.5, b: 0.3, e: 1 } },
-    { label: 'Urto centrale', values: { m1: 1, m2: 1, v1: 2.5, b: 0, e: 1 } },
-    { label: 'Contro un disco pesante', values: { m1: 1, m2: 6, v1: 2.5, b: 0.4, e: 1 } },
-    { label: 'Anelastico', values: { m1: 1, m2: 1, v1: 2.5, b: 0.3, e: 0.4 } },
+    { label: 'Biliardo: masse uguali', values: { m1: 1, m2: 1, v1: 2.5, a1: 0, v2: 0, a2: 180, x1: -4, y1: 0, x2: 0, y2: 0.3, e: 1 } },
+    { label: 'Urto centrale', values: { m1: 1, m2: 1, v1: 2.5, a1: 0, v2: 0, a2: 180, x1: -4, y1: 0, x2: 0, y2: 0, e: 1 } },
+    { label: 'Contro un disco pesante', values: { m1: 1, m2: 6, v1: 2.5, a1: 0, v2: 0, a2: 180, x1: -4, y1: 0, x2: 0, y2: 0.4, e: 1 } },
+    { label: 'Uno contro l\'altro', values: { m1: 1, m2: 1, v1: 2, a1: 0, v2: 2, a2: 180, x1: -3, y1: 0, x2: 3, y2: 0.25, e: 1 } },
+    { label: 'Incrocio ad angolo retto', values: { m1: 1, m2: 2, v1: 2, a1: 0, v2: 1.5, a2: 90, x1: -3.5, y1: 0, x2: 0.3, y2: -2.4, e: 0.6 } },
   ],
 
   view() { return { xmin: -5.5, xmax: 5.5, ymin: -3.2, ymax: 3.6 }; },
 
   init(p) {
-    return { t: 0, x1: X1, y1: 0, vx1: p.v1, vy1: 0, x2: 0, y2: p.b, vx2: 0, vy2: 0,
-      tc0: null, cp: null, tr1: [[X1, 0]], tr2: [[0, p.b]], tEnd: p.tMax };
+    const [vx1, vy1, vx2, vy2] = vel0(p);
+    return { t: 0, x1: p.x1, y1: p.y1, vx1, vy1, x2: p.x2, y2: p.y2, vx2, vy2,
+      tc0: null, cp: null, tr1: [[p.x1, p.y1]], tr2: [[p.x2, p.y2]], tEnd: p.tMax };
   },
 
   step(s, dt, p) {
@@ -108,16 +121,29 @@ export default {
     { title: 'Forza di contatto', series: [{ key: 'F', label: 'F (N)', color: 'applied' }] },
   ],
 
+  // Si trascinano i dischi (posizione) e le punte delle frecce (modulo e direzione della velocità).
   handles(s, p) {
+    const [t1x, t1y] = tipOf(p.x1, p.y1, p.v1, p.a1), [t2x, t2y] = tipOf(p.x2, p.y2, p.v2, p.a2);
     return [
-      { id: 'v1', x: X1 + arrowPx(p.v1, vref({ v1: 6 }), V) / SC, y: 0 },
-      { id: 'b', x: 0, y: p.b },
+      { id: 'v1', x: t1x, y: t1y }, { id: 'v2', x: t2x, y: t2y },
+      { id: 'p1', x: p.x1, y: p.y1 }, { id: 'p2', x: p.x2, y: p.y2 },
     ];
   },
 
   drag(id, wx, wy, p) {
-    if (id === 'v1') p.v1 = clamp(Math.round(arrowMag(Math.max(0, wx - X1) * SC, vref({ v1: 6 }), V) * 10) / 10, 0.2, 6);
-    if (id === 'b') p.b = clamp(Math.round(Math.abs(wy) * 100) / 100, 0, 1.2);
+    const i = id[1], x = p['x' + i], y = p['y' + i];
+    if (id[0] === 'v') {
+      const dx = wx - x, dy = wy - y;
+      p['v' + i] = clamp(Math.round(arrowMag(Math.hypot(dx, dy) * SC, VREF, V) * 10) / 10, 0, 6);
+      if (Math.hypot(dx, dy) * SC > 8) p['a' + i] = Math.round(Math.atan2(dy, dx) / deg);
+      return;
+    }
+    // Posizione: dentro il tavolo e mai sovrapposto all'altro disco (se lo tocca, scivola attorno a lui).
+    let nx = clamp(Math.round(wx * 20) / 20, -BOX.x, BOX.x), ny = clamp(Math.round(wy * 20) / 20, -BOX.y, BOX.y);
+    const j = i === '1' ? '2' : '1', ox = p['x' + j], oy = p['y' + j], R = radius(p.m1) + radius(p.m2) + 0.02;
+    const d = Math.hypot(nx - ox, ny - oy);
+    if (d < R) { const ux = d > 1e-6 ? (nx - ox) / d : 1, uy = d > 1e-6 ? (ny - oy) / d : 0; nx = ox + ux * R; ny = oy + uy * R; }
+    p['x' + i] = nx; p['y' + i] = ny;
   },
 
   mount() { stage.reset(); },
@@ -127,9 +153,11 @@ export default {
     if (!ui.snapshot) SC = sc;
     const fresh = s.t === 0, c1 = M.body.blue, c2 = M.body.red, r1 = radius(p.m1), r2 = radius(p.m2);
 
-    // Linea di volo del disco 1 e parametro d'urto b (distanza tra quella linea e il centro del disco 2).
-    P.line([[X1 - 1, 0], [5, 0]], { color: 'muted', width: 1, dash: [4, 6], alpha: 0.45 });
-    if (fresh && p.b * sc > 16) brace(P, [0, 0], [0, p.b], symVal(P, 'b', uq('m', p.b)), { side: -1, gap: r2 * sc + 6, grow: S.grow('b', 0.7), color: M.text, alpha: 0.8 });
+    // A simulazione ferma: la linea di volo di ogni disco che si muove, per prendere la mira.
+    if (fresh) for (const [x, y, v, a, col] of [[p.x1, p.y1, p.v1, p.a1, c1], [p.x2, p.y2, p.v2, p.a2, c2]]) {
+      if (v < 1e-3) continue;
+      P.line([[x, y], [x + Math.cos(a * deg) * 14, y + Math.sin(a * deg) * 14]], { color: col, width: 1, dash: [4, 6], alpha: 0.4 });
+    }
 
     trail(P, s.tr1, c1, 2);
     trail(P, s.tr2, c2, 2);
@@ -138,7 +166,7 @@ export default {
     ballM(P, M, s.x2, s.y2, { r: r2, color: 'red', grow: S.born('d2') });
 
     // Velocità (scala compressa in px).
-    const ref = vref({ v1: 6 });
+    const ref = VREF;
     for (const [i, x, y, vx, vy, col] of [[1, s.x1, s.y1, s.vx1, s.vy1, c1], [2, s.x2, s.y2, s.vx2, s.vy2, c2]]) {
       const v = Math.hypot(vx, vy);
       if (v < 1e-3) continue;
@@ -175,17 +203,19 @@ export default {
     // Bilancio in alto a sinistra: p coda-punta (prima e ora, affiancati) e barre di K.
     if (p.showBal) {
       const pad = P.cam.padFn?.() ?? { top: 70, left: 20 }, g = S.grow('bal', 0.7);
-      const pmax = Math.max(p.m1 * p.v1, 1e-6), ks = 90 / pmax;
-      const x0 = pad.left + 30, y0 = pad.top + 112;
-      panelBg(P, x0 - 18, y0 - 104, 420, 190, g);
-      const row = (label, v1x, v1y, v2x, v2y, ox) => ({ label, origin: [ox, y0], labelAt: [ox + 45, y0 + 60], titleAt: [x0, y0 - 84],
+      // Ogni riga ha la sua cella di 170 px: le frecce coda-punta, lunghe in tutto al più 88 px, ci stanno sempre.
+      const [u1x, u1y, u2x, u2y] = vel0(p);
+      const pmax = Math.max(p.m1 * p.v1 + p.m2 * p.v2, 1e-6), ks = 88 / pmax;
+      const x0 = pad.left + 30, y0 = pad.top + 104;
+      panelBg(P, x0 - 18, y0 - 98, 480, 196, g);
+      const row = (label, v1x, v1y, v2x, v2y, ox) => ({ label, origin: [ox, y0], labelAt: [ox + 20, y0 + 84], titleAt: [x0, y0 - 80],
         vecs: [{ x: p.m1 * v1x * ks, y: p.m1 * v1y * ks, color: c1 }, { x: p.m2 * v2x * ks, y: p.m2 * v2y * ks, color: c2 }] });
-      momentumRows(P, [row('\\text{prima}', p.v1, 0, 0, 0, x0), row('\\text{ora}', s.vx1, s.vy1, s.vx2, s.vy2, x0 + 125)], { title: '\\vec p_1+\\vec p_2', alpha: g });
-      const K10 = 0.5 * p.m1 * p.v1 ** 2, { d } = overlapOf(s, p), { k } = contact(p.m1, p.m2, p.e);
+      momentumRows(P, [row('\\text{prima}', u1x, u1y, u2x, u2y, x0 + 75), row('\\text{ora}', s.vx1, s.vy1, s.vx2, s.vy2, x0 + 245)], { title: '\\vec p_1+\\vec p_2', alpha: g });
+      const K10 = 0.5 * p.m1 * p.v1 ** 2, K20 = 0.5 * p.m2 * p.v2 ** 2, { d } = overlapOf(s, p), { k } = contact(p.m1, p.m2, p.e);
       kBars(P, [
-        { label: '\\text{prima}', parts: [{ v: K10, color: c1 }, { v: 0, color: c2 }] },
+        { label: '\\text{prima}', parts: [{ v: K10, color: c1 }, { v: K20, color: c2 }] },
         { label: '\\text{ora}', parts: [{ v: 0.5 * p.m1 * (s.vx1 ** 2 + s.vy1 ** 2), color: c1 }, { v: 0.5 * p.m2 * (s.vx2 ** 2 + s.vy2 ** 2), color: c2 }, { v: d > 0 && p.e > 0.001 ? 0.5 * k * d * d : 0, color: M.vec.spring }] },
-      ], K10, { x: x0 + 300, yBase: y0 + 58, h: 120, w: 16, gap: 20, alpha: g });
+      ], K10 + K20, { x: x0 + 375, yBase: y0 + 62, h: 120, w: 16, gap: 20, alpha: g });
     }
 
     const ts = this.timeScale(s, p);
@@ -198,8 +228,12 @@ export default {
   },
 
   formulas(s, p) {
-    const P0 = p.m1 * p.v1, px = p.m1 * s.vx1 + p.m2 * s.vx2, py = p.m1 * s.vy1 + p.m2 * s.vy2;
-    const K0 = 0.5 * p.m1 * p.v1 ** 2, K = 0.5 * p.m1 * (s.vx1 ** 2 + s.vy1 ** 2) + 0.5 * p.m2 * (s.vx2 ** 2 + s.vy2 ** 2);
+    const [u1x, u1y, u2x, u2y] = vel0(p);
+    const P0x = p.m1 * u1x + p.m2 * u2x, P0y = p.m1 * u1y + p.m2 * u2y, px = p.m1 * s.vx1 + p.m2 * s.vx2, py = p.m1 * s.vy1 + p.m2 * s.vy2;
+    // Parametro d'urto: distanza tra il centro del disco 2 e la retta su cui si muove il disco 1 rispetto al 2.
+    const rx = p.x2 - p.x1, ry = p.y2 - p.y1, wx = u1x - u2x, wy = u1y - u2y, wv = Math.hypot(wx, wy);
+    const b = wv > 1e-9 ? Math.abs(rx * wy - ry * wx) / wv : null, closing = wv > 1e-9 && rx * wx + ry * wy > 0;
+    const K0 = 0.5 * p.m1 * p.v1 ** 2 + 0.5 * p.m2 * p.v2 ** 2, K = 0.5 * p.m1 * (s.vx1 ** 2 + s.vy1 ** 2) + 0.5 * p.m2 * (s.vx2 ** 2 + s.vy2 ** 2);
     const A = t => C('vel', t), B = t => C('weight', t);
     const after = s.tc0 != null && s.t - s.tc0 > 1.5 * TC;
     const th = after ? Math.abs(Math.atan2(s.vx1 * s.vy2 - s.vy1 * s.vx2, s.vx1 * s.vx2 + s.vy1 * s.vy2)) * 180 / Math.PI : null;
@@ -207,15 +241,15 @@ export default {
     return [
       { h: 'Conservazione della quantità di moto' },
       { key: true, tex: `${A('m_1\\vec v_1')}+${B('m_2\\vec v_2')}=${A("m_1\\vec v_1'")}+${B("m_2\\vec v_2'")}` },
-      { tex: `P_x:\\ ${uq('kg·m/s', P0)}\\to${uq('kg·m/s', px)}\\qquad P_y:\\ 0\\to${uq('kg·m/s', py)}` },
+      { tex: `P_x:\\ ${uq('kg·m/s', P0x)}\\to${uq('kg·m/s', px)}\\qquad P_y:\\ ${uq('kg·m/s', P0y)}\\to${uq('kg·m/s', py)}` },
       { h: 'Geometria dell\'urto' },
-      { tex: `b=${uq('m', p.b)}\\qquad r_1+r_2=${uq('m', R)}` },
-      p.b >= R && { tex: `b\\ge r_1+r_2:\\ \\text{i dischi non si toccano}`, cls: 'warn' },
+      b != null && { tex: `b=${uq('m', b)}\\qquad r_1+r_2=${uq('m', R)}` },
+      (!closing || b >= R) && s.tc0 == null && { tex: `\\text{con queste velocità i dischi non si toccano}`, cls: 'warn' },
       { h: 'Energia cinetica' },
       { tex: `K_{\\text{prima}}=${uq('J', K0)}\\qquad K=${uq('J', K)}` },
       th != null && { h: 'Dopo l\'urto' },
       th != null && { key: true, tex: `\\theta=${tn(th, 1)}°\\qquad |${A("\\vec v_1'")}|=${uq('m/s', Math.hypot(s.vx1, s.vy1))}\\quad |${B("\\vec v_2'")}|=${uq('m/s', Math.hypot(s.vx2, s.vy2))}` },
-      th != null && p.e >= 0.999 && Math.abs(p.m1 - p.m2) < 1e-9 && p.b > 0 && { tex: `m_1=m_2,\\ \\text{urto elastico}:\\ \\theta=90°`, cls: 'warn' },
+      th != null && p.e >= 0.999 && Math.abs(p.m1 - p.m2) < 1e-9 && p.v2 === 0 && b > 1e-3 && { tex: `m_1=m_2,\\ \\text{urto elastico}:\\ \\theta=90°`, cls: 'warn' },
       { h: 'Istante attuale' },
       { tex: `t=${uq('s', s.t, 3)}` },
     ].filter(Boolean);
@@ -224,6 +258,7 @@ export default {
   theory: `
 <h2>Urti nel piano</h2>
 <p>Un disco ne colpisce un altro fermo, su un tavolo senza attrito. Se l'urto non è centrale, i dischi ripartono in direzioni diverse. La distanza tra la linea di volo del disco 1 e il centro del disco 2 si chiama <b>parametro d'urto</b> $b$: con $b = 0$ l'urto è centrale (e torna unidimensionale), con $b \\ge r_1 + r_2$ i dischi non si toccano.</p>
+<p>Sulla scena puoi <b>trascinare i dischi</b> per spostarli e la <b>punta delle frecce</b> per cambiare modulo e direzione delle velocità, anche quella del disco 2.</p>
 
 <h3>La quantità di moto è un vettore</h3>
 <p>Durante l'urto le forze tra i dischi sono uguali e opposte e dirette lungo la congiungente dei centri. Si conserva il <b>vettore</b> quantità di moto totale, cioè entrambe le componenti:</p>

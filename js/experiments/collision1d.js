@@ -5,7 +5,6 @@ import { Stage, C, arrowPx, arrowMag } from '../core/annot.js';
 import { contact, slowmo, momentumRows, kBars, panelBg } from '../core/collide.js';
 
 const stage = new Stage();
-const X1 = -3, X2 = 1;                       // posizioni iniziali dei centri (m)
 const V = { min: 34, max: 120 };              // frecce delle velocità (px)
 const TC = 0.06;
 let SC = 60;                                  // px per metro dell'ultima scena disegnata (per le maniglie)
@@ -40,6 +39,8 @@ export default {
     { key: 'm2', label: 'Massa del carrello 2  m₂', unit: 'kg', min: 0.2, max: 10, step: 0.1, value: 1 },
     { key: 'v1', label: 'Velocità iniziale v₁', unit: 'm/s', min: -5, max: 5, step: 0.1, value: 2 },
     { key: 'v2', label: 'Velocità iniziale v₂', unit: 'm/s', min: -5, max: 5, step: 0.1, value: 0 },
+    { key: 'x1', label: 'Posizione del carrello 1', unit: 'm', min: -4.5, max: 4.5, step: 0.05, value: -3, hidden: true },
+    { key: 'x2', label: 'Posizione del carrello 2', unit: 'm', min: -4.5, max: 4.5, step: 0.05, value: 1, hidden: true },
     { key: 'e', label: 'Coefficiente di restituzione e', unit: '', min: 0, max: 1, step: 0.01, value: 1 },
     { key: 'tMax', label: 'Durata della simulazione', unit: 's', min: 2, max: 30, step: 1, value: 4 },
     { key: 'slowmo', type: 'toggle', label: 'Rallentatore all\'urto', value: true, live: true },
@@ -48,16 +49,16 @@ export default {
   ],
 
   presets: [
-    { label: 'Elastico, masse uguali', values: { m1: 1, m2: 1, v1: 2, v2: 0, e: 1 } },
-    { label: 'Contro un carrello pesante', values: { m1: 1, m2: 8, v1: 2, v2: 0, e: 1 } },
-    { label: 'Carrello pesante contro leggero', values: { m1: 8, m2: 1, v1: 2, v2: 0, e: 1 } },
-    { label: 'Anelastico', values: { m1: 1, m2: 2, v1: 3, v2: -1, e: 0.5 } },
-    { label: 'Restano uniti', values: { m1: 1, m2: 1, v1: 2, v2: 0, e: 0 } },
+    { label: 'Elastico, masse uguali', values: { m1: 1, m2: 1, v1: 2, v2: 0, e: 1, x1: -3, x2: 1 } },
+    { label: 'Contro un carrello pesante', values: { m1: 1, m2: 8, v1: 2, v2: 0, e: 1, x1: -3, x2: 1 } },
+    { label: 'Carrello pesante contro leggero', values: { m1: 8, m2: 1, v1: 2, v2: 0, e: 1, x1: -3, x2: 1 } },
+    { label: 'Anelastico', values: { m1: 1, m2: 2, v1: 3, v2: -1, e: 0.5, x1: -3, x2: 1 } },
+    { label: 'Restano uniti', values: { m1: 1, m2: 1, v1: 2, v2: 0, e: 0, x1: -3, x2: 1 } },
   ],
 
   view() { return { xmin: -5, xmax: 5, ymin: -0.8, ymax: 3.4 }; },
 
-  init(p) { return { t: 0, x1: X1, v1: p.v1, x2: X2, v2: p.v2, tc0: null, tEnd: p.tMax }; },
+  init(p) { return { t: 0, x1: p.x1, v1: p.v1, x2: p.x2, v2: p.v2, tc0: null, tEnd: p.tMax }; },
 
   step(s, dt, p) {
     const { k, c } = contact(p.m1, p.m2, p.e), wsum = (width(p.m1) + width(p.m2)) / 2;
@@ -96,15 +97,23 @@ export default {
 
   handles(s, p) {
     const r = vref(p), h = [];
-    for (const [i, x, v, m] of [[1, X1, p.v1, p.m1], [2, X2, p.v2, p.m2]]) {
+    for (const [i, x, v, m] of [[1, p.x1, p.v1, p.m1], [2, p.x2, p.v2, p.m2]]) {
       const L = arrowPx(v, r, V) / SC * Math.sign(v || 1);
       h.push({ id: 'v' + i, x: x + (Math.abs(v) < 1e-9 ? 0.6 * Math.sign(i === 1 ? 1 : -1) : L), y: height(m) + 0.35 });
     }
+    // Anche i carrelli si spostano trascinandoli.
+    h.push({ id: 'c1', x: p.x1, y: height(p.m1) / 2 }, { id: 'c2', x: p.x2, y: height(p.m2) / 2 });
     return h;
   },
 
   drag(id, wx, wy, p) {
-    const i = id === 'v1' ? 1 : 2, x = i === 1 ? X1 : X2, dx = wx - x, r = vref({ ...p, ['v' + i]: 5 });
+    if (id[0] === 'c') {
+      // Il carrello 1 resta a sinistra del 2, senza sovrapporsi.
+      const gap = (width(p.m1) + width(p.m2)) / 2 + 0.05, x = clamp(Math.round(wx * 20) / 20, -4.5, 4.5);
+      if (id === 'c1') p.x1 = Math.min(x, p.x2 - gap); else p.x2 = Math.max(x, p.x1 + gap);
+      return;
+    }
+    const i = id === 'v1' ? 1 : 2, x = p['x' + i], dx = wx - x, r = vref({ ...p, ['v' + i]: 5 });
     p['v' + i] = clamp(Math.round(Math.sign(dx) * arrowMag(Math.abs(dx) * SC, r, V) * 10) / 10, -5, 5);
   },
 

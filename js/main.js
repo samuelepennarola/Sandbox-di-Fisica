@@ -780,7 +780,7 @@ function frame(ts) {
   requestAnimationFrame(frame);
 }
 function drawFrame(ts) {
-  const dt = Math.min(0.05, (ts - lastTs) / 1000 || 0);
+  const dt = Math.max(0, Math.min(0.05, (ts - lastTs) / 1000 || 0));
   lastTs = ts;
   if (app.sweep) stepSweep(dt);
   // exp.timeScale: un esperimento può rallentare il proprio tempo (per esempio il rallentatore negli urti).
