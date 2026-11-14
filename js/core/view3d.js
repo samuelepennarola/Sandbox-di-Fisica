@@ -1,5 +1,6 @@
 // Un accenno di 3D alla Manim (ThreeDScene): la scena resta nel piano xy dello schermo, con z verso chi guarda;
-// una camera ortografica ruota attorno all'asse verticale (yaw) e si inclina (pitch) per mostrare l'asse z,
+// una camera ortografica gira attorno all'asse verticale della scena (yaw) e si alza o si abbassa (pitch) per
+// mostrare lo spazio attorno al piano,
 // dove vivono i vettori "fuori dal piano" (momento di una forza, velocità angolare, momento angolare).
 // Le coordinate proiettate sono coordinate mondo 2D, quindi si disegnano con il Painter di sempre.
 import { palette, tex } from './manim.js';
@@ -7,24 +8,48 @@ import { niceStep } from './math.js';
 import { drawGrid } from './render.js';
 
 export class View3D {
-  constructor() { this.pitch = 0; this.yaw = 0; }
+  constructor() { this.up = 'y'; this.k = null; this.set(0, 0); }
 
+  // Camera "a giradischi" (turntable, come phi e theta di Manim): yaw gira la scena attorno al SUO asse verticale
+  // (up: 'y' per le scene nel piano verticale, 'z' per quelle viste dall'alto), poi pitch alza o abbassa la camera
+  // attorno all'orizzontale dello schermo. Così l'asse verticale della scena resta sempre dritto sullo schermo.
   // Angoli in radianti. pitch > 0: camera sollevata che guarda in giù (z verso chi guarda scende sullo schermo);
   // pitch < 0: camera abbassata (z sale sullo schermo, come l'asse verticale di una piattaforma vista di sbieco).
-  set(pitch, yaw) { this.pitch = pitch; this.yaw = yaw; this.cp = Math.cos(pitch); this.sp = Math.sin(pitch); this.cy = Math.cos(yaw); this.sy = Math.sin(yaw); return this; }
+  // Con (0, 0) la vista è quella di fronte: p(x, y, 0) = [x, y].
+  set(pitch, yaw, up = this.up) {
+    this.pitch = pitch; this.yaw = yaw; this.up = up;
+    const cp = this.cp = Math.cos(pitch), sp = this.sp = Math.sin(pitch), cy = this.cy = Math.cos(yaw), sy = this.sy = Math.sin(yaw);
+    // Righe della matrice di vista: r = destra dello schermo, u = alto dello schermo, f = verso chi guarda.
+    if (up === 'z') { this.r = [cy, -sy, 0]; this.u = [sy * cp, cy * cp, -sp]; this.f = [sy * sp, cy * sp, cp]; }
+    else { this.r = [cy, 0, sy]; this.u = [sy * sp, cp, -cy * sp]; this.f = [-sy * cp, sp, cy * cp]; }
+    return this;
+  }
 
-  // Quanto la camera è inclinata (0 = vista piana, 1 = vista 3D piena), per sfumare ciò che esiste solo in 3D.
-  tilt(full = 0.5) { return Math.min(1, Math.hypot(this.pitch, this.yaw) / full); }
+  // Quanto la vista è in 3D (0 = vista piana di fronte, 1 = vista 3D piena), per sfumare ciò che esiste solo in 3D.
+  // camera3d la fa dipendere dall'accensione della vista 3D (k), non dagli angoli: girando la camera con il dito si
+  // può anche tornare di fronte senza che la scena 3D sparisca. Senza k vale l'angolo di rotazione dalla vista piana.
+  tilt(full = 0.5) {
+    const k = this.k ?? Math.acos(Math.max(-1, Math.min(1, (this.r[0] + this.u[1] + this.f[2] - 1) / 2)));
+    return Math.min(1, k / full);
+  }
 
   p(x, y, z = 0) {
-    const x1 = x * this.cy + z * this.sy, z1 = -x * this.sy + z * this.cy;
-    // Camera sollevata (pitch > 0) che guarda in giù: ciò che è più vicino (z grande) appare più in basso.
-    return [x1, y * this.cp - z1 * this.sp];
+    const r = this.r, u = this.u;
+    return [x * r[0] + y * r[1] + z * r[2], x * u[0] + y * u[1] + z * u[2]];
   }
   // Profondità verso chi guarda (più grande = più vicino): per disegnare prima ciò che sta dietro.
   depth(x, y, z = 0) {
-    const z1 = -x * this.sy + z * this.cy;
-    return y * this.sp + z1 * this.cp;
+    const f = this.f;
+    return x * f[0] + y * f[1] + z * f[2];
+  }
+  // Inverso di p sul piano z = costante: dal punto [X, Y] dello schermo (coordinate mondo 2D) al punto (x, y) della
+  // scena, per trascinare gli oggetti anche a camera girata. Se il piano è visto quasi di taglio non c'è un punto
+  // solo: si restituisce [X, Y] così com'è.
+  unproject(X, Y, z = 0) {
+    const r = this.r, u = this.u, det = r[0] * u[1] - r[1] * u[0];
+    if (Math.abs(det) < 0.12) return [X, Y];
+    const a = X - r[2] * z, b = Y - u[2] * z;
+    return [(a * u[1] - b * r[1]) / det, (b * r[0] - a * u[0]) / det];
   }
 
   line(P, pts, opts) { P.line(pts.map(q => this.p(q[0], q[1], q[2] ?? 0)), opts); }
@@ -54,34 +79,54 @@ export class View3D {
 }
 
 // Vista 3D animata: con on = true la camera va verso (pitch, yaw), altrimenti torna di fronte. S è lo Stage della
-// regia (valori che inseguono con morbidezza, come move_camera di Manim).
-// In vista 3D la camera non sta mai ferma: oscilla piano attorno alla posizione scelta (ambient camera rotation di
-// Manim), ±swing rad in un periodo di `period` secondi. Nelle istantanee e con "riduci movimento" resta ferma.
-// Inclinazione (rad) entro cui la griglia piatta lascia il posto alla stanza a quadretti.
+// regia (la camera insegue con morbidezza, come move_camera di Manim). Nelle istantanee e con "riduci movimento"
+// va subito a destinazione.
+// Inclinazione entro cui la griglia piatta lascia il posto alla stanza a quadretti.
 const FADE = 0.1;
-const tilts = {};   // inclinazione dell'ultima camera di ogni esperimento (per lo sfondo, disegnato prima della scena)
+const tilts = {};   // quanto è in 3D l'ultima camera di ogni esperimento (per lo sfondo, disegnato prima della scena)
 const orbits = {};  // rotazione scelta con il dito: { dp, dy } in radianti, per esperimento
+const cams = {};    // stato mostrato della camera di ogni esperimento: { p, y, k } (k = 0 di fronte, 1 in 3D)
+const DEG = Math.PI / 180;
+// Limiti dell'elevazione: la camera non scavalca mai la verticale e non scende sotto il pavimento.
+//   up 'y': pitch da 0° (all'altezza della scena) a 85° (quasi a piombo);
+//   up 'z': pitch da −85° (quasi all'orizzonte) a −5° (quasi a piombo sopra il piano).
+const LIMITS = { y: [0, 85 * DEG], z: [-85 * DEG, -5 * DEG] };
+const clampPitch = (v, up) => Math.max(LIMITS[up][0], Math.min(LIMITS[up][1], v));
+const orbitOf = key => (orbits[key] ??= { dp: 0, dy: 0, user: false, pitch: 0, up: 'y' });
 
 // In vista 3D la camera va con morbidezza verso (pitch, yaw) e poi resta ferma: si muove solo se la si gira con
-// il dito (orbit3d).
-export function camera3d(S, key, on, pitch, yaw, { tau = 0.32, swing = 0.32, period = 14 } = {}) {
-  const o = orbits[key] ??= { dp: 0, dy: 0, user: false };
+// il dito (orbit3d). up: l'asse verticale della scena ('y' o 'z'), attorno a cui gira yaw (vedi View3D.set).
+// Spegnendo la vista 3D torna esattamente di fronte e la rotazione scelta con il dito si azzera.
+export function camera3d(S, key, on, pitch, yaw, { tau = 0.32, up = 'y' } = {}) {
+  const o = orbitOf(key);
   if (!on) Object.assign(o, { dp: 0, dy: 0, user: false });
-  // Scelta dell'utente: la camera resta ferma finché non la si gira con il dito (niente rotazione automatica).
-  const amb = 0; void swing; void period;
-  const tp = Math.max(-1.45, Math.min(1.45, pitch + o.dp));
-  const [a, b] = S.smooth('cam3d:' + key, on ? [tp, yaw + o.dy + amb] : [0, 0], o.user ? 0.06 : tau);
-  const V = new View3D().set(a, b);
-  if (!S.snap) tilts[key] = Math.hypot(a, b);
+  o.pitch = pitch; o.up = up;
+  const tp = on ? clampPitch(pitch + o.dp, up) : 0, ty = on ? yaw + o.dy : 0, tk = on ? 1 : 0;
+  // Istantanee: la vista di arrivo, senza toccare lo stato della camera sullo schermo.
+  if (S.snap) { const V = new View3D().set(tp, ty, up); V.k = tk; return V; }
+  const c = cams[key] ??= { p: 0, y: 0, k: 0 };
+  // Tornando di fronte l'angolo attorno alla verticale si riporta nel giro più vicino: niente giri a vuoto.
+  if (!on) c.y = Math.atan2(Math.sin(c.y), Math.cos(c.y));
+  const dt = Math.max(0, S.R?.dt ?? 0), g = S.still ? 1 : 1 - Math.exp(-dt / (o.user ? 0.06 : tau));
+  c.p += (tp - c.p) * g; c.y += (ty - c.y) * g; c.k += (tk - c.k) * g;
+  // Arrivata a un soffio dalla meta la camera ci si posa: ferma del tutto (e di fronte è esattamente la vista piana).
+  if (Math.abs(tp - c.p) < 1e-4 && Math.abs(ty - c.y) < 1e-4 && Math.abs(tk - c.k) < 1e-3) { c.p = tp; c.y = ty; c.k = tk; }
+  const V = new View3D().set(c.p, c.y, up);
+  V.k = c.k; tilts[key] = c.k;
   return V;
 }
 
 // Rotazione della camera con il dito (exp.orbit): dx, dy in px. Restituisce true se la vista 3D è attiva
-// (allora il trascinamento non sposta la scena ma la fa girare).
-export function orbit3d(key, on, dx, dy, sign = 1) {
-  if (!on || (tilts[key] ?? 0) < 0.05) return false;
-  const o = orbits[key] ??= { dp: 0, dy: 0, user: false };
-  o.user = true; o.dy -= dx * 0.004; o.dp += sign * dy * 0.003;
+// (allora il trascinamento non sposta la scena ma la fa girare). La scena segue il dito: verso destra gira attorno
+// al proprio asse verticale (senza limiti), verso il basso la camera si alza (entro i limiti dell'elevazione).
+const ORBIT_RAD_PX = 0.0052;   // circa mezzo giro per 600 px di trascinamento
+export function orbit3d(key, on, dx, dy) {
+  if (!on) return false;
+  const o = orbitOf(key);
+  o.user = true; o.dy += dx * ORBIT_RAD_PX;
+  // Il limite vale sulla rotazione scelta, non solo su quella mostrata: arrivati in cima, tornando indietro la
+  // camera riparte subito.
+  o.dp = clampPitch(o.pitch + o.dp + dy * ORBIT_RAD_PX, o.up) - o.pitch;
   return true;
 }
 

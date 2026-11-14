@@ -2,7 +2,8 @@ import { tn, clamp } from '../core/math.js';
 import { tex } from '../core/manim.js';
 import { uq } from '../core/units.js';
 import { Stage, C, arrowPx, brace, symVal } from '../core/annot.js';
-import { camera3d, background3d, room3d, orbit3d, axes3d, prism, cylinder, sphere } from '../core/view3d.js';
+import { camera3d, background3d, orbit3d, axes3d, prism, cylinder, sphere } from '../core/view3d.js';
+import { space3d } from '../core/space3d.js';
 
 const stage = new Stage();
 const G = 9.81, H = 2.6;                 // altezza dell'asse
@@ -68,7 +69,9 @@ export default {
     const [x, y] = V.p(p.r * Math.cos(th), H + p.r * Math.sin(th), 0.06);
     return [{ id: 'r', x, y }];
   },
-  drag(id, wx, wy, p) {
+  drag(id, sx, sy, p) {
+    // Dal punto sullo schermo al piano della ruota, anche a camera girata.
+    const [wx, wy] = V ? V.unproject(sx, sy, 0.06) : [sx, sy];
     if (id === 'r') p.r = clamp(Math.round(Math.hypot(wx, wy - H) * 100) / 100, 0.1, 0.55);
   },
 
@@ -91,8 +94,8 @@ export default {
 
   draw(P, s, p, ui) {
     const S = stage.begin(P, ui), M = S.M, sc = P.cam.scale, ctx = P.ctx;
-    const W = camera3d(S, 'inertia', p.show3d, 18 * deg, -38 * deg, { swing: 0.2 }), tilt = W.tilt();
-    room3d(P, W, { x: [-2.5, 2.5], y: [0, 3.6], z: [-2, 2] }, { up: 'y' });   // stanza a quadretti fissa nel mondo
+    const W = camera3d(S, 'inertia', p.show3d, 18 * deg, -38 * deg, { up: 'y' }), tilt = W.tilt();
+    space3d(P, W, { origin: [-2, 0, 0], up: 'y', step: 1 });   // griglia a perdita d'occhio, fissa nel mondo
     if (!ui.snapshot) V = W;
     const k = kin(p, s.t), th = k.th;
 

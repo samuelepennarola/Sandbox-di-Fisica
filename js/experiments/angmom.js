@@ -2,7 +2,8 @@ import { tn, clamp } from '../core/math.js';
 import { tex } from '../core/manim.js';
 import { uq } from '../core/units.js';
 import { Stage, C, arrowPx, brace, symVal } from '../core/annot.js';
-import { camera3d, background3d, room3d, orbit3d, axes3d, cylinder, sphere } from '../core/view3d.js';
+import { camera3d, background3d, orbit3d, axes3d, cylinder, sphere } from '../core/view3d.js';
+import { space3d } from '../core/space3d.js';
 
 const stage = new Stage();
 const RP = 1.5;                                  // raggio della piattaforma (m)
@@ -73,9 +74,9 @@ export default {
   },
   drag(id, wx, wy, p) {
     if (id !== 'r' || !V) return;
-    // Dal punto sullo schermo al piano della piattaforma (z = 0): si annulla l'inclinazione della camera.
-    const y = Math.abs(V.cp) > 0.2 ? wy / V.cp : wy;
-    p.r = clamp(Math.round(Math.hypot(wx, y) * 100) / 100, RMIN, RMAX);
+    // Dal punto sullo schermo al piano delle masse sulla piattaforma: si annulla la rotazione della camera.
+    const [x, y] = V.unproject(wx, wy, 0.12);
+    p.r = clamp(Math.round(Math.hypot(x, y) * 100) / 100, RMIN, RMAX);
     return 'live';
   },
 
@@ -97,12 +98,12 @@ export default {
   mount() { stage.reset(); },
   drawBackground: background3d('angmom'),
   // In vista 3D un dito sullo spazio vuoto fa girare la camera invece di spostare la scena.
-  orbit(dx, dy, p) { return orbit3d('angmom', p.show3d, dx, dy, -1); },
+  orbit(dx, dy, p) { return orbit3d('angmom', p.show3d, dx, dy); },
 
   draw(P, s, p, ui) {
     const S = stage.begin(P, ui), M = S.M, sc = P.cam.scale, ctx = P.ctx;
-    const W = camera3d(S, 'angmom', p.show3d, -58 * deg, 0), tilt = W.tilt(0.8);
-    room3d(P, W, { x: [-2.5, 2.5], y: [-2.5, 2.5], z: [-1, 2.5] }, { up: 'z' });   // stanza a quadretti fissa nel mondo
+    const W = camera3d(S, 'angmom', p.show3d, -58 * deg, -30 * deg, { up: 'z' }), tilt = W.tilt(0.8);
+    space3d(P, W, { origin: [0, 0, 0], up: 'z', step: 0.5 });   // griglia a perdita d'occhio, fissa nel mondo
     if (!ui.snapshot) V = W;
     const r = s.t === 0 ? p.r : s.r, th = s.th;
 

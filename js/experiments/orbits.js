@@ -2,7 +2,8 @@ import { tn, clamp } from '../core/math.js';
 import { tex } from '../core/manim.js';
 import { uq } from '../core/units.js';
 import { Stage, C, arrowPx, arrowMag, symVal } from '../core/annot.js';
-import { camera3d, background3d, room3d, orbit3d, axes3d } from '../core/view3d.js';
+import { camera3d, background3d, orbit3d, axes3d } from '../core/view3d.js';
+import { space3d } from '../core/space3d.js';
 import { scaleOf, scaleParam, elements, conicPts, star, planet, wedges, sectorArea } from '../core/grav.js';
 
 const stage = new Stage();
@@ -122,7 +123,9 @@ export default {
     return [{ id: 'r0', x: px, y: py }, { id: 'v0', x: tx, y: ty }];
   },
 
-  drag(id, wx, wy, p) {
+  drag(id, sx, sy, p) {
+    // Dal punto sullo schermo al piano dell'orbita (z = 0), anche a camera girata.
+    const [wx, wy] = CAM ? CAM.unproject(sx, sy, 0) : [sx, sy];
     if (id === 'r0') p.r0 = clamp(Math.round(Math.max(0.05, wx) * 100) / 100, 0.05, 100);
     if (id === 'v0') {
       const dx = wx - p.r0, dy = wy;
@@ -144,16 +147,16 @@ export default {
 
   mount() { stage.reset(); },
   drawBackground: background3d('orbits', { labels: false }),   // le distanze sono in UA o in unità semplici
-  orbit(dx, dy, p) { return orbit3d('orbits', p.show3d, dx, dy, -1); },
+  orbit(dx, dy, p) { return orbit3d('orbits', p.show3d, dx, dy); },
 
   draw(P, s, p, ui) {
     const S = stage.begin(P, ui), M = S.M, sc = P.cam.scale, ctx = P.ctx;
     if (!ui.snapshot) SC = sc;
-    const V = camera3d(S, 'orbits', p.show3d, -60 * deg, 0), tilt = V.tilt();
+    const V = camera3d(S, 'orbits', p.show3d, -60 * deg, -30 * deg, { up: 'z' }), tilt = V.tilt();
     if (!ui.snapshot) CAM = V;
     const pr = (x, y, z = 0) => V.p(x, y, z), line = (pts, o) => P.line(pts.map(q => pr(q[0], q[1], q[2] ?? 0)), o);
     const e0 = el0(p), ext = (e0.bound ? e0.a * (1 + e0.e) : 3 * p.r0) * 1.3;
-    room3d(P, V, { x: [-ext, ext], y: [-ext, ext], z: [-0.6 * ext, 0.9 * ext] }, { up: 'z', step: niceGrid(ext) });
+    space3d(P, V, { origin: [0, 0, 0], up: 'z', step: niceGrid(ext) });   // griglia a perdita d'occhio, fissa nel mondo
 
     // Orbita prevista (conica) con il secondo fuoco e l'asse maggiore.
     if (p.showConic) {

@@ -2,7 +2,8 @@ import { tn } from '../core/math.js';
 import { tex } from '../core/manim.js';
 import { uq } from '../core/units.js';
 import { Stage, C, angleMark, symVal, degTeX, brace } from '../core/annot.js';
-import { camera3d, background3d, room3d, orbit3d, axes3d, prism, cylinder, sphere } from '../core/view3d.js';
+import { camera3d, background3d, orbit3d, axes3d, prism, cylinder, sphere } from '../core/view3d.js';
+import { space3d } from '../core/space3d.js';
 
 const stage = new Stage();
 let CAM = null;   // camera dell'ultima scena (per i corpi selezionabili)
@@ -94,9 +95,9 @@ export default {
     const S = stage.begin(P, ui), M = S.M, ctx = P.ctx;
     const [alpha, L] = S.smooth('geo', [p.alpha, p.L], 0.15, !!ui.active);
     const a = alpha * deg, w = L * Math.cos(a), h = L * Math.sin(a);
-    const V = camera3d(S, 'rolling', p.show3d, 18 * deg, -32 * deg), tilt = V.tilt();
+    const V = camera3d(S, 'rolling', p.show3d, 18 * deg, -32 * deg, { up: 'y' }), tilt = V.tilt();
     if (!ui.snapshot) CAM = V;
-    room3d(P, V, { x: [-1.5, 7.5], y: [0, 3.6], z: [-2, 3] }, { up: 'y' });   // stanza a quadretti fissa nel mondo
+    space3d(P, V, { origin: [-1, 0, 0], up: 'y', step: 1 });   // griglia a perdita d'occhio, fissa nel mondo
     const zLanes = BODIES.filter(b => on(p, b)).map(b => b.lane);
     const z0 = Math.min(-0.5, ...zLanes) - 0.4, z1 = Math.max(0.5, ...zLanes) + 0.4;
 

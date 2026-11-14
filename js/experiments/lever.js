@@ -2,7 +2,8 @@ import { tn, clamp } from '../core/math.js';
 import { tex } from '../core/manim.js';
 import { uq } from '../core/units.js';
 import { Stage, C, arrowPx, arrowMag, brace, symVal } from '../core/annot.js';
-import { camera3d, background3d, room3d, orbit3d, axes3d, prism } from '../core/view3d.js';
+import { camera3d, background3d, orbit3d, axes3d, prism } from '../core/view3d.js';
+import { space3d } from '../core/space3d.js';
 
 const stage = new Stage();
 const G = 9.81, LB = 4, H = 1.3, TH = 0.12;     // lunghezza dell'asta, altezza del fulcro, spessore dell'asta (m)
@@ -106,7 +107,9 @@ export default {
     return h;
   },
 
-  drag(id, wx, wy, p) {
+  drag(id, sx, sy, p) {
+    // Dal punto sullo schermo al piano della leva (z = 0), anche a camera girata.
+    const [wx, wy] = V ? V.unproject(sx, sy, 0) : [sx, sy];
     const u = clamp(Math.round(wx * 20) / 20, -2, 2);
     if (id === 'd1' || id === 'd2' || id === 'xf') { p[id] = u; return; }
     if (id === 'F') {
@@ -140,8 +143,8 @@ export default {
   draw(P, s, p, ui) {
     const S = stage.begin(P, ui), M = S.M, sc = P.cam.scale, ctx = P.ctx;
     if (!ui.snapshot) SC = sc;
-    const W = camera3d(S, 'lever', p.show3d, 22 * deg, -40 * deg, { swing: 0.2 });
-    room3d(P, W, { x: [-3.5, 3.5], y: [0, 3.6], z: [-2.5, 2.5] }, { up: 'y' });   // stanza a quadretti fissa nel mondo
+    const W = camera3d(S, 'lever', p.show3d, 22 * deg, -40 * deg, { up: 'y' });
+    space3d(P, W, { origin: [-3, 0, 0], up: 'y', step: 1 });   // griglia a perdita d'occhio, fissa nel mondo
     if (!ui.snapshot) V = W;
     const th = s.t === 0 ? 0 : s.th, piv = [p.xf, H], c = Math.cos(th), sn = Math.sin(th);
     const at = u => [p.xf + (u - p.xf) * c, H + (u - p.xf) * sn];
