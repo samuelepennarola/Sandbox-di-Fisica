@@ -144,7 +144,7 @@ export default {
       const [, gy] = P.S(0, -p.L - r), top = gy + 30;
       const pad = P.cam.padFn?.() ?? { bottom: 20 };
       const pxs = paperSpeed(P.cam.h - pad.bottom - 8 - top, TWO_PI / w, 3);
-      penTrace(P, fresh ? [[0, bx]] : s.trace, fresh ? 0 : s.t, { top, pxs, color: M.vec.vel, grow: S.grow('trace', 0.9) });
+      penTrace(P, fresh ? [[0, bx]] : s.trace, fresh ? 0 : s.t, { top, pxs, color: M.vec.vel, grow: S.grow('trace', 0.9), nowX: bx });
     }
 
     if (fresh) P.handle(bx, by, ui.active === 'bob');

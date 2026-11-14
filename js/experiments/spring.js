@@ -130,7 +130,7 @@ export default {
       const pad = P.cam.padFn?.() ?? { bottom: 20 };
       const pxs = paperSpeed(P.cam.h - pad.bottom - 8 - top, TWO_PI / w, 3);
       const pts = fresh ? [[0, p.x0]] : s.trace;
-      penTrace(P, pts, fresh ? 0 : s.t, { top, pxs, color: M.vec.vel, grow: S.grow('trace', 0.9) });
+      penTrace(P, pts, fresh ? 0 : s.t, { top, pxs, color: M.vec.vel, grow: S.grow('trace', 0.9), nowX: x });
       const [bx] = P.S(x, 0);
       P.ctx.save(); P.ctx.strokeStyle = M.vec.vel; P.ctx.globalAlpha = 0.35; P.ctx.setLineDash([2, 4]); P.ctx.lineWidth = 1;
       P.ctx.beginPath(); P.ctx.moveTo(bx, gy + 3); P.ctx.lineTo(bx, top - 5); P.ctx.stroke(); P.ctx.restore();

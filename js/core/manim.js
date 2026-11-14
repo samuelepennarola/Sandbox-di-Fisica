@@ -586,6 +586,9 @@ export class Regia {
   // still = true (istantanee) oppure "riduci movimento" del sistema: tutto subito allo stato finale.
   tick(still = false) {
     const now = performance.now() / 1000;
+    // Fotogrammi disegnati: misurano le assenze (vedi Stage.grow, fieldLines). Una pausa lunga (la scena non è
+    // stata disegnata per secondi: altro esperimento, app in secondo piano) conta come assenza, così si riparte.
+    this.frame = (this.frame ?? 0) + (this.last && now - this.last > 2 ? 3 : 1);
     this.dt = Math.min(0.1, now - (this.last || now)); this.last = this.now = now; this.still = still || reducedMotion();
   }
   // Valore mostrato che insegue quello vero (tau: tempo di risposta in s). snap: salta subito al valore.
@@ -620,7 +623,8 @@ export class Regia {
   fieldLines(key, sig, lines) {
     this.fl ??= {};
     const st = this.fl[key] ??= { sig: undefined, t0: -1e9, seen: -1e9, cur: null, old: null, fast: false };
-    const gone = this.now - st.seen > 0.3;   // non disegnate di recente (spente, altro esperimento): da capo
+    this.frame ??= 0;
+    const gone = this.frame - st.seen > 1;   // non disegnate nel fotogramma precedente (spente, altro esperimento): da capo
     if (sig !== st.sig || gone) {
       const morph = !gone && !this.still && st.cur?.length && st.sig !== undefined;
       st.old = morph ? st.cur : null;
@@ -628,7 +632,7 @@ export class Regia {
     }
     // Stessa struttura ma più linee (carica aumentata): solo quelle in più si tracciano.
     if (st.n != null && lines.length > st.n && sig === st.sig && !gone) { st.extraFrom = Math.min(st.extraFrom ?? Infinity, st.n); st.extraT0 = this.now; }
-    st.n = lines.length; st.cur = lines; st.seen = this.now;
+    st.n = lines.length; st.cur = lines; st.seen = this.frame;
     const n = Math.max(1, lines.length), t = this.now - st.t0, rs = t => (t <= 0 ? 0 : t >= 1 ? 1 : rate.smooth(t));
     const run = st.fast ? 0.55 : 0.95, lag = st.fast ? Math.min(0.012, 0.3 / n) : Math.min(0.045, 0.75 / n);
     const te = this.now - (st.extraT0 ?? -1e9);

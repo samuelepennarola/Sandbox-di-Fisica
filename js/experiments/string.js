@@ -1,7 +1,7 @@
 import { tn, clamp } from '../core/math.js';
 import { uq } from '../core/units.js';
 import { Stage, brace, C, symVal } from '../core/annot.js';
-import { wallM } from '../core/osc.js';
+import { wallM, scopeTrace } from '../core/osc.js';
 
 const stage = new Stage();
 const TWO_PI = 2 * Math.PI;
@@ -72,6 +72,7 @@ export default {
     { key: 'xp', label: 'Punto segnato', unit: 'm', min: 0, max: 20, step: 0.1, value: 6, live: true },
     { key: 'tMax', label: 'Durata della simulazione', unit: 's', min: 5, max: 300, step: 5, value: 60 },
     { key: 'showEnv', type: 'toggle', label: 'Inviluppo (nodi e ventri)', value: false, live: true },
+    { key: 'showTrace', type: 'toggle', label: 'Traccia del punto segnato', value: true, live: true, refit: true },
   ],
 
   presets: [
@@ -83,8 +84,9 @@ export default {
   ],
 
   view(p) {
+    // Sotto la corda, se accesa, la traccia del punto segnato (alta quanto l'oscillazione più ampia).
     const h = Math.max(1.35 * maxEnv(p), 0.08 * p.L);
-    return { xmin: -0.08 * p.L, xmax: 1.06 * p.L, ymin: -h, ymax: h * 1.25 };
+    return { xmin: -0.08 * p.L, xmax: 1.06 * p.L, ymin: p.showTrace ? -3.6 * h : -h, ymax: h * 1.25 };
   },
 
   init(p) { return { t: 0, tEnd: p.tMax }; },
@@ -156,6 +158,15 @@ export default {
     // Punto segnato: si muove solo in su e in giù.
     const xp = Math.min(p.xp, L), yp = yAt(xp);
     P.line([[xp, -hh * 0.9], [xp, hh * 0.9]], { color: 'weight', width: 1, dash: [2, 5], alpha: 0.35 });
+    if (p.showTrace) {
+      // Traccia y(t) del punto segnato sotto la corda, alla stessa scala verticale: il pennino è sotto il punto.
+      const Hpx = Math.max(18, maxEnv(p) * sc * 1.05), [a, yb] = P.S(xp, -hh), b = yb + 46 + Hpx;
+      const g = S.grow('trace', 0.8);
+      P.ctx.save(); P.ctx.globalAlpha = 0.4 * g; P.ctx.strokeStyle = M.vec.weight; P.ctx.setLineDash([2, 4]); P.ctx.lineWidth = 1;
+      P.ctx.beginPath(); P.ctx.moveTo(a, yb + 4); P.ctx.lineTo(a, b - Hpx - 12); P.ctx.stroke(); P.ctx.restore();
+      const win = p.mode === 'pulse' ? Math.max(4, 3 * p.L / p.v) : Math.min(20, 4 / p.f);
+      scopeTrace(P, a, b, tt => disp(p, xp, tt), t, { win, Hpx, valPx: z => z * sc, color: M.vec.weight, grow: g, gap: 0 });
+    }
     P.circle(xp, yp, 6, { fill: 'weight' });
     P.handle(xp, yp, ui.active === 'xp');
   },

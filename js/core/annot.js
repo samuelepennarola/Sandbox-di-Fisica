@@ -12,7 +12,10 @@ const reducedMotion = () => { try { return matchMedia('(prefers-reduced-motion: 
 /* ---------------- Regia ---------------- */
 
 const GROW_S = 0.6;    // GrowArrow
-const GONE_S = 0.25;   // un elemento assente da più di così, quando ricompare, ricresce
+// Un elemento che non è stato disegnato nel fotogramma precedente, quando ricompare, ricresce. L'assenza si conta
+// a fotogrammi e non a secondi: su un dispositivo lento (fotogrammi oltre 0,25 s) un conteggio a tempo farebbe
+// ripartire ogni animazione a ogni fotogramma, e gli elementi resterebbero invisibili.
+const gone = (R, s) => R.frame - s.frame > 1;
 
 export class Stage {
   constructor() { this.reset(); }
@@ -48,8 +51,8 @@ export class Stage {
   grow(key, run = GROW_S, delay = 0) {
     if (this.still) return 1;
     const now = this.R.now, s = this.seen.get(key);
-    if (!s || now - s.last > GONE_S) { this.seen.set(key, { t0: now, last: now, sig: null }); return 0; }
-    s.last = now;
+    if (!s || gone(this.R, s)) { this.seen.set(key, { t0: now, frame: this.R.frame, sig: null }); return 0; }
+    s.frame = this.R.frame;
     const t = (now - s.t0 - delay) / run;
     return t <= 0 ? 0 : t >= 1 ? 1 : rate.smooth(t);
   }
@@ -58,8 +61,8 @@ export class Stage {
   replay(key, sig, run = 0.9) {
     if (this.still) return 1;
     const now = this.R.now, s = this.seen.get(key);
-    if (!s || now - s.last > GONE_S || s.sig !== sig) { this.seen.set(key, { t0: now, last: now, sig }); return 0; }
-    s.last = now;
+    if (!s || gone(this.R, s) || s.sig !== sig) { this.seen.set(key, { t0: now, frame: this.R.frame, sig }); return 0; }
+    s.frame = this.R.frame;
     const t = (now - s.t0) / run;
     return t >= 1 ? 1 : rate.smooth(t);
   }

@@ -2,34 +2,38 @@ import { tn, clamp } from '../core/math.js';
 import { tex } from '../core/manim.js';
 import { uq } from '../core/units.js';
 import { Stage, C, symVal } from '../core/annot.js';
+import { scopeTrace } from '../core/osc.js';
 
 const stage = new Stage();
 const TWO_PI = 2 * Math.PI;
-const CELL = 4;   // px per cella del campo disegnato (poi ingrandito con smussatura)
+// Celle del campo disegnato (poi ingrandito con smussatura): circa CELLS in tutto lo schermo, di almeno 4 px.
+// Un numero fisso di celle tiene il costo di ogni fotogramma uguale su qualsiasi schermo.
+const CELLS = 22000;
 
 // Velocità effettiva della sorgente 1: sempre sotto quella dell'onda (oltre si formerebbe un'onda d'urto).
 const uOf = p => Math.min(p.vs, 0.95 * p.v);
 
 // Distanza percorsa dall'onda che arriva in (x, y) all'istante t dalla sorgente i, e istante di emissione.
 // La sorgente 1 parte da (−d/2, 0) e si muove lungo x con velocità u; la 2 è ferma in (d/2, 0).
+// Restituisce solo l'istante di emissione (nessun oggetto: la funzione gira decine di migliaia di volte per fotogramma);
+// la distanza percorsa è v (t − τ).
 function emitted(p, i, x, y, t) {
-  const sx = i === 1 ? -p.d / 2 : p.d / 2, dx = x - sx, dy = y, v = p.v;
+  const dx = x - (i === 1 ? -p.d / 2 : p.d / 2), v = p.v;
   const u = i === 1 ? uOf(p) : 0;
-  if (u < 1e-9) { const r = Math.hypot(dx, dy); return { tau: t - r / v, r }; }
-  // |(dx, dy) − (u τ, 0)| = v (t − τ): equazione di secondo grado in τ; per u < v una sola radice ha τ ≤ t.
-  const A = u * u - v * v, B = 2 * v * v * t - 2 * dx * u, Cc = dx * dx + dy * dy - v * v * t * t;
+  if (u < 1e-9) return t - Math.sqrt(dx * dx + y * y) / v;
+  // |(dx, y) − (u τ, 0)| = v (t − τ): equazione di secondo grado in τ; per u < v una sola radice ha τ ≤ t.
+  const A = u * u - v * v, B = 2 * v * v * t - 2 * dx * u, Cc = dx * dx + y * y - v * v * t * t;
   const D = Math.sqrt(Math.max(0, B * B - 4 * A * Cc));
   // A < 0: la radice più piccola è quella fisica (l'altra, con τ > t, nasce solo dall'elevamento al quadrato).
-  const tau = (-B + D) / (2 * A);
-  return { tau, r: v * (t - tau) };
+  return (-B + D) / (2 * A);
 }
 
 // Contributo di una sorgente: sinusoide emessa all'istante tau, che si attenua allontanandosi (onda circolare).
 function wave(p, i, x, y, t) {
   if (i === 2 && !p.on2) return 0;
-  const { tau, r } = emitted(p, i, x, y, t);
+  const tau = emitted(p, i, x, y, t);
   if (tau < 0) return 0;
-  const f = i === 1 ? p.f1 : p.f2, lam = p.v / f, ph = i === 1 ? 0 : p.phi * Math.PI / 180;
+  const f = i === 1 ? p.f1 : p.f2, lam = p.v / f, ph = i === 1 ? 0 : p.phi * Math.PI / 180, r = p.v * (t - tau);
   const edge = Math.min(1, tau * f * 2);   // il fronte entra morbido (mezzo periodo)
   return edge * Math.sqrt(lam / (r + lam)) * Math.sin(TWO_PI * f * tau + ph);
 }
@@ -108,17 +112,23 @@ export default {
 
     if (p.look === 'field') {
       // Campo: celle colorate (blu le creste, giallo le valli), trasparenti dove l'onda si annulla.
+      const CELL = Math.max(4, Math.ceil(Math.sqrt(cam.w * cam.h / CELLS)));
       const w = Math.ceil(cam.w / CELL), h = Math.ceil(cam.h / CELL);
       if (!buf || buf.width !== w || buf.height !== h) { buf = document.createElement('canvas'); buf.width = w; buf.height = h; }
       const bctx = buf.getContext('2d'), img = bctx.createImageData(w, h), d = img.data;
       const rgb = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
       const [pr, pg, pb] = rgb(cPos), [nr, ng, nb] = rgb(cNeg);
       const norm = p.on2 ? 1.6 : 1;
-      for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
-        const [x, y] = cam.toWorld((i + 0.5) * CELL, (j + 0.5) * CELL);
-        const z = field(p, x, y, t) / norm, k = (j * w + i) * 4, a = Math.min(1, Math.abs(z));
-        if (z >= 0) { d[k] = pr; d[k + 1] = pg; d[k + 2] = pb; } else { d[k] = nr; d[k + 1] = ng; d[k + 2] = nb; }
-        d[k + 3] = Math.round(255 * 0.55 * Math.pow(a, 1.15));
+      // La camera è lineare: le coordinate mondo delle celle si ottengono per incrementi.
+      const [ax, ay] = cam.toWorld(0.5 * CELL, 0.5 * CELL), [bx2, by2] = cam.toWorld(1.5 * CELL, 1.5 * CELL);
+      const sx = bx2 - ax, sy = by2 - ay;
+      for (let j = 0; j < h; j++) {
+        const y = ay + j * sy;
+        for (let i = 0; i < w; i++) {
+          const z = field(p, ax + i * sx, y, t) / norm, k = (j * w + i) * 4, a = Math.min(1, Math.abs(z));
+          if (z >= 0) { d[k] = pr; d[k + 1] = pg; d[k + 2] = pb; } else { d[k] = nr; d[k + 1] = ng; d[k + 2] = nb; }
+          d[k + 3] = Math.round(255 * 0.55 * Math.pow(a, 1.15));
+        }
       }
       bctx.putImageData(img, 0, 0);
       ctx.save();
@@ -177,25 +187,8 @@ export default {
     const [qa, qb] = P.S(p.px, p.py);
     if (p.showTrace) {
       const fAvg = p.on2 ? (p.f1 + p.f2) / 2 : p.f1, df = p.on2 ? Math.abs(p.f1 - p.f2) : 0;
-      const win = Math.min(20, Math.max(3 / fAvg, df > 0.02 ? 1.5 / df : 0));
-      const Wpx = 260, Hpx = 34, g = S.grow('scope', 0.8);
-      const left = qa + 18, ok = left + Wpx < cam.w - 10;
-      const x0 = ok ? left : qa - 18 - Wpx, dir = ok ? 1 : -1;
-      ctx.save();
-      ctx.globalAlpha = 0.75 * g; ctx.fillStyle = M.bg;
-      ctx.beginPath(); ctx.roundRect?.(x0 - 6, qb - Hpx - 12, Wpx + 12, 2 * Hpx + 24, 6); ctx.fill();
-      ctx.globalAlpha = 0.4 * g; ctx.strokeStyle = M.muted; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(x0, qb); ctx.lineTo(x0 + Wpx, qb); ctx.stroke();
-      ctx.globalAlpha = g; ctx.strokeStyle = M.vec.weight; ctx.lineWidth = 2; ctx.lineJoin = 'round';
-      ctx.beginPath();
-      const n = 240, norm = p.on2 ? 1.6 : 1;
-      for (let k = 0; k <= n * g; k++) {
-        const tt = t - win * k / n, z = tt < 0 ? 0 : field(p, p.px, p.py, tt) / norm;
-        const xx = dir > 0 ? x0 + Wpx * k / n : x0 + Wpx - Wpx * k / n, yy = qb - z * Hpx;
-        k ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy);
-      }
-      ctx.stroke();
-      ctx.restore();
+      const win = Math.min(20, Math.max(3 / fAvg, df > 0.02 ? 1.5 / df : 0)), norm = p.on2 ? 1.6 : 1;
+      scopeTrace(P, qa, qb, tt => field(p, p.px, p.py, tt) / norm, t, { win, valPx: z => z * 34, color: M.vec.weight, grow: S.grow('scope', 0.8) });
     }
     P.circle(p.px, p.py, 5, { fill: 'weight' });
     P.handle(p.px, p.py, ui.active === 'probe');

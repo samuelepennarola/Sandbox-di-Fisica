@@ -17,7 +17,7 @@ export function paperSpeed(avail, T, periods = 3) {
 // Traccia del pennino. pts: [[t, xMondo], ...] in ordine di tempo; tNow: istante attuale; top: y schermo del pennino.
 // L'asse verticale tratteggiato passa per x = 0 (equilibrio); la scritta t con la freccia indica lo scorrere del tempo.
 // Restituisce i px al secondo usati (per eventuali tacche).
-export function penTrace(P, pts, tNow, { top, pxs, color, grow = 1, label = 'x(t)', alpha = 1 } = {}) {
+export function penTrace(P, pts, tNow, { top, pxs, color, grow = 1, label = 'x(t)', alpha = 1, nowX = null } = {}) {
   const M = P.M ?? palette(P.c), ctx = P.ctx, pad = free(P.cam), bottom = P.cam.h - pad.bottom - 8;
   if (bottom - top < 30 || grow <= 0.01) return;
   const [ox] = P.S(0, 0), col = color ?? M.vec.vel, H = (bottom - top) * grow;
@@ -39,6 +39,8 @@ export function penTrace(P, pts, tNow, { top, pxs, color, grow = 1, label = 'x(t
   ctx.globalAlpha = alpha; ctx.strokeStyle = col; ctx.lineWidth = 2.6; ctx.lineJoin = ctx.lineCap = 'round';
   ctx.beginPath();
   let started = false, prev = null, reach = 0;
+  // Il pennino sta sempre sotto l'oggetto (nowX): la curva parte da lì e prosegue con i campioni registrati.
+  if (nowX != null) { const [a] = P.S(nowX, 0); ctx.moveTo(a, top); started = true; prev = [a, top]; reach = Math.abs(a - ox); }
   for (let i = pts.length - 1; i >= 0; i--) {
     const [t, x] = pts[i], y = top + (tNow - t) * pxs;
     const [a] = P.S(x, 0);
@@ -52,8 +54,8 @@ export function penTrace(P, pts, tNow, { top, pxs, color, grow = 1, label = 'x(t
   }
   ctx.stroke();
   ctx.restore();
-  if (pts.length) {
-    const [a] = P.S(pts[pts.length - 1][1], 0);
+  if (pts.length || nowX != null) {
+    const [a] = P.S(nowX ?? pts[pts.length - 1][1], 0);
     P.ctx.save(); P.ctx.globalAlpha = alpha;
     P.ctx.fillStyle = col; P.ctx.beginPath(); P.ctx.arc(a, top, 4, 0, Math.PI * 2); P.ctx.fill();
     P.ctx.restore();
@@ -149,4 +151,35 @@ export function energyBars(P, x, yBase, items, Emax, { h = 110, w = 14, gap = 12
   });
   ctx.restore();
   items.forEach(({ name, color }, i) => tex(P, x + i * (w + gap) + w / 2, yBase + 14, name, { size: 15, color, halo: M.bg, alpha }));
+}
+
+// Oscilloscopio accanto a un punto (a, b in px): il segnale fn(t) degli ultimi `win` secondi, con l'adesso sul
+// punto e il passato che scorre verso destra (o verso sinistra se a destra non c'è spazio). valPx converte il
+// valore in px verso l'alto. Un riquadro tenue del colore di fondo lo stacca dalla scena.
+export function scopeTrace(P, a, b, fn, tNow, { win, Wpx = 260, Hpx = 34, valPx, color, grow = 1, gap = 18 } = {}) {
+  const M = P.M ?? palette(P.c), ctx = P.ctx, pad = free(P.cam);
+  if (grow <= 0.01) return;
+  const right = a + gap + Wpx < P.cam.w - pad.right - 6, dir = right ? 1 : -1, x0 = a + dir * gap;
+  const xs = k => x0 + dir * Wpx * k;
+  ctx.save();
+  ctx.globalAlpha = 0.72 * grow; ctx.fillStyle = M.bg;
+  ctx.beginPath();
+  const bx = Math.min(x0, x0 + dir * Wpx) - 6;
+  ctx.roundRect ? ctx.roundRect(bx, b - Hpx - 10, Wpx + 12, 2 * Hpx + 20, 6) : ctx.rect(bx, b - Hpx - 10, Wpx + 12, 2 * Hpx + 20);
+  ctx.fill();
+  ctx.globalAlpha = 0.45 * grow; ctx.strokeStyle = M.muted; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(xs(0), b); ctx.lineTo(xs(1), b); ctx.stroke();
+  // Collegamento tratteggiato dal punto all'inizio della traccia.
+  ctx.setLineDash([2, 4]); ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(xs(0), b); ctx.stroke(); ctx.setLineDash([]);
+  ctx.globalAlpha = grow; ctx.strokeStyle = color ?? M.vec.weight; ctx.lineWidth = 2.2; ctx.lineJoin = ctx.lineCap = 'round';
+  ctx.beginPath();
+  const n = 240;
+  for (let k = 0; k <= n * grow; k++) {
+    const tt = tNow - win * k / n, z = tt < 0 ? 0 : fn(tt);
+    const yy = b - Math.max(-Hpx, Math.min(Hpx, valPx(z)));
+    k ? ctx.lineTo(xs(k / n), yy) : ctx.moveTo(xs(0), yy);
+  }
+  ctx.stroke();
+  ctx.restore();
+  tex(P, xs(1) + dir * 4, b + 12, 't', { size: 15, color: M.muted, halo: M.bg, alpha: grow, align: right ? 'left' : 'right' });
 }
