@@ -47,7 +47,7 @@ const app = {
 
 /* ---------------- Pannelli ---------------- */
 
-// Ispettore a destra: controlli dell'esperimento in alto, schede Formule · Grafici · Teoria sotto.
+// Ispettore in alto a destra: formule chiave sopra la scena, sotto le tendine Parametri · Formule · Grafici · Teoria.
 const insp = new Inspector();
 const graphBody = insp.pages.graphs, formulaBody = insp.pages.formulas, theoryBody = insp.pages.theory;
 graphBody.innerHTML = '<div class="tabs"></div><canvas class="plot"></canvas><div class="legend"></div>';
@@ -56,6 +56,7 @@ formulaBody.innerHTML = '<div class="formulas"></div>';
 theoryBody.innerHTML = '<div class="theory"></div>';
 // Aprendo o chiudendo l'ispettore la scena scorre di metà della sua larghezza: resta centrata nello spazio libero.
 insp.onChange = (before, after) => cam.panBy((before - after) / 2, 0);
+insp.onSection = () => { app.formulasDirty = true; };
 
 /* ---------------- Annulla e ripeti ---------------- */
 // Un'unica cronologia per l'inchiostro e la scena dell'esperimento, nell'ordine in cui sono avvenute le modifiche.
@@ -321,16 +322,39 @@ function buildGraphTabs() {
     : '';
 }
 
+// Formule chiave (in cima all'ispettore, sempre visibili) e, se la tendina è aperta, tutte le formule.
+// Un esperimento sceglie le chiave con { key: true }; altrimenti valgono le prime due.
 function renderFormulas() {
-  const out = app.exp.formulas(viewSim(), app.params);
+  const out = app.exp.formulas?.(viewSim(), app.params) ?? [];
+  const k = window.katex;
+  const tex = f => (k ? k.renderToString(f.tex, { throwOnError: false }) : f.tex);
+  const list = typeof out === 'string' ? [] : out.filter(Boolean);
+  let keys = list.filter(f => f.key && f.tex);
+  if (!keys.length) keys = list.filter(f => f.tex).slice(0, 2);
+  // Sopra la scena ogni uguaglianza separata da \qquad va su una riga sua; una riga troppo lunga si rimpicciolisce.
+  const keyHtml = keys.flatMap(f => f.tex.split('\\qquad').map(t => `<div class="f ${f.cls || ''}" data-tex="${t.replace(/"/g, '&quot;')}">${tex({ tex: t })}</div>`)).join('');
+  if (insp.lastKey !== keyHtml) {
+    insp.lastKey = keyHtml;
+    insp.keyBody.innerHTML = keyHtml;
+    insp.el.classList.toggle('no-key', !keyHtml);
+    if (!insp.keyBody.clientWidth) { insp.lastKey = null; return; }  // ispettore chiuso: si misura alla riapertura
+    const fit = d => { const over = d.scrollWidth / d.clientWidth; if (over > 1) d.style.fontSize = (100 / over).toFixed(1) + '%'; };
+    for (const d of [...insp.keyBody.children]) {
+      // Troppo lunga anche dopo il primo taglio: si divide ancora sui \quad, poi si rimpicciolisce.
+      if (d.scrollWidth > d.clientWidth * 1.3 && d.dataset.tex.includes('\\quad')) {
+        const parts = d.dataset.tex.split('\\quad').filter(t => t.trim());
+        d.replaceWith(...parts.map(t => { const e = document.createElement('div'); e.className = d.className; e.innerHTML = tex({ tex: t }); return e; }));
+      }
+    }
+    for (const d of insp.keyBody.children) fit(d);
+  }
+  if (!insp.showing('formulas')) return;
   const box = formulaBody.firstChild;
   if (typeof out === 'string') { box.innerHTML = out; return; }
-  const k = window.katex;
-  box.innerHTML = out.filter(Boolean).map(f => {
+  box.innerHTML = list.map(f => {
     if (f.h) return `<div class="fh">${f.h}</div>`;
     if (f.html) return f.html;
-    const html = k ? k.renderToString(f.tex, { throwOnError: false }) : f.tex;
-    return `<div class="f ${f.cls || ''}">${html}</div>`;
+    return `<div class="f ${f.cls || ''}">${tex(f)}</div>`;
   }).join('');
 }
 
@@ -716,7 +740,7 @@ function frame(ts) {
   updateTimeline();
   const g = graphs()[app.graphIdx];
   if (insp.showing('graphs') && g) drawPlot(plotCanvas, app.samples, g, colors, app.view);
-  if (app.formulasDirty && ts - lastFormulaTs > 120 && insp.showing('formulas')) {
+  if (app.formulasDirty && ts - lastFormulaTs > 120 && insp.shown) {
     renderFormulas(); lastFormulaTs = ts; app.formulasDirty = false;
   }
   if (ts - lastPinTs > 150 && (pinsBox.children.length || pinList().length)) { updatePins(); lastPinTs = ts; }
@@ -1259,7 +1283,7 @@ $('playBtn').onclick = togglePlay;
 $('resetBtn').onclick = () => { stopSweep(); resetSim(); };
 $('stepBtn').onclick = stepFrame;
 $('fitBtn').onclick = fitView;
-$('inspBtn').onclick = () => insp.toggle();
+$('inspBtn').onclick = () => { insp.toggle(); app.formulasDirty = true; };
 document.querySelectorAll('#modeSeg button').forEach(b => b.onclick = () => setMode(b.dataset.mode));
 $('speedBtn').onclick = () => setSpeed(SPEEDS[(SPEEDS.indexOf(app.speed) + 1) % SPEEDS.length]);
 $('undoBtn').onclick = undo;

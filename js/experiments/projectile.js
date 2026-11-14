@@ -1,13 +1,45 @@
 import { deg, rk4, tn, clamp } from '../core/math.js';
-import { ball, cannon } from '../core/shapes.js';
-import { bricks, trail } from '../core/look.js';
-import { Stage, createPts, brace, angleMark, dropLines, formulaAtTip, rate01, C } from '../core/annot.js';
+import { ball } from '../core/shapes.js';
+import { trail } from '../core/look.js';
+import { tex, texBox } from '../core/manim.js';
+import { Stage, createPts, brace, angleMark, dropLines, rate01, C } from '../core/annot.js';
 
 const stage = new Stage();   // regia: frecce che crescono, parabola che si disegna, graffe, corpi che nascono
 const num = (v, d = 1) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(d).replace('.', ',');
 
 const KV = 0.25; // lunghezza delle frecce di velocità: metri per (m/s)
 const KA = 0.25; // frecce di accelerazione: metri per (m/s²)
+
+// Etichetta TeX di una freccia (estremi a, b in metri), sempre alla stessa distanza GAP px dal riquadro della scritta:
+// oltre la punta oppure, con side = [dx, dy] (verso preferito sullo schermo), di lato al fusto a una frazione at.
+// Compare sfumando alla fine della crescita della freccia con la stessa chiave.
+const GAP = 8;
+function tag(P, S, key, a, b, src, color, { side = null, at = 0.6, alpha = 1, size = 17 } = {}) {
+  if (S.snap) return;
+  const g = S.grow('arr:' + key), [x0, y0] = P.S(a[0], a[1]);
+  const [x1, y1] = P.S(a[0] + (b[0] - a[0]) * g, a[1] + (b[1] - a[1]) * g), len = Math.hypot(x1 - x0, y1 - y0);
+  if (len <= 18) return;
+  const ux = (x1 - x0) / len, uy = (y1 - y0) / len, B = texBox(P, src, size), hw = B.w / 2 + 2, hh = (B.bot - B.top) / 2;
+  const reach = (dx, dy) => GAP + Math.min(Math.abs(dx) > 1e-6 ? hw / Math.abs(dx) : 1e9, Math.abs(dy) > 1e-6 ? hh / Math.abs(dy) : 1e9);
+  let cx, cy;
+  if (!side) { const k = reach(ux, uy); cx = x1 + ux * k; cy = y1 + uy * k; }
+  else {
+    // Frecce corte: accanto alla punta, così l'etichetta non finisce sul corpo.
+    if (len < 44) at = 1;
+    let nx = -uy, ny = ux;
+    if (nx * side[0] + ny * side[1] < 0) { nx = -nx; ny = -ny; }
+    const k = reach(nx, ny);
+    cx = x0 + (x1 - x0) * at + nx * k; cy = y0 + (y1 - y0) * at + ny * k;
+  }
+  tex(P, cx, cy - (B.top + B.bot) / 2, src, { size, color, halo: S.M.bg, alpha: alpha * rate01(g) });
+}
+
+// Superficie piatta alla Manim: riempimento appena accennato, contorno tenue e bordo d'appoggio netto.
+function flat(P, M, pts, edge) {
+  P.poly(pts, { fill: M.text, alpha: M.dark ? 0.05 : 0.06 });
+  P.poly(pts, { stroke: M.muted, width: 1.2, alpha: 0.55 });
+  P.line(edge, { color: M.text, width: 2 });
+}
 
 function ideal(p) {
   const th = p.theta * deg, vx = p.v0 * Math.cos(th), vy = p.v0 * Math.sin(th);
@@ -85,7 +117,6 @@ export default {
   resizables(s, p, { scale, size }) {
     return [
       { key: 'ball', x: s.x, y: s.y, rPx: Math.max(0.18 * scale, 10) * size('ball') },
-      { key: 'cannon', x: 0.35 * size('cannon') * Math.max(1, 34 / 1.2 / scale), y: p.h0, rPx: 0.5 * 1.2 * Math.max(scale, 34 / 1.2) * size('cannon') },
     ];
   },
 
@@ -118,12 +149,11 @@ export default {
     const id = ideal(q);
     P.ground(0);
 
-    // Torre di lancio in mattoni e cannone, con il perno della canna nel punto di lancio.
-    // Dimensioni disegnate (solo estetiche, regolabili con la maniglia): ui.size(chiave) è il fattore di scala.
-    const kc = ui.size('cannon') * S.born('cannon'), kb = ui.size('ball');
-    const CL = 1.2 * kc, cu = Math.max(P.cam.scale, 34 / 1.2) / P.cam.scale, cr = 0.28 * CL * cu;
-    if (h0 > 0) bricks(P, -1.4 * Math.max(1, kc), 0.6 * Math.max(1, kc), 0, Math.max(0, h0 - cr));
-    if (kc > 0.02) cannon(P, 0, h0 - cr, { angle: th, len: CL, minPx: 34 * kc });
+    // Piattaforma di lancio (solo se h₀ > 0): un rettangolo piatto e tenue, con il bordo superiore netto.
+    if (h0 > 0.02) {
+      const w = Math.max(1, 26 / P.cam.scale);
+      flat(P, M, [[-w, 0], [0, 0], [0, h0], [-w, h0]], [[-w, h0], [0, h0]]);
+    }
 
     // Traiettoria ideale (senza attrito): si disegna quando compare (Create), poi le graffe di h_max e R.
     if (p.showIdeal) {
@@ -132,56 +162,61 @@ export default {
         const t = id.tv * i / 120;
         pts.push([id.vx * t, h0 + id.vy * t - 0.5 * g * t * t]);
       }
-      P.line(createPts(pts, f), { color: 'ideal', width: 1.6, dash: [6, 6] });
+      P.line(createPts(pts, f), { color: 'ideal', width: 1.4, dash: [6, 6], alpha: 0.75 });
       // Le graffe arrivano alla fine del tracciato; durante il volo si attenuano per lasciare spazio al corpo.
-      const gb = Math.min(1, Math.max(0, (f - 0.55) / 0.45)), dim = S.smooth('dim', [s.t > 0 && !s.landed ? 0.35 : 1], 0.25)[0];
+      const gb = Math.min(1, Math.max(0, (f - 0.55) / 0.45)), dim = S.smooth('dim', [s.t > 0 && !s.landed ? 0.3 : 0.85], 0.25)[0];
       if (id.vy > 0 && id.hmax > 0.05) {
         const ax = id.vx * id.tApex;
-        P.line([[ax, 0], [ax, id.hmax]], { color: 'ideal', width: 1, dash: [2, 4], alpha: gb * dim });
-        P.circle(ax, id.hmax, 3.5, { fill: 'muted', alpha: gb });
-        brace(P, [ax, 0], [ax, id.hmax], `h_{\\max} = ${num(id.hmax)}\\ \\mathrm{m}`, { side: 1, grow: gb, alpha: dim, color: M.muted });
+        P.line([[ax, 0], [ax, id.hmax]], { color: 'ideal', width: 1, dash: [2, 4], alpha: 0.7 * gb * dim });
+        P.circle(ax, id.hmax, 3, { fill: 'muted', alpha: gb });
+        if ((id.hmax) * P.cam.scale > 34) brace(P, [ax, 0], [ax, id.hmax], 'h_{\\mathrm{max}}', { side: 1, grow: gb, alpha: dim, color: M.muted });
       }
       if (id.R > 0.05) {
-        P.circle(id.R, 0, 3.5, { fill: 'muted', alpha: gb });
-        brace(P, [0, 0], [id.R, 0], `R = ${num(id.R)}\\ \\mathrm{m}`, { side: -1, gap: 10, grow: gb, alpha: dim, color: M.muted });
+        P.circle(id.R, 0, 3, { fill: 'muted', alpha: gb });
+        // Sotto il suolo, oltre il tratteggio del terreno.
+        brace(P, [0, 0], [id.R, 0], 'R', { side: -1, gap: 20, grow: gb, alpha: dim, color: M.muted });
       }
     }
 
-    // Scia e posizioni stroboscopiche.
-    trail(P, s.trail, 'vel', 3);
-    if (p.strobe) for (const [x, y] of s.strobe) ball(P, x, y, { r: 0.12 * kb, minPx: 6 * kb, color: 'red' });
+    // Scia e posizioni stroboscopiche (puntini).
+    trail(P, s.trail, 'vel', 2.5);
+    if (p.strobe) for (const [x, y] of s.strobe) P.circle(x, y, 3.5, { fill: M.body.red, alpha: 0.6 });
 
-    // Vettore v₀ di lancio con angolo θ (trascinabile).
+    // Il corpo: un disco pieno. A simulazione ferma all'inizio segue il punto di lancio mostrato.
+    const fresh = s.t === 0, [bx, by] = fresh ? [0, h0] : [s.x, s.y], kB = ui.size('ball') * S.born('ball');
+    ball(P, bx, by, { r: 0.18 * kB, minPx: 10 * kB, color: 'red' });
+
+    // Vettore v₀ di lancio con angolo θ (trascinabile): l'etichetta sta di lato, non sulla maniglia della punta.
     const tipx = KV * v0 * Math.cos(th), tipy = h0 + KV * v0 * Math.sin(th);
-    const fresh = s.t === 0;
-    if (th > 0.01) angleMark(P, 0, h0, 34, 0, th, `\\theta = ${Math.round(theta)}°`, { color: M.muted, grow: S.grow('theta', 0.7) });
-    P.line([[0, h0], [KV * v0 * 0.9, h0]], { color: 'muted', width: 1, dash: [3, 4] });
-    P.arrow(0, h0, tipx, tipy, { color: 'vel', width: fresh ? 3 : 2, alpha: fresh ? 1 : 0.4, dash: fresh ? null : [5, 4], label: 'v₀' });
-    P.handle(0, h0, ui.active === 'h0');
-    P.handle(tipx, tipy, ui.active === 'v0');
+    if (th > 0.01) angleMark(P, 0, h0, 34, 0, th, '\\theta', { color: M.muted, grow: S.grow('theta', 0.7) });
+    P.line([[0, h0], [KV * v0 * 0.9, h0]], { color: 'muted', width: 1, dash: [3, 4], alpha: 0.6 });
+    const a0 = fresh ? 1 : 0.4;
+    P.arrow(0, h0, tipx, tipy, { color: 'vel', width: fresh ? 3 : 2, alpha: a0, dash: fresh ? null : [5, 4], key: 'v0' });
+    tag(P, S, 'v0', [0, h0], [tipx, tipy], 'v_0', M.vec.vel, { side: [-1, -1], at: 0.5, alpha: a0 });
 
-    // Corpo e vettori istantanei. A simulazione ferma all'inizio la palla segue il punto di lancio mostrato.
-    const [bx, by] = fresh ? [0, h0] : [s.x, s.y];
-    ball(P, bx, by, { r: 0.18 * kb * S.born('ball'), minPx: 10 * kb * S.born('ball'), color: 'red', spin: -s.t * 8 });
+    // Vettori istantanei.
     if (!fresh) {
       if (p.showComp) {
-        dropLines(P, s.x, s.y, { toY: 0, toX: 0, alpha: S.grow('proj', 0.5) });
-        P.arrow(s.x, s.y, s.x + KV * s.vx, s.y, { color: 'vel', width: 2, dash: [4, 4], label: 'vx', alpha: 0.85 });
-        P.arrow(s.x, s.y, s.x, s.y + KV * s.vy, { color: 'vel', width: 2, dash: [4, 4], label: 'vy', alpha: 0.85 });
+        dropLines(P, s.x, s.y, { toY: 0, toX: 0, alpha: 0.45 * S.grow('proj', 0.5) });
+        const ex = [s.x + KV * s.vx, s.y], ey = [s.x, s.y + KV * s.vy];
+        P.arrow(s.x, s.y, ...ex, { color: 'vel', width: 2, dash: [4, 4], key: 'vx', alpha: 0.7 });
+        P.arrow(s.x, s.y, ...ey, { color: 'vel', width: 2, dash: [4, 4], key: 'vy', alpha: 0.7 });
+        tag(P, S, 'vx', [s.x, s.y], ex, 'v_x', M.vec.vel, { side: [0, s.vy > 0 ? 1 : -1], at: 0.55, alpha: 0.85 });
+        tag(P, S, 'vy', [s.x, s.y], ey, 'v_y', M.vec.vel, { side: [-Math.sign(s.vx || 1), 0], at: 0.55, alpha: 0.85 });
       }
-      // Velocità con la sua formula dal vivo, accanto alla punta.
-      P.arrow(s.x, s.y, s.x + KV * s.vx, s.y + KV * s.vy, { color: 'vel', key: 'v' });
-      const gv = S.grow('arr:v'), [a, b] = P.S(s.x, s.y), [c, d] = P.S(s.x + KV * s.vx * gv, s.y + KV * s.vy * gv), L = Math.hypot(c - a, d - b);
-      if (!S.snap && L > 18) {
-        const src = `\\vec v = \\sqrt{v_x^2 + v_y^2} = ${num(Math.hypot(s.vx, s.vy))}\\ \\mathrm{m/s}`;
-        formulaAtTip(P, { x: c, y: d, ux: (c - a) / L, uy: (d - b) / L }, src, { color: M.vec.vel, alpha: rate01(gv) });
-      }
+      const ev = [s.x + KV * s.vx, s.y + KV * s.vy];
+      P.arrow(s.x, s.y, ...ev, { color: 'vel', key: 'v' });
+      tag(P, S, 'v', [s.x, s.y], ev, '\\vec v', M.vec.vel);
     }
     if (p.showAcc) {
       const v = Math.hypot(s.vx, s.vy);
-      const ax = -p.k * v * s.vx, ay = -p.g - p.k * v * s.vy;
-      P.arrow(bx, by, bx + KA * ax, by + KA * ay, { color: 'acc', label: p.k > 0 ? 'a' : 'g' });
+      const ea = [bx + KA * -p.k * v * s.vx, by + KA * (-p.g - p.k * v * s.vy)];
+      P.arrow(bx, by, ...ea, { color: 'acc', key: 'acc' });
+      tag(P, S, 'acc', [bx, by], ea, p.k > 0 ? '\\vec a' : '\\vec g', M.vec.acc,
+        { side: [Math.sign(s.vx) || 1, 0], at: 1 });   // accanto alla punta, dal lato opposto a v_y
     }
+    P.handle(0, h0, ui.active === 'h0');
+    P.handle(tipx, tipy, ui.active === 'v0');
   },
 
   formulas(s, p) {
@@ -194,12 +229,12 @@ export default {
       { tex: `${V('v_{0x}')}=${V('v_0')}\\cos\\theta=${tn(id.vx)}${u('m/s')}` },
       { tex: `${V('v_{0y}')}=${V('v_0')}\\sin\\theta=${tn(id.vy)}${u('m/s')}` },
       { h: 'Leggi orarie' },
-      { tex: `x(t)=${tn(id.vx)}\\,t` },
-      { tex: `y(t)=${tn(p.h0, 1)}+${tn(id.vy)}\\,t-${tn(p.g / 2, 3)}\\,t^2` },
+      { key: true, tex: `x(t)=${tn(id.vx)}\\,t` },
+      { key: true, tex: `y(t)=${tn(p.h0, 1)}+${tn(id.vy)}\\,t-${tn(p.g / 2, 3)}\\,t^2` },
       { h: p.k > 0 ? 'Previsioni ideali (senza aria)' : 'Previsioni' },
       { tex: `t_{\\text{volo}}=\\dfrac{${V('v_{0y}')}+\\sqrt{${V('v_{0y}^2')}+2${G}h_0}}{${G}}=${tn(id.tv)}${u('s')}` },
       { tex: `h_{\\max}=h_0+\\dfrac{${V('v_{0y}^2')}}{2${G}}=${tn(id.hmax)}${u('m')}` },
-      { tex: `R=${V('v_{0x}')}\\,t_{\\text{volo}}=${tn(id.R)}${u('m')}` },
+      { key: true, tex: `R=${V('v_{0x}')}\\,t_{\\text{volo}}=${tn(id.R)}${u('m')}` },
       { h: s.landed ? 'All\'atterraggio' : 'Istante attuale' },
       { tex: `t=${tn(s.t)}${u('s')}\\qquad x=${tn(s.x)}${u('m')}\\qquad y=${tn(s.y)}${u('m')}` },
       { tex: `${V('v_x')}=${tn(s.vx)}\\quad ${V('v_y')}=${tn(s.vy)}\\quad |${V('\\vec v')}|=${tn(v)}${u('m/s')}` },

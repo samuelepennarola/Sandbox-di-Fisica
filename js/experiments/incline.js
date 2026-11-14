@@ -1,7 +1,7 @@
 import { deg, tn, clamp } from '../core/math.js';
 import { crate } from '../core/shapes.js';
-import { slab, dust } from '../core/look.js';
-import { Stage, brace, angleMark, formulaAtTip, rate01, C as Ccol } from '../core/annot.js';
+import { tex, texBox } from '../core/manim.js';
+import { Stage, brace, angleMark, rate01, C as Ccol } from '../core/annot.js';
 
 const stage = new Stage();   // regia: frecce che crescono, graffe, piano che si trasforma, cassa che nasce
 const num = (v, d = 1) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(d).replace('.', ',');
@@ -11,6 +11,30 @@ const BW = 1.0, BH = 0.6; // dimensioni del blocco (m)
 const KF = 0.08;         // frecce delle forze: metri per newton
 const KV = 0.35;         // frecce di velocità: metri per (m/s)
 const KA = 0.35;         // frecce di accelerazione: metri per (m/s²)
+
+// Etichetta TeX di una freccia (estremi a, b in metri), sempre alla stessa distanza GAP px dal riquadro della scritta:
+// oltre la punta oppure, con side = [dx, dy] (verso preferito sullo schermo), di lato al fusto a una frazione at.
+// Compare sfumando alla fine della crescita della freccia con la stessa chiave.
+const GAP = 8;
+function tag(P, S, key, a, b, src, color, { side = null, at = 0.6, alpha = 1, size = 17 } = {}) {
+  if (S.snap) return;
+  const g = S.grow('arr:' + key), [x0, y0] = P.S(a[0], a[1]);
+  const [x1, y1] = P.S(a[0] + (b[0] - a[0]) * g, a[1] + (b[1] - a[1]) * g), len = Math.hypot(x1 - x0, y1 - y0);
+  if (len <= 18) return;
+  const ux = (x1 - x0) / len, uy = (y1 - y0) / len, B = texBox(P, src, size), hw = B.w / 2 + 2, hh = (B.bot - B.top) / 2;
+  const reach = (dx, dy) => GAP + Math.min(Math.abs(dx) > 1e-6 ? hw / Math.abs(dx) : 1e9, Math.abs(dy) > 1e-6 ? hh / Math.abs(dy) : 1e9);
+  let cx, cy;
+  if (!side) { const k = reach(ux, uy); cx = x1 + ux * k; cy = y1 + uy * k; }
+  else {
+    // Frecce corte: accanto alla punta, così l'etichetta non finisce sul corpo.
+    if (len < 44) at = 1;
+    let nx = -uy, ny = ux;
+    if (nx * side[0] + ny * side[1] < 0) { nx = -nx; ny = -ny; }
+    const k = reach(nx, ny);
+    cx = x0 + (x1 - x0) * at + nx * k; cy = y0 + (y1 - y0) * at + ny * k;
+  }
+  tex(P, cx, cy - (B.top + B.bot) / 2, src, { size, color, halo: S.M.bg, alpha: alpha * rate01(g) });
+}
 
 // Geometria: vertice in alto T = (0, L sinα); s misura la distanza lungo il piano da T, positiva verso il basso.
 function geom(p) {
@@ -134,52 +158,69 @@ export default {
     const g = geom({ ...p, alpha }), { T, B, d, n } = g;
     const at = (s, h = 0) => [T[0] + d[0] * s + n[0] * h, T[1] + d[1] * s + n[1] * h];
     const add = (A, v, k) => [A[0] + v[0] * k, A[1] + v[1] * k];
+    // Versi sullo schermo (y verso il basso) lungo il piano e verso l'interno del piano.
+    const dS = [d[0], -d[1]], inS = [-n[0], n[1]];
 
     P.ground(0);
-    slab(P, [[0, 0], B, T], { topEdge: [T, B] });
-    // Misure del piano: lunghezza lungo l'ipotenusa (dentro il triangolo) e altezza sul lato verticale.
+    // Piano: triangolo appena velato, cateti tenui e il piano d'appoggio netto.
+    const tri = [[0, 0], B, T];
+    P.poly(tri, { fill: M.text, alpha: M.dark ? 0.05 : 0.06 });
+    P.line([[0, 0], T], { color: 'muted', width: 1.2, alpha: 0.55 });
+    P.line([T, B], { color: M.text, width: 2 });
+
+    // Quote: l'angolo α alla base e la lunghezza L lungo il piano (dentro il triangolo). La graffa di L si attenua
+    // quando il blocco e le sue frecce le passano sopra.
     if (alpha > 0.5) {
-      const gb = S.grow('braces', 0.8);
-      brace(P, T, B, `L = ${num(L, 0)}\\ \\mathrm{m}`, { side: -1, gap: 10, grow: gb, color: M.muted });
-      brace(P, [0, 0], T, `h = ${num(T[1], 2)}\\ \\mathrm{m}`, { side: -1, gap: 8, grow: gb, color: M.muted });
-      angleMark(P, B[0], 0, 46, Math.PI - g.a, Math.PI, `\\alpha = ${Math.round(alpha)}°`, { color: M.text, grow: S.grow('alpha', 0.7) });
+      const gb = S.grow('braces', 0.8), near = Math.abs(sPos - L / 2) < 2.6;
+      const dimL = S.smooth('dimL', [near && p.showComp ? 0.2 : 0.55], 0.25)[0];
+      brace(P, T, B, 'L', { side: -1, gap: 12, grow: gb, alpha: dimL, color: M.muted });
+      angleMark(P, B[0], 0, 46, Math.PI - g.a, Math.PI, '\\alpha', { color: M.text, grow: S.grow('alpha', 0.7) });
     }
 
-    // Blocco.
+    // Blocco: rettangolo piatto appoggiato al piano (ingrandibile solo nel disegno), con il punto d'applicazione.
     const C = at(sPos, BH / 2);
-    // La cassa disegnata si può ingrandire (solo estetica): resta appoggiata al piano.
     const kb = ui.size('block') * S.born('block'), Cd = at(sPos, BH * kb / 2);
     if (kb > 0.02) crate(P, Cd[0], Cd[1], { w: BW * kb, h: BH * kb, angle: -g.a, minPx: 0, color: 'blue' });
-    P.circle(C[0], C[1], 3, { fill: 'bg' });
-    // Polvere mentre striscia con attrito dinamico.
-    if (st.regime === 'dinamico' && Math.abs(st.v) > 0.05 && p.muk > 0) {
-      const sg = Math.sign(st.v), c0 = at(sPos, 0);
-      dust(c0[0], c0[1], d[0] * sg, d[1] * sg, Math.min(1.2, Math.abs(st.f * st.v) * 0.04));
-    }
+    P.circle(C[0], C[1], 2.5, { fill: M.text });
 
-    // Forze. Il peso si scompone e accanto alla componente parallela compare la sua formula dal vivo.
+    // Forze, ciascuna con il solo nome. Componenti del peso tratteggiate e più tenui.
     const W = p.m * p.g;
     if (p.showComp && alpha > 0.5) {
-      const tipPar = add(C, d, KF * W * g.sn);
-      P.arrow(C[0], C[1], ...tipPar, { color: 'weight', width: 2, dash: [5, 4], key: 'Ppar', alpha: 0.8 });
-      P.arrow(C[0], C[1], ...add(C, n, -KF * W * g.c), { color: 'weight', width: 2, dash: [5, 4], label: 'P⊥', alpha: 0.8 });
-      const gp = S.grow('arr:Ppar'), [a0, b0] = P.S(C[0], C[1]), [c0, d0] = P.S(C[0] + (tipPar[0] - C[0]) * gp, C[1] + (tipPar[1] - C[1]) * gp);
-      const Lp = Math.hypot(c0 - a0, d0 - b0);
-      if (!S.snap && Lp > 14) formulaAtTip(P, { x: c0, y: d0, ux: (c0 - a0) / Lp, uy: (d0 - b0) / Lp },
-        `\\vec P_{\\parallel} = mg\\sin\\alpha = ${num(W * g.sn, 2)}\\ \\mathrm{N}`, { color: M.vec.weight, size: 16, alpha: rate01(gp) });
+      const ePar = add(C, d, KF * W * g.sn), ePerp = add(C, n, -KF * W * g.c);
+      P.arrow(C[0], C[1], ...ePar, { color: 'weight', width: 2, dash: [5, 4], key: 'Ppar', alpha: 0.7 });
+      P.arrow(C[0], C[1], ...ePerp, { color: 'weight', width: 2, dash: [5, 4], key: 'Pperp', alpha: 0.7 });
+      tag(P, S, 'Ppar', C, ePar, '\\vec P_{\\parallel}', M.vec.weight, { alpha: 0.9 });
+      // P⊥ ha l'etichetta di lato, verso la cima del piano: lontana da P, che punta in basso.
+      tag(P, S, 'Pperp', C, ePerp, '\\vec P_{\\perp}', M.vec.weight, { side: [-dS[0], -dS[1]], at: 1, alpha: 0.9 });
     }
-    P.arrow(C[0], C[1], C[0], C[1] - KF * W, { color: 'weight', label: 'P' });
-    P.arrow(C[0], C[1], ...add(C, n, KF * st.N), { color: 'normal', label: 'N' });
-    const contact = at(sPos, 0);
-    if (Math.abs(st.f) > 1e-6) P.arrow(contact[0], contact[1], ...add(contact, d, KF * st.f), { color: 'friction', key: 'f', label: st.regime === 'statico' ? 'fs' : 'fd' });
+    const eP = [C[0], C[1] - KF * W], eN = add(C, n, KF * st.N);
+    P.arrow(C[0], C[1], ...eP, { color: 'weight', key: 'P' });
+    tag(P, S, 'P', C, eP, '\\vec P', M.vec.weight);
+    P.arrow(C[0], C[1], ...eN, { color: 'normal', key: 'N' });
+    // Se la punta di N cade all'altezza delle frecce v e a (sopra il blocco), l'etichetta va di lato, dal lato libero.
+    const hN = BH / 2 + KF * st.N, busy = (p.showVel && Math.abs(st.v) > 1e-3) || (p.showAcc && Math.abs(st.a) > 1e-3);
+    const sv = Math.sign(st.v || st.a || 1);
+    tag(P, S, 'N', C, eN, '\\vec N', M.vec.normal, busy && hN > BH && hN < BH + 1.1 ? { side: [-dS[0] * sv, -dS[1] * sv], at: 1 } : {});
+    // Attrito lungo la superficie di contatto: parte dallo spigolo del blocco verso cui punta, così resta fuori dalla
+    // sagoma; l'etichetta sta sotto la superficie, a metà freccia.
+    if (Math.abs(st.f) > 1e-6) {
+      const contact = at(sPos + Math.sign(st.f) * BW * kb / 2, 0), eF = add(contact, d, KF * st.f);
+      P.arrow(contact[0], contact[1], ...eF, { color: 'friction', key: 'f' });
+      tag(P, S, 'f', contact, eF, st.regime === 'statico' ? '\\vec f_s' : '\\vec f_d', M.vec.friction, { side: inS, at: 0.5 });
+    }
 
-    const top = at(sPos, BH + 0.25);
-    if (p.showVel && Math.abs(st.v) > 1e-3) P.arrow(top[0], top[1], ...add(top, d, KV * st.v), { color: 'vel', label: 'v' });
-    if (p.showAcc && Math.abs(st.a) > 1e-3) {
-      const ta = at(sPos, BH + 0.6);
-      P.arrow(ta[0], ta[1], ...add(ta, d, KA * st.a), { color: 'acc', label: 'a' });
+    // Velocità e accelerazione, parallele al piano, sopra il blocco: partono poco oltre la retta di N, così non la incrociano.
+    const off = 14 / P.cam.scale;
+    if (p.showVel && Math.abs(st.v) > 1e-3) {
+      const top = at(sPos + Math.sign(st.v) * off, BH + 0.3), eV = add(top, d, KV * st.v);
+      P.arrow(top[0], top[1], ...eV, { color: 'vel', key: 'v' });
+      tag(P, S, 'v', top, eV, '\\vec v', M.vec.vel);
     }
-    if (st.regime === 'statico') P.text(C[0], C[1], 'in equilibrio', { color: 'normal', size: 12.5, align: 'center', dy: -54 });
+    if (p.showAcc && Math.abs(st.a) > 1e-3) {
+      const ta = at(sPos + Math.sign(st.a) * off, BH + 0.75), eA = add(ta, d, KA * st.a);
+      P.arrow(ta[0], ta[1], ...eA, { color: 'acc', key: 'a' });
+      tag(P, S, 'a', ta, eA, '\\vec a', M.vec.acc);
+    }
 
     P.handle(T[0], T[1], ui.active === 'alpha');
     if (ui.active === 'block') P.handle(C[0], C[1], true);
@@ -196,10 +237,10 @@ export default {
     return [
       { h: 'Scomposizione del peso' },
       { tex: `${Pc('P')}=mg=${tn(W)}${u('N')}` },
-      { tex: `${Pc('P_{\\parallel}')}=mg\\sin\\alpha=${tn(W * g.sn)}${u('N')}` },
-      { tex: `${Pc('P_{\\perp}')}=mg\\cos\\alpha=${tn(N)}${u('N')}\\quad(=${Nc}\\text{, la normale})` },
+      { key: true, tex: `${Pc('P_{\\parallel}')}=mg\\sin\\alpha=${tn(W * g.sn)}${u('N')}` },
+      { key: true, tex: `${Pc('P_{\\perp}')}=mg\\cos\\alpha=${tn(N)}${u('N')}\\quad(=${Nc}\\text{, la normale})` },
       { h: 'Equilibrio statico (da fermo)' },
-      { tex: `\\tan\\alpha=${tn(tan, 3)}\\ ${slides ? '>' : '\\le'}\\ \\mu_s=${tn(p.mus)}`, cls: slides ? 'warn' : 'ok' },
+      { key: true, tex: `\\tan\\alpha=${tn(tan, 3)}\\ ${slides ? '>' : '\\le'}\\ \\mu_s=${tn(p.mus)}`, cls: slides ? 'warn' : 'ok' },
       { tex: slides ? `\\Rightarrow\\ \\text{scivola}` : `\\Rightarrow\\ \\text{resta fermo}`, cls: slides ? 'warn' : 'ok' },
       slides && p.muk >= tan && { tex: `\\text{ma }\\mu_d=${tn(p.muk)}\\ \\ge\\ \\tan\\alpha:\\ \\text{si riferma subito (di solito }\\mu_d<\\mu_s)`, cls: 'ok' },
       { tex: `${Fc('f_{s,\\max}')}=\\mu_s ${Nc}=${tn(p.mus * N)}${u('N')}` },

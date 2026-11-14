@@ -395,44 +395,58 @@ body.no-sim .topbar .group.tools { margin-left: auto; }
 .pen-presets button.on { border-color: var(--accent); background: var(--ui-active); }
 .pen-preview { width: 100%; height: 64px; display: block; margin-top: 8px; border-radius: 10px; background: var(--ui-hover); }
 
-/* ---------- Ispettore (colonna a destra) ---------- */
+/* ---------- Ispettore: riquadro in alto a destra, quasi invisibile sopra la scena ---------- */
 #inspector {
-  position: fixed; z-index: 18; right: 0; top: var(--bar-h); bottom: 0; width: 340px;
-  display: flex; flex-direction: column;
-  background: var(--panel-bg); border-left: 1px solid var(--panel-border);
-  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
-  padding-bottom: env(safe-area-inset-bottom);
-  transform: translateX(102%); transition: transform .22s ease; visibility: hidden;
+  --glass: transparent;
+  --glass-open: color-mix(in srgb, var(--panel-solid) 90%, transparent);
+  --hair: color-mix(in srgb, var(--c-text) 11%, transparent);
+  position: fixed; z-index: 18; right: 12px; top: calc(var(--bar-h) + 12px); width: 320px;
+  max-height: calc(100vh - var(--bar-h) - 24px - env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; border-radius: 16px;
+  background: var(--glass); border: 1px solid transparent;
+  opacity: 0; transform: translateX(12px); visibility: hidden;
+  transition: opacity .3s cubic-bezier(.6, 0, .4, 1), transform .3s cubic-bezier(.6, 0, .4, 1), visibility 0s .3s,
+    background-color .3s cubic-bezier(.6, 0, .4, 1), border-color .3s;
 }
-body.insp-open #inspector { transform: none; visibility: visible; }
-body.insp-overlay #inspector { width: min(360px, 92vw); box-shadow: var(--panel-shadow); }
-.insp-sec { display: flex; flex-direction: column; min-height: 0; }
-.insp-sec.hidden, .insp-page.hidden, .insp-tabs button.hidden { display: none; }
-.insp-params { flex: 0 1 auto; max-height: 58%; }
-.insp-data { flex: 1 1 0; border-top: 1px solid var(--panel-border); }
-#inspector.data-collapsed .insp-params { max-height: none; flex: 1 1 auto; }
-#inspector.data-collapsed .insp-data { flex: 0 0 auto; }
-/* Con la teoria aperta i controlli restano visibili ma lasciano più spazio alla lettura. */
-#inspector.theory-on .insp-params { max-height: 34%; }
-#inspector.params-collapsed .insp-params { flex: 0 0 auto; }
-#inspector.params-collapsed .insp-params .insp-body { display: none; }
-#inspector.params-collapsed .insp-params .insp-head svg { transform: rotate(-90deg); }
+body.insp-open #inspector { opacity: 1; transform: none; visibility: visible; transition-delay: 0s; }
+body.insp-overlay #inspector { width: min(320px, calc(100vw - 24px)); }
+/* Con una tendina aperta il riquadro diventa leggibile come un pannello. */
+#inspector.sec-open { background: var(--glass-open); border-color: var(--hair); box-shadow: var(--panel-shadow); }
+#inspector.sec-open { -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+
+/* Formule chiave: grandi, senza riquadro, con un alone del colore della scena e un bagliore del proprio colore. */
+.insp-key { padding: 12px 16px 6px; flex: 0 0 auto; }
+#inspector.no-key .insp-key { display: none; }
+.formulas.key { font-size: 17px; color: var(--c-text); }
+.formulas.key .f { padding: 3px 0; overflow: visible; white-space: nowrap; }
+.formulas.key .katex {
+  text-shadow: 0 0 9px color-mix(in srgb, currentColor 40%, transparent),
+    0 0 2px var(--c-sky-top), 0 0 6px var(--c-sky-top), 0 0 14px var(--c-sky-top);
+}
+:root[data-theme="light"] .formulas.key .katex {
+  text-shadow: 0 0 7px color-mix(in srgb, currentColor 22%, transparent), 0 0 2px var(--c-sky-top), 0 0 8px var(--c-sky-top), 0 0 16px var(--c-sky-top);
+}
+
+/* Tendine: righe sottili, una sola aperta alla volta. */
+.insp-acc { display: flex; flex-direction: column; min-height: 0; flex: 0 1 auto; padding: 2px 6px 6px; }
+#inspector.lesson .insp-acc { display: none; }
+.insp-sec { display: flex; flex-direction: column; min-height: 0; border-top: 1px solid var(--hair); }
+.insp-sec.hidden { display: none; }
+.insp-sec.open { flex: 1 1 auto; }
 .insp-head {
-  display: flex; align-items: center; gap: 6px; width: 100%; border: 0; background: transparent; cursor: pointer;
-  padding: 12px 12px 6px 16px; font-weight: 700; font-size: 15px; text-align: left; color: var(--c-text);
+  display: flex; align-items: center; gap: 6px; width: 100%; min-height: 40px; border: 0; background: transparent; cursor: pointer;
+  padding: 8px 10px; border-radius: 10px; font-weight: 600; font-size: 13.5px; text-align: left;
+  color: color-mix(in srgb, var(--c-text) 72%, transparent);
+  text-shadow: 0 0 4px var(--c-sky-top), 0 0 10px var(--c-sky-top);
 }
+.insp-head:hover { color: var(--c-text); }
+.insp-sec.open .insp-head { color: var(--accent); text-shadow: none; }
 .insp-head .title { flex: 1; }
-.insp-head svg { width: 18px; height: 18px; color: var(--c-muted); transition: transform .2s; }
-.insp-body { padding: 4px 16px 16px; overflow-y: auto; touch-action: pan-y; min-height: 0; }
-.insp-page { flex: 1 1 auto; }
-.insp-tabs { display: flex; gap: 2px; padding: 8px 10px 4px; }
-.insp-tabs button {
-  flex: 1; height: 40px; border: 0; border-radius: 9px; background: transparent; cursor: pointer;
-  font-size: 13.5px; font-weight: 600; color: var(--c-muted);
-}
-.insp-tabs button:hover { background: var(--ui-hover); }
-.insp-tabs button.on { background: var(--ui-active); color: var(--accent); }
-.insp-page .theory h2 { font-size: 19px; }
+.insp-head svg { width: 16px; height: 16px; color: var(--c-muted); transition: transform .25s cubic-bezier(.6, 0, .4, 1); transform: rotate(-90deg); }
+.insp-sec.open .insp-head svg { transform: none; color: var(--accent); }
+.insp-body { display: none; padding: 2px 10px 12px; overflow-y: auto; touch-action: pan-y; min-height: 0; max-height: 52vh; }
+.insp-sec.open .insp-body { display: block; }
+.insp-body .theory h2 { font-size: 19px; }
 
 /* Puntina dei controlli e valori fissati sulla scena */
 .param-pin { width: 28px; height: 28px; border: 0; background: transparent; border-radius: 7px; display: grid; place-items: center; color: var(--c-muted); cursor: pointer; opacity: .55; }
@@ -490,8 +504,6 @@ body.has-rail:not(.lesson) #pins { left: 88px; }
 .sec-body { padding-bottom: 8px; }
 .sec-body > .sub:first-child { margin-top: 2px; }
 
-.insp-more { display: none; font-size: 12px; font-weight: 600; color: var(--accent); }
-#inspector.params-collapsed .insp-more { display: inline; }
 
 /* Barretta di azioni sull'oggetto selezionato */
 .ctxbar {
@@ -530,8 +542,8 @@ body.has-rail:not(.lesson) #pins { left: 88px; }
 /* ---------- Ritocchi alla 3Blue1Brown ---------- */
 /* Pulsante principale (Play) e stati attivi con l'accento di Manim; bordi sottili e senza ombre pesanti. */
 .icon-btn.primary { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent), 0 2px 10px color-mix(in srgb, var(--accent) 28%, transparent); }
-.icon-btn.on, .seg button.on, .insp-tabs button.on, #drawer button.on { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent); }
-:root[data-theme="dark"] .topbar, :root[data-theme="dark"] #inspector, :root[data-theme="dark"] #drawer { -webkit-backdrop-filter: none; backdrop-filter: none; }
+.icon-btn.on, .seg button.on, #drawer button.on { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent); }
+:root[data-theme="dark"] .topbar, :root[data-theme="dark"] #drawer { -webkit-backdrop-filter: none; backdrop-filter: none; }
 .btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
 
 /* Bersagli di tocco più grandi (≥ 44 px) senza ingrandire i pulsanti piccoli: l'area attiva si allarga oltre il disegno. */
@@ -544,14 +556,14 @@ body.has-rail:not(.lesson) #pins { left: 88px; }
 #sceneFade.on { display: block; }
 /* I controlli del nuovo esperimento entrano con un breve fade. */
 @keyframes inspIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
-#inspector.swap .insp-body:not(.hidden) { animation: inspIn .32s cubic-bezier(.6, 0, .4, 1); }
+#inspector.swap .insp-key, #inspector.swap .insp-sec.open .insp-body { animation: inspIn .32s cubic-bezier(.6, 0, .4, 1); }
 /* Cambio di tema: colori dei pannelli in transizione, senza scatti. */
 html.theme-anim body *, html.theme-anim body *::before {
   transition: background-color .35s cubic-bezier(.6, 0, .4, 1), color .35s cubic-bezier(.6, 0, .4, 1),
     border-color .35s cubic-bezier(.6, 0, .4, 1), box-shadow .35s cubic-bezier(.6, 0, .4, 1) !important;
 }
 @media (prefers-reduced-motion: reduce) {
-  #inspector.swap .insp-body { animation: none; }
+  #inspector.swap .insp-key, #inspector.swap .insp-body { animation: none; }
   html.theme-anim body *, html.theme-anim body *::before { transition: none !important; }
   #drawer, #inspector { transition: none; }
 }
