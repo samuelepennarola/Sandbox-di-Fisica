@@ -14,6 +14,7 @@ import { look, updateLook, drawParticles } from './core/look.js';
 import './core/pwa.js';
 import { Lasso } from './core/lasso.js';
 import { drawFBD, drawVel, drawTrail, fbdFormulas } from './core/fbd.js';
+import { buildQuickbar } from './core/quickbar.js';
 import { AREAS, findExperiment } from './experiments/registry.js';
 
 const H = 1 / 480;            // passo di integrazione predefinito (s); un esperimento può dichiarare il suo (exp.dt)
@@ -26,7 +27,7 @@ const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
 const cam = new Camera();
 // Margini dell'inquadratura: barra in alto, ispettore a destra (se occupa spazio), moviola in basso.
-cam.padFn = () => ({ top: 76, right: 24 + (insp?.reserved ?? 0), bottom: document.body.classList.contains('no-sim') ? 24 : 72, left: 24 + (document.body.classList.contains('has-rail') && !document.body.classList.contains('lesson') ? 76 : 0) });
+cam.padFn = () => ({ top: 76, right: 24 + (insp?.reserved ?? 0), bottom: document.body.classList.contains('no-sim') ? 24 : document.body.classList.contains('has-quick') ? 124 : 72, left: 24 + (document.body.classList.contains('has-rail') && !document.body.classList.contains('lesson') ? 76 : 0) });
 const ink = new Ink();
 const lasso = new Lasso(ink);
 let colors = readColors();
@@ -260,6 +261,10 @@ function buildParams() {
   body.innerHTML = '';
   app.syncs = [];
   insp.setTitle(exp.panelTitle ?? 'Parametri');
+  // Gli interruttori (sì/no) della scena stanno nella barra sulla scena, non tra i Parametri.
+  const toggles = exp.buildPanel ? [] : (exp.params ?? []).filter(d => d.type === 'toggle' && !d.hidden);
+  app.syncs.push(...buildQuickbar($('quickbar'), toggles, d => app.params[d.key], (d, v) => setParam(d, v)));
+  document.body.classList.toggle('has-quick', toggles.length > 0);
   if (exp.buildPanel) {
     rail.dataset.used = '';
     exp.buildPanel(body, api);
@@ -269,7 +274,7 @@ function buildParams() {
   showRail(false);
 
   for (const def of exp.params) {
-    if (def.hidden) continue;
+    if (def.hidden || def.type === 'toggle') continue;
     body.appendChild(control(def, () => app.params[def.key], v => setParam(def, v)));
   }
 

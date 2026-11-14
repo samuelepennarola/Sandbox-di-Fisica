@@ -61,7 +61,7 @@ export default {
     { key: 'vs', label: 'Velocità della sorgente 1 (Doppler)', unit: 'm/s', min: 0, max: 5, step: 0.05, value: 0 },
     { key: 'on2', type: 'toggle', label: 'Seconda sorgente', value: true },
     { key: 'showLines', type: 'toggle', label: 'Linee nodali', value: false, live: true },
-    { key: 'showTrace', type: 'toggle', label: 'Segnale nella sonda', value: true, live: true },
+    { key: 'showTrace', type: 'toggle', label: 'Segnale nella sonda', short: 'Segnale sonda', icon: 'probe', value: true, live: true },
     { key: 'px', label: 'Sonda x', unit: 'm', min: -20, max: 20, step: 0.1, value: 3, live: true, hidden: true },
     { key: 'py', label: 'Sonda y', unit: 'm', min: -20, max: 20, step: 0.1, value: 4, live: true, hidden: true },
     { key: 'tMax', label: 'Durata della simulazione', unit: 's', min: 5, max: 300, step: 5, value: 60 },

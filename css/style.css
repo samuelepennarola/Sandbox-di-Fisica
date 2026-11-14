@@ -691,3 +691,25 @@ body.chrome-idle .pin-x { opacity: 0; }
 #drawer .drawer-sub { margin: 2px 0 8px 18px; padding-left: 8px; border-left: 1px solid var(--panel-border); }
 #drawer .drawer-sub button { font-size: 15px; padding: 6px 10px; color: var(--c-muted); }
 #drawer .drawer-sub button:hover { color: var(--c-text); }
+
+/* Barra degli interruttori della scena: pastiglie con icona e testo in basso a sinistra, sopra la moviola.
+   Si attenua con il resto dell'interfaccia (chrome-idle) e sparisce in Spiega, dove la scena resta pulita. */
+.quickbar {
+  position: fixed; z-index: 15; left: calc(env(safe-area-inset-left) + 20px); bottom: calc(env(safe-area-inset-bottom) + 48px);
+  max-width: calc(100vw - var(--insp-w) - 48px); display: flex; flex-wrap: wrap; gap: 6px; pointer-events: none;
+}
+body.has-rail:not(.lesson) .quickbar { left: calc(env(safe-area-inset-left) + 96px); }
+.quickbar.hidden, body.lesson .quickbar, body.no-sim .quickbar { display: none; }
+.quickbar button {
+  pointer-events: auto; display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 0 14px 0 10px;
+  border-radius: 20px; border: 1px solid color-mix(in srgb, var(--c-text) 14%, transparent);
+  background: color-mix(in srgb, var(--c-bg) 70%, transparent); color: var(--c-muted);
+  font: 400 15.5px var(--ui-font); cursor: pointer; transition: color .2s var(--ease), background .2s var(--ease), border-color .2s var(--ease), opacity 1.4s var(--ease);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.quickbar button svg { flex: none; opacity: .75; }
+.quickbar button:hover { color: var(--c-text); }
+.quickbar button.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 12%, var(--c-bg)); }
+.quickbar button.on svg { opacity: 1; }
+body.chrome-idle .quickbar button { opacity: .42; }
+body.chrome-idle.playing .quickbar button { opacity: .16; }

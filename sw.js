@@ -5,7 +5,7 @@
 // (avvio istantaneo, anche senza connessione). Quando si pubblica una nuova versione, il nuovo service worker
 // scarica i file aggiornati in sottofondo e aspetta che l'utente tocchi «Aggiorna».
 
-const VERSION = '7175bc770f';
+const VERSION = '8c8ba2e06a';
 const FILES = [
   "./",
   "css/style.css",
@@ -33,6 +33,7 @@ const FILES = [
   "js/core/panels.js",
   "js/core/plot.js",
   "js/core/pwa.js",
+  "js/core/quickbar.js",
   "js/core/render.js",
   "js/core/shapes.js",
   "js/core/store.js",
