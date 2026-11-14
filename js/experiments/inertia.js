@@ -133,7 +133,6 @@ export default {
 
     // Vista 3D: velocità angolare e momento come vettori lungo l'asse (regola della mano destra: orario = verso −z).
     if (tilt > 0.02) {
-      W.zAxis(P, [0, H, 0.12], 1.6);
       const wmax = Math.max(accOf(p) / RH * tLand(p), 1e-6), Lw = arrowPx(k.w, wmax, { min: 24, max: 110 }) / sc * tilt;
       if (Math.abs(k.w) > 1e-6) {
         W.arrow(P, [0, H, 0.14], [0, H, 0.14 + Math.sign(k.w) * Lw], { color: 'vel', key: 'wz', width: 3.2 });

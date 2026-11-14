@@ -138,18 +138,22 @@ export function room3d(P, V, box, { up = 'y', step = 1, alpha = 1 } = {}) {
   const M = P.M ?? palette(P.c), ctx = P.ctx, axes = ['x', 'y', 'z'];
   const at = (q, ax, v) => { const r = { ...q }; r[ax] = v; return [r.x, r.y, r.z]; };
   const mid = { x: (box.x[0] + box.x[1]) / 2, y: (box.y[0] + box.y[1]) / 2, z: (box.z[0] + box.z[1]) / 2 };
-  const faces = [{ ax: up, v: box[up][0], floor: true }];
+  const faces = [{ ax: up, v: box[up][0], floor: true, w: 1 }];
   for (const ax of axes.filter(a => a !== up)) {
-    // Delle due pareti perpendicolari a questo asse, quella più lontana dalla camera.
+    // Delle due pareti perpendicolari a questo asse si mostra quella più lontana dalla camera; quando la camera passa
+    // di taglio (profondità quasi uguali) le due si scambiano in dissolvenza, senza scatti.
     const [d0, d1] = box[ax].map(v => V.depth(...at(mid, ax, v)));
-    faces.push({ ax, v: d0 < d1 ? box[ax][0] : box[ax][1] });
+    const span = Math.abs(box[ax][1] - box[ax][0]) || 1, u = Math.max(0, Math.min(1, 0.5 + (d1 - d0) / span * 2.5));
+    const sm = u * u * (3 - 2 * u);
+    if (sm > 0.01) faces.push({ ax, v: box[ax][0], w: sm });
+    if (sm < 0.99) faces.push({ ax, v: box[ax][1], w: 1 - sm });
   }
   ctx.save();
   ctx.strokeStyle = M.plane;
   for (const f of faces) {
     const [u, w] = axes.filter(a => a !== f.ax);
     for (const [st, a0] of [[step / 2, M.planeA[1]], [step, M.planeA[0]]]) {
-      ctx.globalAlpha = a0 * k * (f.floor ? 1 : 0.7); ctx.lineWidth = st < step ? 1 : 1.25;
+      ctx.globalAlpha = a0 * k * f.w * (f.floor ? 1 : 0.7); ctx.lineWidth = st < step ? 1 : 1.25;
       ctx.beginPath();
       const seg = (p, q) => { const [a1, b1] = P.S(...V.p(...p)), [a2, b2] = P.S(...V.p(...q)); ctx.moveTo(a1, b1); ctx.lineTo(a2, b2); };
       for (const [along, other] of [[u, w], [w, u]]) {
@@ -162,7 +166,7 @@ export function room3d(P, V, box, { up = 'y', step = 1, alpha = 1 } = {}) {
       ctx.stroke();
     }
     // Bordo della faccia, appena più marcato.
-    ctx.globalAlpha = 0.5 * k; ctx.lineWidth = 1.4; ctx.beginPath();
+    ctx.globalAlpha = 0.5 * k * f.w; ctx.lineWidth = 1.4; ctx.beginPath();
     const c = { x: 0, y: 0, z: 0 }; c[f.ax] = f.v;
     const corners = [[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]].map(([i, j]) => { const q = { ...c }; q[u] = box[u][i]; q[w] = box[w][j]; return P.S(...V.p(q.x, q.y, q.z)); });
     corners.forEach(([a1, b1], i) => (i ? ctx.lineTo(a1, b1) : ctx.moveTo(a1, b1)));

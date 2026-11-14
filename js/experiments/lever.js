@@ -194,31 +194,34 @@ export default {
       // Arco: antiorario se il momento è positivo. In 3D si attenua, lasciando la scena ai vettori τ.
       ring++;
       const r = 22 + 11 * ring, a0 = Math.PI / 2 - 0.55, a1 = Math.PI / 2 + 0.55;
-      if (tilt < 0.9) arcArrow(ctx, pa, pb, r, tq > 0 ? a0 : a1, tq > 0 ? a1 : a0, col, 0.85 * (1 - tilt) * S.grow('arc' + f.id, 0.6));
+      // Gli archi del verso di rotazione appartengono alla vista piana: in 3D ne fanno le veci i vettori τ.
+      if (tilt < 0.05) arcArrow(ctx, pa, pb, r, tq > 0 ? a0 : a1, tq > 0 ? a1 : a0, col, 0.85 * S.grow('arc' + f.id, 0.6));
     }
 
     // Vista 3D: i momenti sono vettori lungo z, messi coda-punta sul fulcro; accanto la somma, tratteggiata.
     if (tilt > 0.02) {
-      W.zAxis(P, [p.xf, H, 0], 2.2);
       const tmax = Math.max(...fs.map(f => Math.abs(torque(p, f, th))), 1);
-      let z = 0.15, net = 0;
+      W.line(P, [[p.xf, H, 0], [p.xf, H + 0.45, 0]], { color: 'muted', width: 1, dash: [2, 4], alpha: 0.6 * tilt });
+      // Pila coda-punta dei momenti sopra il fulcro, staccata dall'asta e dal supporto; accanto la somma.
+      const ty = H + 0.45;
+      let z = 0, net = 0;
       for (const f of fs) {
         const tq = torque(p, f, th), col = f.color === 'muted' ? M.muted : M.vec[f.color];
         net += tq;
         if (Math.abs(tq) < 1e-6) continue;
         const Lz = arrowPx(tq, tmax, { min: 36, max: 130 }) / sc * Math.sign(tq) * tilt;
-        W.arrow(P, [p.xf, H, z], [p.xf, H, z + Lz], { color: col, key: 'tz' + f.id, width: 3.2 });
-        const [la, lb] = W.S(P, p.xf, H, z + Lz * 0.6);
+        W.arrow(P, [p.xf, ty, z], [p.xf, ty, z + Lz], { color: col, key: 'tz' + f.id, width: 3.2 });
+        const [la, lb] = W.S(P, p.xf, ty, z + Lz * 0.6);
         tex(P, la - 22, lb, `\\vec\\tau_{${f.id === 'F' ? 'F' : f.id === 'b' ? 'a' : f.id}}`, { size: 16, color: col, halo: M.bg, alpha: tilt });
         z += Lz;
       }
       if (Math.abs(net) > 1e-6) {
         const Lz = arrowPx(net, tmax, { min: 36, max: 130 }) / sc * Math.sign(net) * tilt;
-        W.arrow(P, [p.xf + 0.55, H, 0.15], [p.xf + 0.55, H, 0.15 + Lz], { color: 'text', key: 'tznet', width: 2, dash: [5, 4] });
-        const [la, lb] = W.S(P, p.xf + 0.55, H, 0.15 + Lz);
+        W.arrow(P, [p.xf + 0.55, ty, 0], [p.xf + 0.55, ty, Lz], { color: 'text', key: 'tznet', width: 2, dash: [5, 4] });
+        const [la, lb] = W.S(P, p.xf + 0.55, ty, Lz);
         tex(P, la + 18, lb - 12, '\\vec\\tau', { size: 17, color: M.text, halo: M.bg, alpha: tilt });
       } else {
-        const [la, lb] = W.S(P, p.xf + 0.3, H, 0.3);
+        const [la, lb] = W.S(P, p.xf + 0.3, ty, 0.3);
         tex(P, la + 40, lb, '\\vec\\tau=\\vec 0', { size: 17, color: M.text, halo: M.bg, alpha: tilt });
       }
     }
