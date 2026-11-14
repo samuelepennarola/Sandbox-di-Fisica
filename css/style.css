@@ -634,12 +634,12 @@ body.chrome-idle .timeline input[type=range]::-webkit-slider-thumb { width: 3px;
 .pin-x { opacity: .35; }
 
 /* A riposo l'interfaccia si attenua; in modalità Spiega, e ancora di più mentre la simulazione scorre, quasi scompare. */
-body.chrome-idle .topbar .group, body.chrome-idle #rail, body.chrome-idle .timeline > :not(input) { opacity: .42; transition: opacity 1.4s var(--ease); }
+body.chrome-idle .topbar .group, body.chrome-idle #rail, body.chrome-idle .timeline > :not(input):not(.tl-zone) { opacity: .42; transition: opacity 1.4s var(--ease); }
 body.chrome-idle .timeline input { opacity: .7; transition: opacity 1.4s var(--ease); }
-body.chrome-idle.playing .topbar .group, body.chrome-idle.playing #rail, body.chrome-idle.playing .timeline > :not(input),
-body.chrome-idle.lesson .topbar .group, body.chrome-idle.lesson .timeline > :not(input) { opacity: .16; }
+body.chrome-idle.playing .topbar .group, body.chrome-idle.playing #rail, body.chrome-idle.playing .timeline > :not(input):not(.tl-zone),
+body.chrome-idle.lesson .topbar .group, body.chrome-idle.lesson .timeline > :not(input):not(.tl-zone) { opacity: .16; }
 body.chrome-idle.lesson .timeline input { opacity: .4; }
-body.chrome-idle.lesson.playing .topbar .group, body.chrome-idle.lesson.playing .timeline > :not(input) { opacity: .05; }
+body.chrome-idle.lesson.playing .topbar .group, body.chrome-idle.lesson.playing .timeline > :not(input):not(.tl-zone) { opacity: .05; }
 body.chrome-idle .pin-x { opacity: 0; }
 
 /* Pannelli che si aprono (cassetto, tendine, penna): neri come la scena, con un filo di bordo. */
@@ -713,3 +713,11 @@ body.has-rail:not(.lesson) .quickbar { left: calc(env(safe-area-inset-left) + 96
 .quickbar button.on svg { opacity: 1; }
 body.chrome-idle .quickbar button { opacity: .42; }
 body.chrome-idle.playing .quickbar button { opacity: .16; }
+
+/* Slider al tocco (ui.js, touchSlider): il gesto lo gestisce l'area intorno al cursore, non il cursore nativo,
+   che resta solo da vedere. touch-action pan-y: i trascinamenti verticali fanno ancora scorrere il pannello. */
+.slider { touch-action: pan-y; cursor: pointer; }
+.slider input[type=range], .tl-zone input[type=range] { pointer-events: none; touch-action: none; }
+.slider input[type=range].dragging::-webkit-slider-thumb { box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 24%, transparent), 0 0 16px color-mix(in srgb, var(--accent) 70%, transparent); }
+.tl-zone { flex: 1; display: flex; align-items: center; touch-action: pan-y; cursor: pointer; min-height: 44px; }
+.tl-zone input[type=range] { flex: 1; }

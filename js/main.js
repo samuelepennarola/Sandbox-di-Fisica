@@ -9,7 +9,7 @@ import { UNITS, unit, setUnit, onUnitsChange, ut, unitLabel } from './core/units
 import { icons, applyIcons } from './core/icons.js';
 import { store } from './core/store.js';
 import { fmt } from './core/math.js';
-import { paramControl } from './core/ui.js';
+import { paramControl, touchSlider } from './core/ui.js';
 import { look, updateLook, drawParticles } from './core/look.js';
 import './core/pwa.js';
 import { Lasso } from './core/lasso.js';
@@ -1408,6 +1408,8 @@ $('clearBtn').onclick = () => { if (ink.strokes.length && confirm('Cancellare tu
 $('selCopy').onclick = () => { lasso.copy(app.exp, 24 / cam.scale, -24 / cam.scale); recordInk(); };
 $('selDelete').onclick = () => { lasso.remove(app.exp); recordInk(); };
 tlRange.oninput = () => scrubTo(+tlRange.value);
+// Moviola al tocco: area di presa su tutta l'altezza e salto al punto toccato (vedi ui.js, touchSlider).
+{ const zone = document.createElement('div'); zone.className = 'tl-zone'; tlRange.before(zone); zone.appendChild(tlRange); touchSlider(zone, tlRange); }
 $('tlStart').onclick = () => scrubTo(0);
 $('tlEnd').onclick = () => { stopSweep(); app.view = null; app.viewCache = null; };
 document.querySelectorAll('#toolSeg button').forEach(b => b.onclick = () => setTool(b.dataset.tool));

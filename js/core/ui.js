@@ -85,6 +85,7 @@ export function paramControl(def, opts) {
   };
 
   range.oninput = () => { opts.onUser?.(); opts.set(parseFloat(range.value)); sync(); };
+  touchSlider(row.querySelector('.slider'), range);
   animBtn && (animBtn.onclick = () => { opts.animate(); sync(); });
   pinBtn && (pinBtn.onclick = () => { opts.pin.toggle(); sync(); });
 
@@ -119,6 +120,50 @@ export function paramControl(def, opts) {
 
   sync();
   return { el: row, sync };
+}
+
+// Slider affidabile al tocco (iPad): il cursore nativo di Safari si muove solo se il dito centra il pallino e
+// contende i trascinamenti orizzontali allo scorrimento del pannello. Qui il tocco è gestito a mano su tutta
+// l'area (zone): il valore salta dove si appoggia il dito e lo segue trascinando; uno scorrimento verticale
+// (touch-action: pan-y) continua a far scorrere il pannello. Il valore passa per range.value e l'evento "input",
+// così chi ascolta lo slider non cambia. inset: metà del pallino (px), dove inizia e finisce la corsa.
+export function touchSlider(zone, range, { inset = 6 } = {}) {
+  let id = null;
+  const setFrom = x => {
+    const r = range.getBoundingClientRect(), min = +range.min, max = +range.max, st = +range.step || 0;
+    const f = Math.min(1, Math.max(0, (x - r.left - inset) / Math.max(1, r.width - 2 * inset)));
+    let v = min + f * (max - min);
+    if (st > 0) { v = min + Math.round((v - min) / st) * st; const d = (String(st).split('.')[1] || '').length; v = +v.toFixed(Math.min(10, d + 1)); }
+    v = Math.min(max, Math.max(min, v));
+    if (+range.value !== v) { range.value = v; range.dispatchEvent(new Event('input', { bubbles: true })); }
+  };
+  // Col dito si aspetta di capire il gesto: orizzontale = trascina, tocco fermo = salta lì, verticale = scorre
+  // il pannello (il browser manda pointercancel) senza toccare il valore. Mouse e Pencil agiscono subito.
+  let start = null, live = false;
+  zone.addEventListener('pointerdown', e => {
+    if (range.disabled || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    id = e.pointerId; start = [e.clientX, e.clientY]; live = e.pointerType !== 'touch';
+    try { zone.setPointerCapture(id); } catch { /* Safari a volte rifiuta: si va avanti lo stesso */ }
+    if (live) { range.classList.add('dragging'); setFrom(e.clientX); e.preventDefault(); }
+  });
+  zone.addEventListener('pointermove', e => {
+    if (e.pointerId !== id) return;
+    if (!live) {
+      const dx = Math.abs(e.clientX - start[0]), dy = Math.abs(e.clientY - start[1]);
+      if (dx < 5 && dy < 5) return;
+      if (dy > dx) { id = null; return; }   // gesto verticale: è uno scorrimento
+      live = true; range.classList.add('dragging');
+    }
+    setFrom(e.clientX); e.preventDefault();
+  });
+  const end = e => {
+    if (e.pointerId !== id) return;
+    if (!live && e.type === 'pointerup') setFrom(e.clientX);   // tocco senza trascinare: il valore va lì
+    id = null; live = false; range.classList.remove('dragging');
+    range.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+  zone.addEventListener('pointerup', end);
+  zone.addEventListener('pointercancel', end);
 }
 
 export function el(tag, cls, html) {
