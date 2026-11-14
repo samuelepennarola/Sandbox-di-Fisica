@@ -266,21 +266,41 @@ export function triad(P, V, { size = 44, alpha = 1 } = {}) {
 
 // Cilindro (o disco spesso) con asse z, centro c, raggio r, spessore w: faccia posteriore, fianchi, faccia anteriore.
 // spin: angolo di rotazione attorno all'asse, segnato da un raggio sulla faccia anteriore.
-export function cylinder(P, V, c, r, w, { color, edge, alpha = 0.8, spin = 0, hollow = false, mark = true } = {}) {
-  const [cx, cy, cz] = c, back = V.ring([cx, cy, cz - w / 2], r, 'z', 72), front = V.ring([cx, cy, cz + w / 2], r, 'z', 72);
-  const nearFront = V.depth(cx, cy, cz + w / 2) >= V.depth(cx, cy, cz - w / 2);
-  const [f, b] = nearFront ? [front, back] : [back, front];
-  const fill = hollow ? null : color;
-  // Fianchi: la superficie laterale vista dalla camera è l'inviluppo convesso delle due facce proiettate.
+// Cilindro (o disco spesso) con asse z, centro c, raggio r, spessore w: faccia posteriore, fianchi, faccia anteriore.
+// spin: angolo di rotazione attorno all'asse, segnato da un raggio sulla faccia anteriore.
+// hollow: anello (tutta la massa sul bordo): le facce sono corone circolari larghe rim·r con il centro vuoto, e in 3D
+// si vede l'interno del tubo; così non si confonde con il cilindro pieno.
+export function cylinder(P, V, c, r, w, { color, edge, alpha = 0.8, spin = 0, hollow = false, mark = true, rim = 0.18 } = {}) {
+  const [cx, cy, cz] = c, zf = cz + w / 2, zb = cz - w / 2;
+  const nearFront = V.depth(cx, cy, zf) >= V.depth(cx, cy, zb);
+  const [zn, zr] = nearFront ? [zf, zb] : [zb, zf];
+  const ctx = P.ctx, scr = q => P.S(...V.p(...q)), col = P.col(color), ec = P.col(edge ?? color);
+  const ringPts = (z, rr) => V.ring([cx, cy, z], rr, 'z', 72);
+  // Corona (o disco) proiettata: tracciato con il foro, riempito con la regola pari-dispari.
+  const face = (z, a) => {
+    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = col; ctx.beginPath();
+    ringPts(z, r).forEach((q, i) => { const [x, y] = scr(q); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    if (hollow) ringPts(z, r * (1 - rim)).reverse().forEach((q, i) => { const [x, y] = scr(q); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    ctx.fill('evenodd'); ctx.restore();
+  };
+  const outline = (z, rr, width, a) => V.line(P, ringPts(z, rr), { color: ec, width, alpha: a });
   if (V.tilt(0.15) > 0.02) {
-    P.poly(hull([...b, ...f].map(q => V.p(...q))), { fill: color, alpha: (hollow ? 0.18 : 0.5) * alpha });
-    V.line(P, b, { color: edge ?? color, width: hollow ? 2.4 : 1.2, alpha: 0.7 * alpha });
+    // Fianchi esterni: inviluppo convesso delle due facce proiettate.
+    P.poly(hull([...ringPts(zr, r), ...ringPts(zn, r)].map(q => V.p(...q))), { fill: color, alpha: (hollow ? 0.3 : 0.5) * alpha });
+    if (hollow) {
+      // Interno del tubo: la parete interna vista attraverso il foro, più scura, e la corona posteriore.
+      face(zr, 0.5 * alpha);
+      outline(zr, r * (1 - rim), 1, 0.5 * alpha);
+    }
+    outline(zr, r, 1.2, 0.7 * alpha);
   }
-  if (fill) V.poly(P, f, { fill, alpha: alpha * 0.85 });
-  V.line(P, f, { color: edge ?? color, width: hollow ? 3 : 1.6, alpha });
+  face(zn, (hollow ? 0.95 : 0.85) * alpha);
+  outline(zn, r, 1.6, alpha);
+  if (hollow) outline(zn, r * (1 - rim), 1.4, alpha);
   if (mark) {
-    const z = nearFront ? cz + w / 2 : cz - w / 2;
-    V.line(P, [[cx, cy, z], [cx + r * Math.cos(spin), cy + r * Math.sin(spin), z]], { color: edge ?? color, width: 1.6, alpha });
+    // Raggio segnato: sul cilindro dal centro al bordo, sull'anello solo attraverso la corona.
+    const r0 = hollow ? r * (1 - rim) : 0;
+    V.line(P, [[cx + r0 * Math.cos(spin), cy + r0 * Math.sin(spin), zn], [cx + r * Math.cos(spin), cy + r * Math.sin(spin), zn]], { color: edge ?? color, width: hollow ? 2.4 : 1.6, alpha });
   }
 }
 
