@@ -1399,7 +1399,8 @@ addEventListener('orientationchange', () => setTimeout(resize, 300));
 // Diagnostica dei tocchi (aprire l'app con ?debug nell'indirizzo): mostra gli ultimi eventi ricevuti.
 if (new URLSearchParams(location.search).has('debug')) {
   // Accesso allo stato dalla console del browser, per le prove.
-  window.fisica = { app, cam, api, ink };
+  // frame(ts): un fotogramma completo a mano (quando il pannello è nascosto il browser non ne chiede).
+  window.fisica = { app, cam, api, ink, frame: ts => drawFrame(ts) };
   const box = document.createElement('div');
   box.id = 'debug';
   document.body.appendChild(box);

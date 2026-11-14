@@ -76,9 +76,11 @@ export function drawPlot(canvas, samples, graph, colors, cursor = null) {
   if (still || restarted && samples.length <= 1) Object.assign(sh, target);
   else {
     const k = 1 - Math.exp(-dt / TAU);
-    // Il tempo che avanza dal vivo si segue subito (la curva non deve uscire dal piano); il resto si riscala morbido.
-    sh.tMax = target.tMax > sh.tMax && target.tMax - sh.tMax < sh.tMax * 0.05 ? target.tMax : sh.tMax + (target.tMax - sh.tMax) * k;
-    sh.lo += (target.lo - sh.lo) * k; sh.hi += (target.hi - sh.hi) * k;
+    // Gli assi si allargano subito (la curva e il punto che la segue non devono mai uscire dal piano);
+    // si restringono con morbidezza.
+    sh.tMax = target.tMax > sh.tMax ? target.tMax : sh.tMax + (target.tMax - sh.tMax) * k;
+    sh.hi = target.hi > sh.hi ? target.hi : sh.hi + (target.hi - sh.hi) * k;
+    sh.lo = target.lo < sh.lo ? target.lo : sh.lo + (target.lo - sh.lo) * k;
   }
   const create = still ? 1 : smoothstep(Math.min(1, (now - S.t0) / CREATE_S));
   S.animating = create < 1 || Math.abs(sh.tMax - target.tMax) > 1e-3 * target.tMax || Math.abs(sh.hi - target.hi) + Math.abs(sh.lo - target.lo) > 1e-3 * (target.hi - target.lo);
@@ -178,7 +180,9 @@ export function drawPlot(canvas, samples, graph, colors, cursor = null) {
   ctx.restore();
 
   // Punto luminoso che scorre sulla curva all'istante della simulazione.
-  for (const [x, y, col] of tipPts) {
+  for (const [x0, y0p, col] of tipPts) {
+    // Per sicurezza resta sempre dentro il piano, sul bordo se la curva è appena oltre.
+    const x = Math.min(L + pw, Math.max(L, x0)), y = Math.min(T + ph, Math.max(T, y0p));
     ctx.save();
     if (/^#[0-9a-f]{6}$/i.test(col)) {
       const g = ctx.createRadialGradient(x, y, 0, x, y, 13);
