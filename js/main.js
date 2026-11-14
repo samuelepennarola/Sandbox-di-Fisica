@@ -275,6 +275,14 @@ function buildParams() {
   }
   showRail(false);
 
+  // Ripristino dei valori iniziali, in vista in cima ai Parametri (prima stava solo in fondo al cassetto ☰).
+  if (exp.params.some(d => !d.hidden && d.type !== 'toggle')) {
+    const rb = document.createElement('button');
+    rb.className = 'btn reset-params';
+    rb.innerHTML = `${icons.reset}<span>Ripristina i valori iniziali</span>`;
+    rb.onclick = () => applyPreset(null);
+    body.appendChild(rb);
+  }
   for (const def of exp.params) {
     if (def.hidden || def.type === 'toggle') continue;
     body.appendChild(control(def, () => app.params[def.key], v => setParam(def, v)));
