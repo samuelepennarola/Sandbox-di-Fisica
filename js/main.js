@@ -874,7 +874,10 @@ function startPinch() {
 /* --- Esclusione del palmo (attiva da quando su questo dispositivo è stata usata la Pencil) --- */
 const PALM_AFTER_PEN_MS = 500;   // dopo aver alzato la Pencil il polso resta spesso appoggiato
 const PALM_REVERT_MS = 800;      // un tocco iniziato poco prima della Pencil era quasi certamente il polso
-const PALM_SIZE_PX = 38;         // contatti più larghi di così sono un palmo, non un dito
+// Larghezza oltre la quale un contatto è un palmo. Su iPad un polpastrello misura già 40–50 px (Safari dà il
+// diametro del contatto), quindi una soglia bassa scarta tutte le dita: da quando si è usata la Pencil il dito
+// non spostava e non ingrandiva più nulla. Soglia larga di norma, più stretta solo mentre si sta scrivendo.
+const PALM_SIZE_PX = 110, PALM_SIZE_WRITING_PX = 64, WRITING_MS = 4000;
 const PEN_STALE_MS = 1500;       // Pencil "appoggiata" ma muta da così tanto: il suo rilascio è andato perso
 const palm = { penDown: false, penUpAt: -Infinity, lastPen: -Infinity, ignored: new Set(), why: '' };
 // Il rilascio della Pencil va registrato anche se avviene fuori dalla scena (sopra una barra o il pannello):
@@ -963,7 +966,8 @@ function onPointerDown(e) {
   }
   if (e.pointerType === 'touch' && app.penSeen) {
     const recent = performance.now() - palm.penUpAt < PALM_AFTER_PEN_MS;
-    const big = Math.max(e.width || 0, e.height || 0) > PALM_SIZE_PX;
+    const writing = performance.now() - palm.lastPen < WRITING_MS;
+    const big = Math.max(e.width || 0, e.height || 0) > (writing ? PALM_SIZE_WRITING_PX : PALM_SIZE_PX);
     if (palm.penDown || recent || big) {
       palm.why = palm.penDown ? 'Pencil appoggiata' : recent ? 'subito dopo la Pencil' : `contatto largo ${Math.round(Math.max(e.width, e.height))} px`;
       palm.ignored.add(e.pointerId); return;

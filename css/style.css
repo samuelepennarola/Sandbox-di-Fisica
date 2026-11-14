@@ -649,3 +649,32 @@ body.chrome-idle .pin-x { opacity: 0; }
 }
 .param-head { font-size: 15px; gap: 6px; }
 .param-value { white-space: nowrap; }
+
+/* ---------- Slider: a metà tra una linea con un punto e la NumberLine di Manim ---------- */
+/* Binario di 2 px tenue, tratto percorso in accento, pallino piccolo con alone, cinque tacche sottili e
+   minimo e massimo agli estremi. L'area di tocco resta alta 44 px. --f (0..1) lo imposta ui.js. */
+.slider { position: relative; margin: -6px 0 0; }
+.slider input[type=range] {
+  -webkit-appearance: none; appearance: none; display: block; width: 100%; height: 44px; margin: 0; background: transparent;
+  position: relative; z-index: 1; touch-action: pan-x; cursor: pointer;
+}
+.slider input[type=range]::-webkit-slider-runnable-track {
+  height: 2px; border-radius: 1px;
+  background: linear-gradient(to right, var(--accent) calc(6px + (100% - 12px) * var(--f, 0)), color-mix(in srgb, var(--c-text) 24%, transparent) 0);
+}
+.slider input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 12px; height: 12px; margin-top: -5px; border: 0; border-radius: 50%; background: var(--accent);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 20%, transparent), 0 0 12px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.slider input[type=range]:active::-webkit-slider-thumb { box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 24%, transparent), 0 0 16px color-mix(in srgb, var(--accent) 70%, transparent); }
+.slider input[type=range]::-moz-range-track { height: 2px; background: color-mix(in srgb, var(--c-text) 24%, transparent); }
+.slider input[type=range]::-moz-range-progress { height: 2px; background: var(--accent); }
+.slider input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border: 0; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 20%, transparent); }
+/* Tacche a 0, 25, 50, 75 e 100 % della corsa del pallino. */
+.slider::before {
+  content: ""; position: absolute; left: 6px; right: 6px; top: 18px; height: 9px; pointer-events: none;
+  background: linear-gradient(to right, color-mix(in srgb, var(--c-text) 38%, transparent) 1px, transparent 1px) 0 0 / calc((100% - 1px) / 4) 100%;
+}
+.slider-ends { display: flex; justify-content: space-between; margin-top: -12px; padding: 0 1px; pointer-events: none;
+  font-size: 12.5px; color: var(--c-muted); font-variant-numeric: tabular-nums; }
+#inspector .param { margin: 10px 0 12px; }

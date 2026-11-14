@@ -71,6 +71,21 @@ export class Stage {
   smooth(key, values, tau = 0.12, snap = false) { return this.snap ? values : this.R.smooth(key, values, tau, snap); }
 }
 
+// Lunghezza in px di una freccia per una grandezza di modulo m. La scala è compressa (radice) tra min e max px,
+// con max raggiunto quando m = ref: l'ordine delle intensità resta, ma una freccia non diventa mai illeggibile
+// né invade la scena. È in px, quindi non dipende dallo zoom. Vicino a zero si accorcia fino a sparire.
+export function arrowPx(m, ref, { min = 34, max = 130 } = {}) {
+  const u = Math.abs(m) / ref;
+  if (!(u > 0)) return 0;
+  const L = min + (max - min) * Math.sqrt(Math.min(1, u));
+  return u < 0.01 ? L * u / 0.01 : L;
+}
+// Inversa di arrowPx: il modulo che corrisponde a una freccia lunga px (per le maniglie sulla punta).
+export function arrowMag(px, ref, { min = 34, max = 130 } = {}) {
+  const u = Math.min(1, Math.max(0, (px - min) / (max - min)));
+  return ref * u * u;
+}
+
 // Parte iniziale di una polilinea (Create di Manim), f ∈ [0, 1].
 export function createPts(pts, f) {
   if (f >= 1 || pts.length < 2) return pts;

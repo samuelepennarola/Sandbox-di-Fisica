@@ -55,7 +55,10 @@ export function paramControl(def, opts) {
         ${opts.animate ? `<button class="param-anim" title="Anima il parametro">${icons.play}</button>` : ''}
       </span>
     </div>
-    <input type="range" min="${def.min}" max="${def.max}" step="${def.step}">`;
+    <div class="slider">
+      <input type="range" min="${def.min}" max="${def.max}" step="${def.step}">
+      <div class="slider-ends"><span>${fmt(def.min, decimalsOf(def.step))}</span><span>${fmt(def.max, decimalsOf(def.step))}</span></div>
+    </div>`;
   const range = row.querySelector('input[type=range]');
   const valBtn = row.querySelector('.param-value');
   const animBtn = row.querySelector('.param-anim');
@@ -66,6 +69,8 @@ export function paramControl(def, opts) {
   const sync = () => {
     const v = opts.get();
     range.value = v;
+    // Tratto percorso del binario (css: .slider), da 0 a 1.
+    range.style.setProperty('--f', Math.min(1, Math.max(0, (v - def.min) / ((def.max - def.min) || 1))).toFixed(4));
     if (!valBtn.querySelector('input')) valBtn.textContent = show(v);
     pinBtn?.classList.toggle('on', !!opts.pin.isOn());
     if (animBtn) {

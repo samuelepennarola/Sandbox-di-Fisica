@@ -2,13 +2,18 @@ import { deg, rk4, tn, clamp } from '../core/math.js';
 import { ball } from '../core/shapes.js';
 import { trail } from '../core/look.js';
 import { tex, texBox } from '../core/manim.js';
-import { Stage, createPts, brace, angleMark, dropLines, rate01, C } from '../core/annot.js';
+import { Stage, createPts, brace, angleMark, dropLines, rate01, C, arrowPx, arrowMag } from '../core/annot.js';
 
 const stage = new Stage();   // regia: frecce che crescono, parabola che si disegna, graffe, corpi che nascono
 const num = (v, d = 1) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(d).replace('.', ',');
 
-const KV = 0.25; // lunghezza delle frecce di velocità: metri per (m/s)
-const KA = 0.25; // frecce di accelerazione: metri per (m/s²)
+// Frecce in scala compressa e in px (vedi arrowPx): leggibili a qualsiasi zoom. V0 è la freccia di lancio, che
+// porta la maniglia in punta e quindi parte più lunga; V e A sono i vettori istantanei.
+const VREF = 40, AREF = 20;                 // m/s e m/s² che danno la freccia più lunga
+const V0 = { min: 64, max: 160 }, V = { min: 36, max: 130 }, A = { min: 36, max: 96 };
+let SC = 40;                                // px per metro dell'ultima scena disegnata (serve alle maniglie)
+const v0Len = v0 => arrowPx(v0, VREF, V0) / SC;                                  // lunghezza in metri della freccia v₀
+const kOf = (m, ref, o) => (m > 1e-9 ? arrowPx(m, ref, o) / m / SC : 0);         // metri di freccia per unità
 
 // Etichetta TeX di una freccia (estremi a, b in metri), sempre alla stessa distanza GAP px dal riquadro della scritta:
 // oltre la punta oppure, con side = [dx, dy] (verso preferito sullo schermo), di lato al fusto a una frazione at.
@@ -123,7 +128,7 @@ export default {
   handles(s, p) {
     const th = p.theta * deg;
     return [
-      { id: 'v0', x: KV * p.v0 * Math.cos(th), y: p.h0 + KV * p.v0 * Math.sin(th) },
+      { id: 'v0', x: v0Len(p.v0) * Math.cos(th), y: p.h0 + v0Len(p.v0) * Math.sin(th) },
       { id: 'h0', x: 0, y: p.h0 },
     ];
   },
@@ -132,7 +137,7 @@ export default {
     if (id === 'h0') p.h0 = clamp(Math.round(wy * 2) / 2, 0, 30);
     if (id === 'v0') {
       const dx = wx, dy = wy - p.h0;
-      p.v0 = clamp(Math.round(Math.hypot(dx, dy) / KV * 2) / 2, 1, 40);
+      p.v0 = clamp(Math.round(arrowMag(Math.hypot(dx, dy) * SC, VREF, V0) * 2) / 2, 1, 40);
       p.theta = clamp(Math.round(Math.atan2(dy, dx) / deg), 0, 90);
     }
   },
@@ -141,6 +146,7 @@ export default {
 
   draw(P, s, p, ui) {
     const S = stage.begin(P, ui), M = S.M;
+    if (!ui.snapshot) SC = P.cam.scale;
     // Parametri mostrati: inseguono quelli veri (la parabola si trasforma con morbidezza); mentre si trascina
     // una maniglia seguono il dito senza ritardo.
     const [v0, theta, h0, g] = S.smooth('p', [p.v0, p.theta, p.h0, p.g], 0.11, !!ui.active);
@@ -187,14 +193,15 @@ export default {
     ball(P, bx, by, { r: 0.18 * kB, minPx: 10 * kB, color: 'red' });
 
     // Vettore v₀ di lancio con angolo θ (trascinabile): l'etichetta sta di lato, non sulla maniglia della punta.
-    const tipx = KV * v0 * Math.cos(th), tipy = h0 + KV * v0 * Math.sin(th);
+    const L0 = arrowPx(v0, VREF, V0) / P.cam.scale, tipx = L0 * Math.cos(th), tipy = h0 + L0 * Math.sin(th);
     if (th > 0.01) angleMark(P, 0, h0, 34, 0, th, '\\theta', { color: M.muted, grow: S.grow('theta', 0.7) });
-    P.line([[0, h0], [KV * v0 * 0.9, h0]], { color: 'muted', width: 1, dash: [3, 4], alpha: 0.6 });
+    P.line([[0, h0], [L0 * 0.9, h0]], { color: 'muted', width: 1, dash: [3, 4], alpha: 0.6 });
     const a0 = fresh ? 1 : 0.4;
     P.arrow(0, h0, tipx, tipy, { color: 'vel', width: fresh ? 3 : 2, alpha: a0, dash: fresh ? null : [5, 4], key: 'v0' });
     tag(P, S, 'v0', [0, h0], [tipx, tipy], 'v_0', M.vec.vel, { side: [-1, -1], at: 0.5, alpha: a0 });
 
     // Vettori istantanei.
+    const KV = kOf(Math.hypot(s.vx, s.vy), VREF, V) * SC / P.cam.scale;   // stessa scala per v e per le sue componenti
     if (!fresh) {
       if (p.showComp) {
         dropLines(P, s.x, s.y, { toY: 0, toX: 0, alpha: 0.45 * S.grow('proj', 0.5) });
@@ -209,8 +216,9 @@ export default {
       tag(P, S, 'v', [s.x, s.y], ev, '\\vec v', M.vec.vel);
     }
     if (p.showAcc) {
-      const v = Math.hypot(s.vx, s.vy);
-      const ea = [bx + KA * -p.k * v * s.vx, by + KA * (-p.g - p.k * v * s.vy)];
+      const v = Math.hypot(s.vx, s.vy), ax = -p.k * v * s.vx, ay = -p.g - p.k * v * s.vy;
+      const KA = kOf(Math.hypot(ax, ay), AREF, A) * SC / P.cam.scale;
+      const ea = [bx + KA * ax, by + KA * ay];
       P.arrow(bx, by, ...ea, { color: 'acc', key: 'acc' });
       tag(P, S, 'acc', [bx, by], ea, p.k > 0 ? '\\vec a' : '\\vec g', M.vec.acc,
         { side: [Math.sign(s.vx) || 1, 0], at: 1 });   // accanto alla punta, dal lato opposto a v_y
