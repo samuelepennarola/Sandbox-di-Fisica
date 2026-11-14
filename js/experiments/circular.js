@@ -9,6 +9,7 @@ const num = (v, d = 2) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(d).replace(
 
 const TWO_PI = 2 * Math.PI;
 const T_REF = 8;      // istante di riferimento per la scala delle frecce
+const GX = 1.6, GW = 2.6;   // grafici di seno e coseno: distanza dal centro e lunghezza dell'asse dei tempi (in raggi)
 
 // Leggi orarie esatte del moto circolare uniformemente accelerato.
 // Se la velocità e l'accelerazione tangenziale hanno segno opposto, il corpo frena e si ferma a tStop.
@@ -132,6 +133,46 @@ function arrowTo(P, x, y, dx, dy, cap, opts) {
   return [x + dx * f, y + dy * f];
 }
 
+// Seno e coseno tracciati dal vivo, alla 3Blue1Brown: a destra della circonferenza y = R sin θ con il tempo che
+// scorre verso destra (l'adesso è sul bordo sinistro, alla stessa altezza del punto), sotto x = R cos θ con il tempo
+// che scende (l'adesso è in alto, sotto il punto). Stessa scala della circonferenza: le altezze corrispondono.
+function sineCosine(P, S, q, k, t, x, y, M) {
+  const R = q.R, g = S.grow('sincos', 0.9);
+  if (g <= 0.01) return;
+  const x0 = GX * R, y0 = -GX * R, W = GW * R * g;
+  // Finestra di tempo: circa un giro e mezzo alla velocità attuale (o 4 s se il corpo è fermo).
+  const w = Math.abs(at(q, k, t).w), win = w > 1e-6 ? Math.min(30, 1.5 * TWO_PI / w) : 4, sp = GW * R / win;
+  // Assi: per il seno l'asse dei tempi è orizzontale, per il coseno verticale (verso il basso).
+  P.line([[x0, 0], [x0 + W, 0]], { color: 'muted', width: 1, alpha: 0.7 });
+  P.line([[x0, -R], [x0, R]], { color: 'muted', width: 1, alpha: 0.5 });
+  P.line([[0, y0], [0, y0 - W]], { color: 'muted', width: 1, alpha: 0.7 });
+  P.line([[-R, y0], [R, y0]], { color: 'muted', width: 1, alpha: 0.5 });
+  if (g > 0.9) {
+    P.text(x0 + W, 0, 't', { color: 'muted', dx: 10, size: 13 });
+    P.text(0, y0 - W, 't', { color: 'muted', dy: 14, align: 'center', size: 13 });
+  }
+  // Le curve: dall'adesso (sul bordo) verso il passato.
+  const n = 220, sinPts = [], cosPts = [];
+  for (let i = 0; i <= n; i++) {
+    const dt = win * i / n, tt = t - dt;
+    if (tt < 0 || dt * sp > W) break;
+    const th = at(q, k, tt).th;
+    sinPts.push([x0 + dt * sp, R * Math.sin(th)]);
+    cosPts.push([R * Math.cos(th), y0 - dt * sp]);
+  }
+  P.line(sinPts, { color: 'weight', width: 2.5 });
+  P.line(cosPts, { color: 'vel', width: 2.5 });
+  // Collegamenti tratteggiati dal punto ai pennini, e i pennini.
+  P.line([[x, y], [x0, y]], { color: 'weight', width: 1, dash: [3, 4], alpha: 0.6 * g });
+  P.line([[x, y], [x, y0]], { color: 'vel', width: 1, dash: [3, 4], alpha: 0.6 * g });
+  P.circle(x0, y, 4.5, { fill: 'weight' });
+  P.circle(x, y0, 4.5, { fill: 'vel' });
+  if (g > 0.9) {
+    tex(P, ...P.S(x0 + W * 0.55, R * 1.18), 'y=R\\sin\\theta', { size: 16, color: M.vec.weight, halo: M.bg });
+    tex(P, ...P.S(-R * 1.25, y0 - W * 0.5), 'x=R\\cos\\theta', { size: 16, color: M.vec.vel, halo: M.bg, align: 'right' });
+  }
+}
+
 export default {
   id: 'circular',
   title: 'Moto circolare',
@@ -146,7 +187,7 @@ export default {
     { key: 'th0', label: 'Angolo iniziale θ₀', unit: '°', min: 0, max: 360, step: 1, value: 0 },
     { key: 'tMax', label: 'Durata della simulazione', unit: 's', min: 5, max: 300, step: 5, value: 30 },
     { key: 'showAcc', type: 'toggle', label: 'Vettori accelerazione', value: true, live: true },
-    { key: 'showProj', type: 'toggle', label: 'Proiezioni su x e y', value: false, live: true },
+    { key: 'showProj', type: 'toggle', label: 'Proiezioni su x e y, con seno e coseno', value: false, live: true, refit: true },
     { key: 'strobe', type: 'toggle', label: 'Posizioni ogni 0,25 s', value: false, live: true },
   ],
 
@@ -159,6 +200,8 @@ export default {
 
   view(p) {
     const m = p.R * 1.45;
+    // Con le proiezioni accese c'è spazio a destra per y = R sin θ e sotto per x = R cos θ.
+    if (p.showProj) return { xmin: -m, xmax: GX * p.R + GW * p.R + 0.2 * p.R, ymin: -GX * p.R - GW * p.R - 0.2 * p.R, ymax: m };
     return { xmin: -m, xmax: m, ymin: -m, ymax: m };
   },
 
@@ -248,7 +291,7 @@ export default {
     const ext = R * 1.3;
     P.line([[-ext, 0], [ext, 0]], { color: 'axis', width: 1, alpha: 0.35 });
     P.line([[0, -ext], [0, ext]], { color: 'axis', width: 1, alpha: 0.35 });
-    P.text(ext, 0, 'x', { color: 'muted', dx: 10 });
+    if (!p.showProj) P.text(ext, 0, 'x', { color: 'muted', dx: 10 });   // con le proiezioni lì comincia il grafico del seno
     P.text(0, ext, 'y', { color: 'muted', dy: -12, align: 'center' });
 
     const circle = [];
@@ -296,6 +339,7 @@ export default {
       const [px, py] = P.S(x, y), [qx, qy] = P.S(x, 0), [rx, ry] = P.S(0, y);
       if (Math.hypot(px - qx, py - qy) > 22) { P.text(x, 0, 'x(t)', { color: 'vel', size: 12.5, align: 'center', dy: 17 }); lab.blockS(qx, qy + 17, 16, 10); }
       if (Math.hypot(px - rx, py - ry) > 22) { P.text(0, y, 'y(t)', { color: 'weight', size: 12.5, align: 'right', dx: -12 }); lab.blockS(rx - 28, ry, 16, 10); }
+      sineCosine(P, S, q, k, s.t, x, y, M);
     }
 
     // Maniglie della posizione iniziale e di v₀ (visibili a simulazione ferma all'inizio).
