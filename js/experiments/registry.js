@@ -11,13 +11,17 @@ import string from './string.js';
 import sources from './sources.js';
 import collision1d from './collision1d.js';
 import collision2d from './collision2d.js';
+import lever from './lever.js';
+import rolling from './rolling.js';
+import inertia from './inertia.js';
+import angmom from './angmom.js';
 
 // Mappa dei moduli. Le voci senza esperimenti compaiono come "in arrivo".
 export const AREAS = [
   { id: 'lab', title: 'Laboratorio', experiments: [board, builder], soon: [] },
   { id: 'meccanica', title: 'Meccanica del punto', experiments: [projectile, incline, circular, relative], soon: [] },
   { id: 'sistemi', title: 'Sistemi e urti', experiments: [collision1d, collision2d], soon: ['Centro di massa', 'Carrucole e funi'] },
-  { id: 'rigido', title: 'Corpo rigido', experiments: [], soon: ['Momenti e leve', 'Rotolamento'] },
+  { id: 'rigido', title: 'Corpo rigido', experiments: [lever, rolling, inertia, angmom], soon: [] },
   { id: 'oscillazioni', title: 'Oscillazioni e onde', experiments: [spring, pendulum, string, sources], soon: [] },
   { id: 'gravitazione', title: 'Gravitazione', experiments: [], soon: ['Orbite e Keplero', 'Tre corpi'] },
   { id: 'fluidi', title: 'Fluidi', experiments: [], soon: ['Archimede', 'Bernoulli'] },

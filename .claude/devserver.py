@@ -37,4 +37,13 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
 
 port = int(sys.argv[1]) if len(sys.argv) > 1 else 5173
 host = sys.argv[2] if len(sys.argv) > 2 else '127.0.0.1'
-http.server.ThreadingHTTPServer((host, port), NoCache).serve_forever()
+
+
+# Coda di connessioni ampia: l'app carica decine di moduli JS insieme, e con la coda predefinita (5)
+# il sistema ne rifiuta alcuni (ERR_CONNECTION_RESET) e la pagina resta vuota.
+class Server(http.server.ThreadingHTTPServer):
+    request_queue_size = 128
+    daemon_threads = True
+
+
+Server((host, port), NoCache).serve_forever()
