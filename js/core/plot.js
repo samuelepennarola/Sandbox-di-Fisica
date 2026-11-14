@@ -1,4 +1,5 @@
 import { niceStep } from './math.js';
+import { unitLabel } from './units.js';
 import { palette, tex, mixHex } from './manim.js';
 
 // Grafici della scheda "Grafici" alla 3Blue1Brown: piano con la griglia tenue del NumberPlane, assi con le punte,
@@ -34,7 +35,11 @@ export function seriesColor(M, colors, c) { return M.vec[c] ?? colors[c] ?? c; }
 // Grafico a linee di più serie in funzione del tempo. samples: [{t, ...}], graph: {series:[{key|get,color}]}.
 // cursor: indice del campione mostrato dalla moviola (null = ultimo istante).
 export function drawPlot(canvas, samples, graph, colors, cursor = null) {
-  const series = graph.series.map(s => ({ ...s, get: s.get ?? (o => o[s.key]) }));
+  // Ogni serie nell'unità scelta nel menu Unità: l'etichetta porta l'unità tra parentesi, i valori il fattore.
+  const series = graph.series.map(s => {
+    const U = unitLabel(s.label), g0 = s.get ?? (o => o[s.key]);
+    return { ...s, label: U.label, get: U.f === 1 ? g0 : o => { const v = g0(o); return v == null ? v : v * U.f; } };
+  });
   const dpr = devicePixelRatio || 1;
   const W = canvas.clientWidth, H = canvas.clientHeight;
   if (!W || !H) return;

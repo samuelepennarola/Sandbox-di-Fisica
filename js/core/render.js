@@ -1,4 +1,5 @@
 import { niceStep } from './math.js';
+import { unitView } from './units.js';
 import { palette, drawPlaneGrid, manimColors, arrowS, arrowLabel, vecLabel, tex, textToTeX, groundM } from './manim.js';
 
 const STROKE = 1.35;
@@ -141,8 +142,8 @@ export function drawGrid(ctx, cam, c, labels = true) {
   if (!labels) return;
   const pad = cam.padFn?.() ?? { top: 70, right: 20, bottom: 20, left: 20 };
   const step = niceStep(80 / cam.scale), { x0, y0, x1, y1 } = cam.bounds();
-  const dec = Math.max(0, -Math.floor(Math.log10(step) + 1e-9));
-  const lab = v => { const u = Math.abs(v) < 1e-9 ? 0 : v; return (u < 0 ? '−' : '') + Math.abs(u).toFixed(dec).replace('.', ',') + '\\ \\mathrm{m}'; };
+  const U = unitView('m'), dec = Math.max(0, -Math.floor(Math.log10(step * U.f) + 1e-9));
+  const lab = v => { const u = Math.abs(v) < 1e-9 ? 0 : v * U.f; return (u < 0 ? '−' : '') + Math.abs(u).toFixed(dec).replace('.', ',') + `\\ \\mathrm{${U.name}}`; };
   const P = { ctx };
   for (let x = Math.ceil(x0 / step) * step; x <= x1; x += step) {
     const [a] = cam.toScreen(x, 0);

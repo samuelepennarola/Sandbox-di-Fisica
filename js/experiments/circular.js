@@ -1,6 +1,7 @@
 import { deg, tn, clamp } from '../core/math.js';
 import { ball, palette } from '../core/shapes.js';
 import { tex, texBox } from '../core/manim.js';
+import { uq, un, ut, uf, utn } from '../core/units.js';
 import { Stage, brace, angleMark, rate01, C } from '../core/annot.js';
 
 const stage = new Stage();   // regia: frecce che crescono, ambientazione che nasce dal centro, graffa del raggio
@@ -270,14 +271,14 @@ export default {
     const thm = ((s.th % TWO_PI) + TWO_PI) % TWO_PI;
     if (thm > 0.02) angleMark(P, 0, 0, 28, 0, thm, '\\theta', { color: M.muted, alpha: 0.85 });
     // Graffa del raggio sotto l'asse x.
-    brace(P, [0, 0], [R, 0], `R = ${num(R)}\\ \\mathrm{m}`, { side: -1, gap: 9, grow: S.grow('braceR', 0.8), color: M.muted, alpha: 0.75 });
+    brace(P, [0, 0], [R, 0], `R = ${uq('m', R)}`, { side: -1, gap: 9, grow: S.grow('braceR', 0.8), color: M.muted, alpha: 0.75 });
     P.circle(0, 0, 3, { fill: 'muted' });
 
     const lab = labeler(S, P);
     // Le scritte fisse (θ e la misura della graffa) fanno da ostacolo alle etichette dei vettori.
     {
       const [o0, o1] = P.S(0, 0), len = Rpx, w = Math.min(11, Math.max(5, len * 0.12));
-      const Bb = texBox(P, `R = ${num(R)}\\ \\mathrm{m}`, 16), hb = (Bb.bot - Bb.top) / 2;
+      const Bb = texBox(P, `R = ${uq('m', R)}`, 16), hb = (Bb.bot - Bb.top) / 2;
       lab.blockS(o0 + len / 2, o1 + 9 + w + 6 + hb, Bb.w / 2 + 2, hb + 1);
       if (thm > 0.02) {
         const Bt = texBox(P, '\\theta', 16), m = thm / 2, ht = (Bt.bot - Bt.top) / 2;
@@ -335,7 +336,7 @@ export default {
     const k = kin(p), u = x => `\\ \\mathrm{${x}}`;
     const v = Math.abs(s.v), w = Math.abs(s.w);
     const ac = s.v * s.v / p.R, aT = s.stopped ? 0 : p.at;
-    const T = w > 1e-9 ? `${tn(TWO_PI / w)}${u('s')}` : '\\infty';
+    const T = w > 1e-9 ? `${uq('s', TWO_PI / w)}` : '\\infty';
     const f = w / TWO_PI;
     const uniform = p.at === 0;
     const sgn = x => (x < 0 ? '-' : '+');
@@ -343,8 +344,8 @@ export default {
     const Vv = x => C('vel', x), Ac = C('acc', 'a_c'), At = C('friction', 'a_t');
     return [
       { h: 'Grandezze angolari' },
-      { tex: `\\omega_0=\\dfrac{${Vv('v_0')}}{R}=${tn(k.w0, 3)}${u('rad/s')}` },
-      !uniform && { tex: `\\alpha=\\dfrac{${At}}{R}=${tn(k.al, 3)}${u('rad/s^2')}` },
+      { tex: `\\omega_0=\\dfrac{${Vv('v_0')}}{R}=${uq('rad/s', k.w0, 3)}` },
+      !uniform && { tex: `\\alpha=\\dfrac{${At}}{R}=${uq('rad/s²', k.al, 3)}` },
       { h: 'Leggi orarie' },
       { tex: uniform
         ? `\\theta(t)=${tn(k.th0, 3)}${sgn(k.w0)}${tn(Math.abs(k.w0), 3)}\\,t`
@@ -352,14 +353,14 @@ export default {
       !uniform && { tex: `\\omega(t)=${tn(k.w0, 3)}${sgn(k.al)}${tn(Math.abs(k.al), 3)}\\,t` },
       { tex: `x=R\\cos\\theta\\qquad y=R\\sin\\theta` },
       { h: s.stopped ? 'All\'arresto' : 'Istante attuale' },
-      { tex: `t=${tn(s.t)}${u('s')}\\qquad \\theta=${tn(s.th, 2)}${u('rad')}\\ \\ (${tn((s.th - k.th0) / TWO_PI, 2)}\\ \\text{giri})` },
-      { key: true, tex: `${Vv('v')}=\\omega R=${tn(v)}${u('m/s')}\\qquad \\omega=${tn(w, 3)}${u('rad/s')}` },
-      { tex: `T=\\dfrac{2\\pi}{\\omega}=${T}\\qquad f=\\dfrac1T=${tn(f, 3)}${u('Hz')}` },
+      { tex: `t=${uq('s', s.t)}\\qquad \\theta=${uq('rad', s.th, 2)}\\ \\ (${tn((s.th - k.th0) / TWO_PI, 2)}\\ \\text{giri})` },
+      { key: true, tex: `${Vv('v')}=\\omega R=${uq('m/s', v)}\\qquad \\omega=${uq('rad/s', w, 3)}` },
+      { tex: `T=\\dfrac{2\\pi}{\\omega}=${T}\\qquad f=\\dfrac1T=${uq('Hz', f, 3)}` },
       { h: 'Accelerazioni' },
-      { key: true, tex: `${Ac}=\\dfrac{${Vv('v^2')}}{R}=\\omega^2R=${tn(ac)}${u('m/s^2')}` },
-      !uniform && { tex: `${At}=\\alpha R=${tn(aT)}${u('m/s^2')}\\qquad |${C('weight', '\\vec a')}|=\\sqrt{${C('acc', 'a_c^2')}+${C('friction', 'a_t^2')}}=${tn(Math.hypot(ac, aT))}${u('m/s^2')}` },
+      { key: true, tex: `${Ac}=\\dfrac{${Vv('v^2')}}{R}=\\omega^2R=${uq('m/s²', ac)}` },
+      !uniform && { tex: `${At}=\\alpha R=${uq('m/s²', aT)}\\qquad |${C('weight', '\\vec a')}|=\\sqrt{${C('acc', 'a_c^2')}+${C('friction', 'a_t^2')}}=${uq('m/s²', Math.hypot(ac, aT))}` },
       ac > 9.81 && { tex: `${Ac}\\approx${tn(ac / 9.81, 1)}\\,g`, cls: 'warn' },
-      k.tStop != null && { tex: `t_{\\text{stop}}=-\\dfrac{\\omega_0}{\\alpha}=${tn(k.tStop)}${u('s')}\\qquad \\Delta\\theta=\\dfrac{\\omega_0^2}{2|\\alpha|}=${tn(k.w0 * k.w0 / (2 * Math.abs(k.al)), 2)}${u('rad')}` },
+      k.tStop != null && { tex: `t_{\\text{stop}}=-\\dfrac{\\omega_0}{\\alpha}=${uq('s', k.tStop)}\\qquad \\Delta\\theta=\\dfrac{\\omega_0^2}{2|\\alpha|}=${uq('rad', k.w0 * k.w0 / (2 * Math.abs(k.al)), 2)}` },
     ].filter(Boolean);
   },
 

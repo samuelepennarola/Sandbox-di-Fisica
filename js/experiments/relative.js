@@ -1,6 +1,7 @@
 import { deg, tn, clamp } from '../core/math.js';
 import { ball, palette } from '../core/shapes.js';
 import { tex, texBox } from '../core/manim.js';
+import { uq, un, ut, uf, utn } from '../core/units.js';
 import { Stage, angleMark, rate01, C } from '../core/annot.js';
 
 const stage = new Stage();   // regia: frecce che crescono, passaggio morbido tra i punti di vista, corpi che nascono
@@ -369,15 +370,15 @@ export default {
     const out = [
       { h: 'Composizione galileiana' },
       { key: true, tex: `${Vs('\\vec v')}=${Vp("\\vec{v}'")}+${VV('\\vec V')}\\qquad \\vec a=\\vec{a}'+${C('acc', '\\vec A')}` },
-      { tex: `${Vp("v'_x")}=${tn(s.vpx)}\\quad ${Vp("v'_y")}=${tn(s.vpy)}\\quad ${VV('V')}=${tn(s.VX)}${u('m/s')}` },
-      { key: true, tex: `${Vs('v_x')}=${Vp("v'_x")}+${VV('V')}=${tn(s.vx)}\\quad ${Vs('v_y')}=${tn(s.vy)}\\quad |${Vs('\\vec v')}|=${tn(Math.hypot(s.vx, s.vy))}${u('m/s')}` },
+      { tex: `${Vp("v'_x")}=${un('m/s', s.vpx)}\\quad ${Vp("v'_y")}=${un('m/s', s.vpy)}\\quad ${VV('V')}=${uq('m/s', s.VX)}` },
+      { key: true, tex: `${Vs('v_x')}=${Vp("v'_x")}+${VV('V')}=${un('m/s', s.vx)}\\quad ${Vs('v_y')}=${un('m/s', s.vy)}\\quad |${Vs('\\vec v')}|=${uq('m/s', Math.hypot(s.vx, s.vy))}` },
     ];
     if (river) {
       out.push({ h: 'Traversata' });
       if (m.vpy > 1e-9) {
-        out.push({ tex: `t=\\dfrac{L}{v'_y}=\\dfrac{${tn(p.L, 0)}}{${tn(m.vpy)}}=${tn(m.tEnd)}${u('s')}` });
-        if (p.A === 0) out.push({ tex: `d=(v'_x+V)\\,t=${tn(m.vpx + p.V)}\\cdot${tn(m.tEnd)}=${tn((m.vpx + p.V) * m.tEnd)}${u('m')}` });
-        else out.push({ tex: `d=v'_x t+V t+\\tfrac12At^2=${tn(m.vpx * m.tEnd + p.V * m.tEnd + 0.5 * p.A * m.tEnd ** 2)}${u('m')}` });
+        out.push({ tex: `t=\\dfrac{L}{v'_y}=\\dfrac{${un('m', p.L, 0)}}{${un('m/s', m.vpy)}}=${uq('s', m.tEnd)}` });
+        if (p.A === 0) out.push({ tex: `d=(v'_x+V)\\,t=${un('m/s', m.vpx + p.V)}\\cdot${tn(m.tEnd)}=${uq('m', (m.vpx + p.V) * m.tEnd)}` });
+        else out.push({ tex: `d=v'_x t+V t+\\tfrac12At^2=${uq('m', m.vpx * m.tEnd + p.V * m.tEnd + 0.5 * p.A * m.tEnd ** 2)}` });
       } else out.push({ tex: `v'_y\\le 0:\\ \\text{la barca non raggiunge l'altra riva}`, cls: 'warn' });
       if (p.A === 0 && p.V !== 0) out.push(p.vp > abs(p.V)
         ? { tex: `\\text{per arrivare dritti: }\\cos\\varphi=-\\dfrac{V}{v'}\\Rightarrow\\varphi=${tn(Math.acos(-p.V / p.vp) / deg, 1)}^\\circ` }
@@ -386,17 +387,17 @@ export default {
       const ex = m.vpx * m.tEnd - 0.5 * p.A * m.tEnd ** 2;
       out.push(
         { h: 'Leggi orarie' },
-        { tex: `\\text{in S: }x=${tn(p.V + m.vpx)}\\,t\\qquad y=${tn(Y_HAND, 0)}${sgn(m.vpy)}${tn(abs(m.vpy))}\\,t-${tn(p.g / 2, 3)}\\,t^2` },
-        { tex: `\\text{in S}':\\ x'=x-X=${tn(m.vpx)}\\,t${p.A ? `${sgn(-p.A)}${tn(abs(p.A) / 2, 2)}\\,t^2` : ''}\\qquad y'=y` },
+        { tex: `\\text{in S: }x=${un('m/s', p.V + m.vpx)}\\,t\\qquad y=${un('m', Y_HAND, 0)}${sgn(m.vpy)}${un('m/s', abs(m.vpy))}\\,t-${un('m/s²', p.g / 2, 3)}\\,t^2` },
+        { tex: `\\text{in S}':\\ x'=x-X=${un('m/s', m.vpx)}\\,t${p.A ? `${sgn(-p.A)}${un('m/s²', abs(p.A) / 2, 2)}\\,t^2` : ''}\\qquad y'=y` },
         { h: 'Atterraggio sul pianale' },
-        { tex: `t_{\\text{volo}}=${tn(m.tEnd)}${u('s')}\\qquad x'=${tn(ex)}${u('m')}` },
-        abs(ex) > CAR && { tex: `|x'|>${CAR}\\ \\mathrm{m}:\\ \\text{la pallina cade fuori dal carro}`, cls: 'warn' },
+        { tex: `t_{\\text{volo}}=${uq('s', m.tEnd)}\\qquad x'=${uq('m', ex)}` },
+        abs(ex) > CAR && { tex: `|x'|>${uq('m', CAR, 0)}:\\ \\text{la pallina cade fuori dal carro}`, cls: 'warn' },
       );
     }
     out.push(
       { h: 'Istante attuale' },
-      { tex: `t=${tn(s.t)}${u('s')}\\qquad X=${tn(s.X)}${u('m')}` },
-      { tex: `\\text{S: }(${tn(s.x)},\\ ${tn(s.y)})\\qquad \\text{S}':\\ (${tn(s.xp)},\\ ${tn(s.yp)})` },
+      { tex: `t=${uq('s', s.t)}\\qquad X=${uq('m', s.X)}` },
+      { tex: `\\text{S: }(${un('m', s.x)},\\ ${un('m', s.y)})\\qquad \\text{S}':\\ (${un('m', s.xp)},\\ ${un('m', s.yp)})` },
     );
     return out.filter(Boolean);
   },

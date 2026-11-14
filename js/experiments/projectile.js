@@ -2,6 +2,7 @@ import { deg, rk4, tn, clamp } from '../core/math.js';
 import { ball } from '../core/shapes.js';
 import { trail } from '../core/look.js';
 import { tex, texBox } from '../core/manim.js';
+import { uq, un, ut, uf, utn } from '../core/units.js';
 import { Stage, createPts, brace, angleMark, dropLines, rate01, C, arrowPx, arrowMag } from '../core/annot.js';
 
 const stage = new Stage();   // regia: frecce che crescono, parabola che si disegna, graffe, corpi che nascono
@@ -234,19 +235,19 @@ export default {
     const V = x => C('vel', x), G = C('acc', 'g');
     return [
       { h: 'Condizioni iniziali' },
-      { tex: `${V('v_{0x}')}=${V('v_0')}\\cos\\theta=${tn(id.vx)}${u('m/s')}` },
-      { tex: `${V('v_{0y}')}=${V('v_0')}\\sin\\theta=${tn(id.vy)}${u('m/s')}` },
+      { tex: `${V('v_{0x}')}=${V('v_0')}\\cos\\theta=${uq('m/s', id.vx)}` },
+      { tex: `${V('v_{0y}')}=${V('v_0')}\\sin\\theta=${uq('m/s', id.vy)}` },
       { h: 'Leggi orarie' },
-      { key: true, tex: `x(t)=${tn(id.vx)}\\,t` },
-      { key: true, tex: `y(t)=${tn(p.h0, 1)}+${tn(id.vy)}\\,t-${tn(p.g / 2, 3)}\\,t^2` },
+      { key: true, tex: `x(t)=${un('m/s', id.vx)}\\,t` },
+      { key: true, tex: `y(t)=${un('m', p.h0, 1)}+${un('m/s', id.vy)}\\,t-${un('m/s²', p.g / 2, 3)}\\,t^2` },
       { h: p.k > 0 ? 'Previsioni ideali (senza aria)' : 'Previsioni' },
-      { tex: `t_{\\text{volo}}=\\dfrac{${V('v_{0y}')}+\\sqrt{${V('v_{0y}^2')}+2${G}h_0}}{${G}}=${tn(id.tv)}${u('s')}` },
-      { tex: `h_{\\max}=h_0+\\dfrac{${V('v_{0y}^2')}}{2${G}}=${tn(id.hmax)}${u('m')}` },
-      { key: true, tex: `R=${V('v_{0x}')}\\,t_{\\text{volo}}=${tn(id.R)}${u('m')}` },
+      { tex: `t_{\\text{volo}}=\\dfrac{${V('v_{0y}')}+\\sqrt{${V('v_{0y}^2')}+2${G}h_0}}{${G}}=${uq('s', id.tv)}` },
+      { tex: `h_{\\max}=h_0+\\dfrac{${V('v_{0y}^2')}}{2${G}}=${uq('m', id.hmax)}` },
+      { key: true, tex: `R=${V('v_{0x}')}\\,t_{\\text{volo}}=${uq('m', id.R)}` },
       { h: s.landed ? 'All\'atterraggio' : 'Istante attuale' },
-      { tex: `t=${tn(s.t)}${u('s')}\\qquad x=${tn(s.x)}${u('m')}\\qquad y=${tn(s.y)}${u('m')}` },
-      { tex: `${V('v_x')}=${tn(s.vx)}\\quad ${V('v_y')}=${tn(s.vy)}\\quad |${V('\\vec v')}|=${tn(v)}${u('m/s')}` },
-      p.k > 0 && s.landed && { tex: `\\text{gittata reale } ${tn(s.x)}${u('m')}\\ \\ (${tn(100 * s.x / id.R, 0)}\\%\\text{ dell'ideale})`, cls: 'warn' },
+      { tex: `t=${uq('s', s.t)}\\qquad x=${uq('m', s.x)}\\qquad y=${uq('m', s.y)}` },
+      { tex: `${V('v_x')}=${un('m/s', s.vx)}\\quad ${V('v_y')}=${un('m/s', s.vy)}\\quad |${V('\\vec v')}|=${uq('m/s', v)}` },
+      p.k > 0 && s.landed && { tex: `\\text{gittata reale } ${uq('m', s.x)}\\ \\ (${tn(100 * s.x / id.R, 0)}\\%\\text{ dell'ideale})`, cls: 'warn' },
     ].filter(Boolean);
   },
 

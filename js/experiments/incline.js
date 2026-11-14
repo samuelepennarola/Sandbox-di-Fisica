@@ -1,6 +1,7 @@
 import { deg, tn, clamp } from '../core/math.js';
 import { crate } from '../core/shapes.js';
 import { tex, texBox } from '../core/manim.js';
+import { uq, un, ut, uf, utn } from '../core/units.js';
 import { Stage, brace, angleMark, rate01, C as Ccol } from '../core/annot.js';
 
 const stage = new Stage();   // regia: frecce che crescono, graffe, piano che si trasforma, cassa che nasce
@@ -236,23 +237,23 @@ export default {
     const K = 0.5 * p.m * st.v * st.v, U = W * (L - st.s) * g.sn;
     return [
       { h: 'Scomposizione del peso' },
-      { tex: `${Pc('P')}=mg=${tn(W)}${u('N')}` },
-      { key: true, tex: `${Pc('P_{\\parallel}')}=mg\\sin\\alpha=${tn(W * g.sn)}${u('N')}` },
-      { key: true, tex: `${Pc('P_{\\perp}')}=mg\\cos\\alpha=${tn(N)}${u('N')}\\quad(=${Nc}\\text{, la normale})` },
+      { tex: `${Pc('P')}=mg=${uq('N', W)}` },
+      { key: true, tex: `${Pc('P_{\\parallel}')}=mg\\sin\\alpha=${uq('N', W * g.sn)}` },
+      { key: true, tex: `${Pc('P_{\\perp}')}=mg\\cos\\alpha=${uq('N', N)}\\quad(=${Nc}\\text{, la normale})` },
       { h: 'Equilibrio statico (da fermo)' },
       { key: true, tex: `\\tan\\alpha=${tn(tan, 3)}\\ ${slides ? '>' : '\\le'}\\ \\mu_s=${tn(p.mus)}`, cls: slides ? 'warn' : 'ok' },
       { tex: slides ? `\\Rightarrow\\ \\text{scivola}` : `\\Rightarrow\\ \\text{resta fermo}`, cls: slides ? 'warn' : 'ok' },
       slides && p.muk >= tan && { tex: `\\text{ma }\\mu_d=${tn(p.muk)}\\ \\ge\\ \\tan\\alpha:\\ \\text{si riferma subito (di solito }\\mu_d<\\mu_s)`, cls: 'ok' },
-      { tex: `${Fc('f_{s,\\max}')}=\\mu_s ${Nc}=${tn(p.mus * N)}${u('N')}` },
+      { tex: `${Fc('f_{s,\\max}')}=\\mu_s ${Nc}=${uq('N', p.mus * N)}` },
       { h: 'Dinamica (asse lungo il piano, + verso il basso)' },
-      { tex: `\\text{discesa: } ${Ac}=g(\\sin\\alpha-\\mu_d\\cos\\alpha)=${tn(aDown)}${u('m/s^2')}` },
-      { tex: `\\text{salita: } ${Ac}=-g(\\sin\\alpha+\\mu_d\\cos\\alpha)=${tn(aUp)}${u('m/s^2')}` },
+      { tex: `\\text{discesa: } ${Ac}=g(\\sin\\alpha-\\mu_d\\cos\\alpha)=${uq('m/s²', aDown)}` },
+      { tex: `\\text{salita: } ${Ac}=-g(\\sin\\alpha+\\mu_d\\cos\\alpha)=${uq('m/s²', aUp)}` },
       { h: 'Istante attuale' },
-      { tex: `t=${tn(st.t)}${u('s')}\\quad s=${tn(st.s)}${u('m')}\\quad ${Ccol('vel', 'v')}=${tn(st.v)}${u('m/s')}` },
-      { tex: `${Ac}=${tn(st.a)}${u('m/s^2')}\\quad ${Fc(`f_{${st.regime === 'statico' ? 's' : 'd'}}`)}=${tn(st.f)}${u('N')}` },
+      { tex: `t=${uq('s', st.t)}\\quad s=${uq('m', st.s)}\\quad ${Ccol('vel', 'v')}=${uq('m/s', st.v)}` },
+      { tex: `${Ac}=${uq('m/s²', st.a)}\\quad ${Fc(`f_{${st.regime === 'statico' ? 's' : 'd'}}`)}=${uq('N', st.f)}` },
       { h: 'Energia' },
-      { tex: `K=${tn(K)}\\quad U=${tn(U)}\\quad Q=${tn(st.Q)}${u('J')}` },
-      { tex: `K+U+Q=${tn(K + U + st.Q)}${u('J')}` },
+      { tex: `K=${tn(K)}\\quad U=${tn(U)}\\quad Q=${uq('J', st.Q)}` },
+      { tex: `K+U+Q=${uq('J', K + U + st.Q)}` },
     ];
   },
 

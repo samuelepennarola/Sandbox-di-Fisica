@@ -7,6 +7,7 @@ import { SceneHistory } from '../core/history.js';
 import { K, MU, pointField, drawFieldGrid } from '../core/electric.js';
 import { palette, mixHex, drawPlaneGrid, drawPlaneAxes, drawFieldLinesM, chargeDisk, arrowS, tex, texWidth, sciTeX, Regia, reducedMotion } from '../core/manim.js';
 import { rate } from '../core/anim.js';
+import { uq, un, ut, uf, utn } from '../core/units.js';
 import { coulombNote } from '../core/annot-charges.js';
 
 // Cariche e campo elettrico (elettrostatica, livello liceo).
@@ -286,7 +287,7 @@ function drawPairNote(P) {
   const keepOut = pts.map(o => { const [a, b] = P.S(o.x, o.y), y = b + rpx(o) + 16, w = 90; return [a - w / 2, y - 11, a + w / 2, y + 11]; });
   coulombNote(P, M, {
     p1: P.S(s.x, s.y), p2: P.S(t.x, t.y), r1: rpx(s), r2: rpx(t), avoid, g, keepOut,
-    rTeX: `r = ${fmt(best * 100, 1)}\\ \\mathrm{cm}`,
+    rTeX: `r = ${uq('cm', best * 100, 1)}`,
     lawTeX: `${ct(C.force, 'F')} = k\\frac{|${qT(s)}\\,${qT(t)}|}{r^{2}} = ${ct(C.force, `${val(F)}\\ \\mathrm{N}`)}`,
   });
 }
@@ -299,7 +300,7 @@ function drawCharge(P, s, selected) {
   const r = Math.max(10, radius(s.q) * P.cam.scale) * born(s.id);
   if (r <= 0.5) return;
   chargeDisk(P.ctx, a, b, r, hue, M, selected);
-  tex(P, a, b + r + 16, `${nameOf(s)} = ${fmt(s.q, 1)}\\ \\mathrm{µC}`, { size: 16, color: M.text, halo: M.bg });
+  tex(P, a, b + r + 16, `${nameOf(s)} = ${uq('µC', s.q, 1)}`, { size: 16, color: M.text, halo: M.bg });
 }
 
 function drawBar(P, s, selected) {
@@ -321,7 +322,7 @@ function drawBar(P, s, selected) {
     ctx.stroke();
   }
   ctx.restore();
-  const label = s.type === 'rod' ? `Q = ${fmt(value, 1)}\\ \\mathrm{µC}` : `\\sigma = ${fmt(value, 1)}\\ \\mathrm{µC/m}^{2}`;
+  const label = s.type === 'rod' ? `Q = ${uq('µC', value, 1)}` : `\\sigma = ${uq('µC/m²', value, 1)}`;
   tex(P, (a1 + a2) / 2 - uy * 22, (b1 + b2) / 2 + ux * 22, label, { size: 15, color: M.text, halo: M.bg });
 }
 
@@ -416,7 +417,7 @@ function drawPolar(P) {
   { const m = th / 2, [ra, rb] = P.S(ref.x, ref.y); tex(P, ra + Math.cos(m) * (R + 18), rb - Math.sin(m) * (R + 18), `\\theta = ${fmt(th / deg, 0)}°`, { size: 15, color: A.M.sel, halo: A.M.bg }); }
   if (nearest(s)?.t === ref) return;   // la distanza la scrive già la parentesi graffa (drawPairNote)
   const [mx, my] = P.S((ref.x + s.x) / 2, (ref.y + s.y) / 2), nx = -Math.sin(th), ny = -Math.cos(th);
-  tex(P, mx + nx * 16, my + ny * 16, `r = ${fmt(r * 100, 1)}\\ \\mathrm{cm}`, { size: 15, color: A.M.sel, halo: A.M.bg });
+  tex(P, mx + nx * 16, my + ny * 16, `r = ${uq('cm', r * 100, 1)}`, { size: 15, color: A.M.sel, halo: A.M.bg });
 }
 
 function drawProbe(P) {
@@ -564,7 +565,7 @@ export default {
     if (!A.still) drawPairNote(P);
     for (const h of handlesOf(srcOf(B.sel))) P.sizeHandle(h.x, h.y, B.dragHandle === h.i);
     if (show.probe && !A.still) drawProbe(P);
-    if (B.drag) dragGuides(P, { x: B.drag.o.x, y: B.drag.o.y, vx: B.drag.vx, hy: B.drag.hy, text: `x = ${fmt(B.drag.o.x * 100, 1)} cm · y = ${fmt(B.drag.o.y * 100, 1)} cm` });
+    if (B.drag) dragGuides(P, { x: B.drag.o.x, y: B.drag.o.y, vx: B.drag.vx, hy: B.drag.hy, text: `x = ${ut('cm', B.drag.o.x * 100, 1)} · y = ${ut('cm', B.drag.o.y * 100, 1)}` });
   },
 
   // Valore di una puntina dalla scena corrente (vedi pinValue in main.js).
@@ -586,12 +587,12 @@ export default {
     const kTex = `k = 8{,}99\\cdot 10^{9}\\ \\mathrm{\\tfrac{N\\,m^2}{C^2}}`;
     if (s?.type === 'point') {
       const { list, R } = forcesOn(s);
-      out.push({ h: `Forze su ${nameOf(s)} = ${fmt(s.q, 1)} µC` });
+      out.push({ h: `Forze su ${nameOf(s)} = ${ut('µC', s.q, 1)}` });
       for (const f of list) {
         const F = Math.hypot(...f.F);
         if (f.s.type === 'point') {
           const r = Math.hypot(f.s.x - s.x, f.s.y - s.y);
-          out.push({ tex: `${Fc(`F_{${pIdx(f.s)}}`)} = k\\dfrac{|${qT(s)}\\,${qT(f.s)}|}{r^2} = ${Fc(`${tn(K * Math.abs(s.q * f.s.q) * MU * MU / (r * r), 3)}\\ \\mathrm{N}`)}\\quad (r = ${tn(r * 100, 1)}\\ \\mathrm{cm},\\ ${s.q * f.s.q > 0 ? '\\text{repulsiva}' : '\\text{attrattiva}'})` });
+          out.push({ tex: `${Fc(`F_{${pIdx(f.s)}}`)} = k\\dfrac{|${qT(s)}\\,${qT(f.s)}|}{r^2} = ${Fc(`${tn(K * Math.abs(s.q * f.s.q) * MU * MU / (r * r), 3)}\\ \\mathrm{N}`)}\\quad (r = ${uq('cm', r * 100, 1)},\\ ${s.q * f.s.q > 0 ? '\\text{repulsiva}' : '\\text{attrattiva}'})` });
         } else {
           out.push({ tex: `${Fc(`F_{\\text{${nameOf(f.s)}}}`)} = ${qT(s)}\\,${Ec('E')} = ${Fc(`${tn(F, 3)}\\ \\mathrm{N}`)}` });
         }
@@ -606,7 +607,7 @@ export default {
       }
     } else if (s) {
       out.push({ h: nameOf(s) });
-      if (s.type === 'rod') out.push({ tex: `\\lambda = \\dfrac{Q}{L} = ${tn(s.Q / s.L, 2)}\\ \\mathrm{\\mu C/m}` });
+      if (s.type === 'rod') out.push({ tex: `\\lambda = \\dfrac{Q}{L} = ${uq('µC/m', s.Q / s.L, 2)}` });
       else {
         out.push({ tex: `${Ec('E_{\\text{vicino al centro}}')} \\approx \\dfrac{\\sigma}{2\\varepsilon_0} = ${sciTex(Math.abs(s.sigma) * MU / (2 * 8.854e-12))}\\ \\mathrm{N/C}` });
         out.push({ html: '<div class="hint">Due lastre opposte formano un condensatore piano: all\'interno E = σ/ε₀, fuori quasi zero.</div>' });
@@ -614,7 +615,7 @@ export default {
     }
     if (spec.show.probe) {
       const { x, y } = spec.probe, [ex, ey] = fieldAt(x, y), m = Math.hypot(ex, ey), V = potentialAt(x, y);
-      out.push({ h: `Sonda in (${fmt(x * 100, 1)} ; ${fmt(y * 100, 1)}) cm` });
+      out.push({ h: `Sonda in (${uf('cm', x * 100, 1)} ; ${uf('cm', y * 100, 1)}) ${utn('cm')}` });
       out.push({ tex: `${Ec('\\vec E')} = (${sciTex(ex)},\\ ${sciTex(ey)})\\ \\mathrm{N/C}` });
       out.push({ tex: `|${Ec('\\vec E')}| = ${Ec(`${sciTex(m)}\\ \\mathrm{N/C}`)}\\qquad \\theta = ${tn(Math.atan2(ey, ex) / deg, 0)}^\\circ` });
       if (V != null) out.push({ tex: `V = \\textstyle\\sum k\\dfrac{q_i}{r_i} = ${sciTex(V)}\\ \\mathrm{V}` });
@@ -623,7 +624,7 @@ export default {
         out.push({ h: 'Contributi delle cariche' });
         for (const o of pts) {
           const r = Math.hypot(x - o.x, y - o.y);
-          out.push({ tex: `${Ec(`E_{${pIdx(o)}}`)} = k\\dfrac{|${qT(o)}|}{r^2} = ${Ec(`${sciTex(K * Math.abs(o.q) * MU / (r * r))}\\ \\mathrm{N/C}`)}\\quad (r = ${tn(r * 100, 1)}\\ \\mathrm{cm})` });
+          out.push({ tex: `${Ec(`E_{${pIdx(o)}}`)} = k\\dfrac{|${qT(o)}|}{r^2} = ${Ec(`${sciTex(K * Math.abs(o.q) * MU / (r * r))}\\ \\mathrm{N/C}`)}\\quad (r = ${uq('cm', r * 100, 1)})` });
         }
       }
     }
@@ -681,7 +682,7 @@ export default {
       const inScene = api.section(body, 'In scena', 'c.list', true);
       const list = el('div', 'chips');
       for (const o of B.spec.sources) {
-        const v = o.type === 'point' ? `${fmt(o.q, 1)} µC` : o.type === 'rod' ? `${fmt(o.Q, 1)} µC` : `${fmt(o.sigma, 1)} µC/m²`;
+        const v = o.type === 'point' ? `${ut('µC', o.q, 1)}` : o.type === 'rod' ? `${ut('µC', o.Q, 1)}` : `${ut('µC/m²', o.sigma, 1)}`;
         const b = el('button', '', `${nameOf(o)} · ${v}`);
         b.onclick = () => select(o.id);
         list.appendChild(b);

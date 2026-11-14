@@ -1,5 +1,6 @@
 import { fmt, decimalsOf } from './math.js';
 import { icons } from './icons.js';
+import { unitView, unitDec } from './units.js';
 
 // Limiti "duri" per i valori digitati: si può uscire dall'intervallo dello slider,
 // ma non dare valori senza senso (masse negative, g nulla…).
@@ -57,14 +58,17 @@ export function paramControl(def, opts) {
     </div>
     <div class="slider">
       <input type="range" min="${def.min}" max="${def.max}" step="${def.step}">
-      <div class="slider-ends"><span>${fmt(def.min, decimalsOf(def.step))}</span><span>${fmt(def.max, decimalsOf(def.step))}</span></div>
+      <div class="slider-ends"><span></span><span></span></div>
     </div>`;
   const range = row.querySelector('input[type=range]');
   const valBtn = row.querySelector('.param-value');
   const animBtn = row.querySelector('.param-anim');
   const pinBtn = row.querySelector('.param-pin');
-  const d = decimalsOf(def.step);
-  const show = v => `${fmt(v, d)}${def.unit ? ' ' + def.unit : ''}`;
+  // Il cursore lavora nell'unità del parametro; il valore si mostra (e si digita) nell'unità scelta nel menu Unità.
+  const U = unitView(def.unit), d = unitDec(decimalsOf(def.step), U.f);
+  const show = v => `${fmt(v * U.f, d)}${U.name ? ' ' + U.name : ''}`;
+  const ends = row.querySelectorAll('.slider-ends span');
+  ends[0].textContent = fmt(def.min * U.f, d); ends[1].textContent = fmt(def.max * U.f, d);
 
   const sync = () => {
     const v = opts.get();
@@ -88,7 +92,7 @@ export function paramControl(def, opts) {
     if (valBtn.querySelector('input')) return;
     const inp = document.createElement('input');
     inp.type = 'text'; inp.inputMode = 'decimal'; inp.className = 'num-edit';
-    inp.value = fmt(opts.get(), d);
+    inp.value = fmt(opts.get() * U.f, d);
     valBtn.textContent = '';
     valBtn.appendChild(inp);
     inp.focus(); inp.select();
@@ -96,7 +100,7 @@ export function paramControl(def, opts) {
     const commit = ok => {
       if (done) return;
       done = true;
-      const v = parseNum(inp.value);
+      const typed = parseNum(inp.value), v = typed == null ? null : typed / U.f;
       inp.remove();
       if (ok && v != null) {
         const [lo, hi] = hardLimits(def);

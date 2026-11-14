@@ -678,3 +678,11 @@ body.chrome-idle .pin-x { opacity: 0; }
 .slider-ends { display: flex; justify-content: space-between; margin-top: -12px; padding: 0 1px; pointer-events: none;
   font-size: 12.5px; color: var(--c-muted); font-variant-numeric: tabular-nums; }
 #inspector .param { margin: 10px 0 12px; }
+
+/* Menu Unità nel cassetto */
+.drawer-units { margin: 4px 0 6px; }
+.unit-row { display: flex; align-items: center; gap: 10px; padding: 3px 8px; font-size: 15px; color: var(--c-muted); }
+.unit-row > span { width: 86px; flex: none; }
+.unit-row .seg.wide { flex: 1; background: transparent; padding: 0; gap: 0; }
+#drawer .unit-row .seg.wide button { display: block; width: auto; flex: 1; height: 34px; padding: 0 2px; text-align: center; font-size: 15px; color: var(--c-muted); border-radius: 8px; }
+#drawer .unit-row .seg.wide button.on { background: transparent; box-shadow: none; color: var(--accent); }

@@ -6,6 +6,7 @@ import { Inspector } from './core/inspector.js';
 import { drawPlot, seriesColor } from './core/plot.js';
 import { palette as manimPalette } from './core/manim.js';
 import { rate } from './core/anim.js';
+import { UNITS, unit, setUnit, onUnitsChange, ut, unitLabel } from './core/units.js';
 import { icons, applyIcons } from './core/icons.js';
 import { store } from './core/store.js';
 import { fmt } from './core/math.js';
@@ -233,7 +234,7 @@ function updatePins(check = true) {
     const p = pinList().find(q => q.key === row.dataset.key), v = p && pinValue(p);
     if (v == null) continue;
     const d = Math.max(0, -Math.floor(Math.log10(p.step || 1) + 1e-9));
-    row.querySelector('.pin-val').textContent = `${fmt(v, d)}${p.unit ? ' ' + p.unit : ''}`;
+    row.querySelector('.pin-val').textContent = ut(p.unit, v, d);
   }
 }
 
@@ -319,7 +320,7 @@ function buildGraphTabs() {
   });
   const g = list[app.graphIdx];
   graphBody.querySelector('.legend').innerHTML = g
-    ? g.series.map(s => `<span style="--lc:${seriesColor(manimPalette(colors), colors, s.color)}">${s.label}</span>`).join('')
+    ? g.series.map(s => `<span style="--lc:${seriesColor(manimPalette(colors), colors, s.color)}">${unitLabel(s.label).label}</span>`).join('')
     : '';
 }
 
@@ -378,6 +379,7 @@ function buildDrawer() {
   theme.innerHTML = `${icons.theme}<span>Tema chiaro / scuro</span>`;
   theme.onclick = toggleTheme;
   dr.appendChild(theme);
+  dr.appendChild(unitsSection());
   for (const a of AREAS) {
     const h = document.createElement('h2');
     h.textContent = a.title;
@@ -396,6 +398,36 @@ function buildDrawer() {
     }
   }
 }
+
+// Menu Unità: per lunghezze, masse e cariche si sceglie "auto" (l'unità naturale di ogni esperimento) o una fissa.
+// I calcoli restano in SI: cambia solo come si scrivono cursori, puntine, assi, scritte, formule e grafici.
+const UNIT_ROWS = [['length', 'Lunghezze'], ['mass', 'Masse'], ['charge', 'Cariche']];
+function unitsSection() {
+  const box = document.createElement('div');
+  box.className = 'drawer-units';
+  box.innerHTML = '<h2>Unità di misura</h2>';
+  for (const [kind, label] of UNIT_ROWS) {
+    const row = document.createElement('div');
+    row.className = 'unit-row';
+    row.innerHTML = `<span>${label}</span><div class="seg wide"></div>`;
+    const seg = row.querySelector('.seg');
+    for (const [name] of UNITS[kind]) {
+      const b = document.createElement('button');
+      b.textContent = name;
+      b.className = unit(kind) === name ? 'on' : '';
+      b.onclick = () => { setUnit(kind, name); seg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); };
+      seg.appendChild(b);
+    }
+    box.appendChild(row);
+  }
+  return box;
+}
+onUnitsChange(() => {
+  if (!app.exp) return;
+  if (app.exp.onUnits) app.exp.onUnits(api); else buildParams();
+  buildPins(); buildGraphTabs();
+  app.formulasDirty = true;
+});
 
 function toggleDrawer(open) {
   $('drawer').classList.toggle('open', open);

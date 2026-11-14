@@ -8,6 +8,7 @@ import { el } from '../core/ui.js';
 import { K, MU as UC, pointField, traceLine, drawFieldGrid } from '../core/electric.js';
 import { trail, dust, BODY_COLORS } from '../core/look.js';
 import { coulombNote } from '../core/annot-charges.js';
+import { uq, un, ut, uf, utn } from '../core/units.js';
 import { palette, drawPlaneGrid, drawPlaneAxes, drawFieldLinesM, chargeDisk, groundM, slabM, blockM, ballM, springM, ropeM, pulleyM, anchorM,
   manimPainter, tex, Regia } from '../core/manim.js';
 
@@ -433,7 +434,7 @@ function drawDistances(P, st, pair = null) {
     P.line([[a.x, a.y], [b.x, b.y]], { color: 'muted', width: 1.4, dash: [5, 5] });
     if (pair && pair.includes(a.id) && pair.includes(b.id)) continue;   // questa r la scrive la parentesi graffa
     const [ma, mb] = P.S((a.x + b.x) / 2, (a.y + b.y) / 2), ang = Math.atan2(b.y - a.y, b.x - a.x);
-    P.textS(ma - Math.sin(ang) * 12, mb - Math.cos(ang) * 12, `r = ${fmt(r, 2)} m`, { size: 12, align: 'center', color: 'muted' });
+    P.textS(ma - Math.sin(ang) * 12, mb - Math.cos(ang) * 12, `r = ${ut('m', r, 2)}`, { size: 12, align: 'center', color: 'muted' });
   }
   triangleAngles(P, list);
 }
@@ -460,7 +461,7 @@ function drawPairNote(P, st, { s, t, r, list }) {
   });
   coulombNote(P, M, {
     p1: P.S(s.x, s.y), p2: P.S(t.x, t.y), r1: rpx(s), r2: rpx(t), avoid, g: R.on('note', s.id + '-' + t.id, 0.55), keepOut,
-    rTeX: `r = ${fmt(r, 2)}\\ \\mathrm{m}`,
+    rTeX: `r = ${uq('m', r, 2)}`,
     lawTeX: `${ct(C.vec.acc, `F_{${i}${j}}`)} = k\\frac{|${qT(s, i)}\\,${qT(t, j)}|}{r^{2}} = ${ct(C.vec.acc, `${fmt(F, F < 0.1 ? 4 : 3)}\\ \\mathrm{N}`)}`,
   });
 }
@@ -987,7 +988,7 @@ function draw(P0, st, ui = {}) {
     else if (o.type === 'charge') {
       const [a, b] = P.S(o.x, o.y), r = Math.max(10, CHARGE_R * P.cam.scale) * R.born(o.id);
       chargeDisk(P.ctx, a, b, r, R.smooth('hue:' + o.id, [o.q >= 0 ? 1 : 0], 0.16)[0], M, sel === o.id);
-      tex(P, a, b + r + 16, `q_{${chargeNo(spec, o.id)}} = ${fmt(o.q, 1)}\\ \\mathrm{µC}`, { size: 16, color: M.text, halo: M.bg });
+      tex(P, a, b + r + 16, `q_{${chargeNo(spec, o.id)}} = ${uq('µC', o.q, 1)}`, { size: 16, color: M.text, halo: M.bg });
     }
   }
 
@@ -1002,13 +1003,13 @@ function draw(P0, st, ui = {}) {
     else ballM(P, M, T.x, T.y, { r: o.r, color, spin: T.a, selected: isSel, grow: g });
     if (P.cam.scale * Math.min(o.w ?? o.r * 2, o.h ?? o.r * 2) > 30) {
       const [cx, cy] = P.S(T.x, T.y);
-      tex(P, cx, cy, `${fmt(o.m, o.m < 10 ? 1 : 0)}\\ \\mathrm{kg}`, { size: 15, color: M.dark ? '#ffffff' : '#1b1a17', alpha: g });
+      tex(P, cx, cy, `${uq('kg', o.m, o.m < 10 ? 1 : 0)}`, { size: 15, color: M.dark ? '#ffffff' : '#1b1a17', alpha: g });
     }
     if (o.q) {
       // Corpo carico: piccolo disco col segno in alto a destra e valore della carica.
       const [cx, cy] = P.S(T.x, T.y), hw = (o.type === 'ball' ? o.r * Math.SQRT1_2 : o.w / 2) * P.cam.scale, hh = (o.type === 'ball' ? o.r * Math.SQRT1_2 : o.h / 2) * P.cam.scale;
       chargeDisk(P.ctx, cx + hw, cy - hh, 9, R.smooth('hue:' + o.id, [o.q >= 0 ? 1 : 0], 0.16)[0], M, false, false);
-      tex(P, cx + hw + 14, cy - hh, `q_{${chargeNo(spec, o.id)}} = ${fmt(o.q, 1)}\\ \\mathrm{µC}`, { size: 15, color: M.text, align: 'left', halo: M.bg });
+      tex(P, cx + hw + 14, cy - hh, `q_{${chargeNo(spec, o.id)}} = ${uq('µC', o.q, 1)}`, { size: 15, color: M.text, align: 'left', halo: M.bg });
     }
 
     // Polvere dove il corpo striscia con attrito.
@@ -1051,7 +1052,7 @@ function draw(P0, st, ui = {}) {
   if (note) drawPairNote(P, st, note);
   if (B.drag) {
     const o = B.drag.o;
-    dragGuides(P, { x: o.x, y: o.y, vx: B.drag.vx, hy: B.drag.hy, text: `x = ${fmt(o.x, 2)} m · y = ${fmt(o.y, 2)} m` });
+    dragGuides(P, { x: o.x, y: o.y, vx: B.drag.vx, hy: B.drag.hy, text: `x = ${ut('m', o.x, 2)} · y = ${ut('m', o.y, 2)}` });
   }
 
   // Maniglie di ridimensionamento dell'oggetto selezionato (solo a simulazione ferma).
@@ -1103,7 +1104,7 @@ function electricFormulas(st, item) {
     if (f.from === 'E') { out.push({ tex: `${Fc('F')} = ${qT(item, chargeNo(st.spec, item.id))}\\,${ct(C.field, 'E')} = ${Fc(`${n(Math.hypot(...f.F)).replace(',', '{,}')}\\ \\mathrm{N}`)}` }); continue; }
     const o = objOf(st.spec, f.from);
     const i = chargeNo(st.spec, item.id), j = chargeNo(st.spec, o.id);
-    out.push({ tex: `${Fc(`F_{${i}${j}}`)} = k\\dfrac{|${qT(item, i)}\\,${qT(o, j)}|}{r^2} = ${Fc(`${n(Math.hypot(...f.F)).replace(',', '{,}')}\\ \\mathrm{N}`)}\\quad (r = ${fmt(f.r, 2).replace(',', '{,}')}\\ \\mathrm{m},\\ \\text{${item.q * o.q > 0 ? 'repulsiva' : 'attrattiva'}})` });
+    out.push({ tex: `${Fc(`F_{${i}${j}}`)} = k\\dfrac{|${qT(item, i)}\\,${qT(o, j)}|}{r^2} = ${Fc(`${n(Math.hypot(...f.F)).replace(',', '{,}')}\\ \\mathrm{N}`)}\\quad (r = ${uq('m', f.r)},\\ \\text{${item.q * o.q > 0 ? 'repulsiva' : 'attrattiva'}})` });
   }
   const cells = F => `<td>${hs(C.vec.acc, n(Math.hypot(...F)))}</td><td>${ang(F)}</td><td>${n(F[0])}</td><td>${n(F[1])}</td>`;
   const rows = d.rows.map(f => `<tr><td>${f.from === 'E' ? 'qE' : hs(C.vec.acc, 'F' + subN(chargeNo(st.spec, item.id)) + subN(chargeNo(st.spec, f.from))) + ' (da q' + subN(chargeNo(st.spec, f.from)) + ')'}</td>${cells(f.F)}</tr>`).join('');
@@ -1115,7 +1116,7 @@ function formulas(st) {
   const spec = st.spec, item = selected(spec), out = [];
   if (item && DYNAMIC.has(item.type)) {
     const T = xf(st, item.id), v = velOf(st, item.id), a = st.accel[item.id] ?? [0, 0];
-    out.push({ h: `${nameOf(spec, item)} · m = ${fmt(item.m, 2)} kg` });
+    out.push({ h: `${nameOf(spec, item)} · m = ${ut('kg', item.m, 2)}` });
     out.push({ html: forceTable(st.forces[item.id] ?? [], item.m, a) });
     out.push({ h: 'Stato' });
     out.push({ html: kv([
@@ -1140,7 +1141,7 @@ function formulas(st) {
     const T = st.tensions?.[item.id] ?? 0;
     out.push({ html: kv([['Tensione T', `${n2(T)} N`], ...(item.L ? [['Lunghezza', `${n2(item.L)} m`]] : []), ['Stato', T > 1e-3 ? 'tesa' : 'lenta']]) });
   } else if (item?.type === 'charge') {
-    out.push({ h: `${nameOf(spec, item)} · q = ${fmt(item.q, 1)} µC` });
+    out.push({ h: `${nameOf(spec, item)} · q = ${ut('µC', item.q, 1)}` });
     out.push({ html: '<div class="hint">Una carica fissa non si muove, ma subisce anch\'essa le forze delle altre cariche (terza legge).</div>' });
   } else if (item?.type === 'force') {
     out.push({ h: nameOf(spec, item) });

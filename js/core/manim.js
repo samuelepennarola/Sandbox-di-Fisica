@@ -4,6 +4,7 @@
 // Pensato per essere esteso a tutti gli esperimenti: per ora lo usa "Cariche e campo elettrico".
 import { niceStep } from './math.js';
 import { MANIM, rate } from './anim.js';
+import { unitView } from './units.js';
 
 export const isDark = () => document.documentElement.dataset.theme === 'dark';
 
@@ -70,6 +71,7 @@ export function drawPlaneGrid(ctx, cam, M) {
 // k converte i metri nell'unità mostrata (100 per i centimetri).
 export function drawPlaneAxes(P, M, { unit = 'm', k = 1 } = {}) {
   const { ctx, cam } = P;
+  { const U = unitView(unit); unit = U.name; k *= U.f; }   // unità scelta nel menu Unità
   const pad = cam.padFn?.() ?? { top: 70, right: 20, bottom: 20, left: 20 };
   const L = pad.left + 8, R = cam.w - pad.right - 8, T = pad.top - 6, Bm = cam.h - pad.bottom + 6;
   let [ox, oy] = cam.toScreen(0, 0);
