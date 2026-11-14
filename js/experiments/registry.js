@@ -5,6 +5,10 @@ import board from './board.js';
 import charges from './charges.js';
 import circular from './circular.js';
 import relative from './relative.js';
+import spring from './spring.js';
+import pendulum from './pendulum.js';
+import string from './string.js';
+import sources from './sources.js';
 
 // Mappa dei moduli. Le voci senza esperimenti compaiono come "in arrivo".
 export const AREAS = [
@@ -12,7 +16,7 @@ export const AREAS = [
   { id: 'meccanica', title: 'Meccanica del punto', experiments: [projectile, incline, circular, relative], soon: [] },
   { id: 'sistemi', title: 'Sistemi e urti', experiments: [], soon: ['Urti 1D e 2D', 'Centro di massa', 'Carrucole e funi'] },
   { id: 'rigido', title: 'Corpo rigido', experiments: [], soon: ['Momenti e leve', 'Rotolamento'] },
-  { id: 'oscillazioni', title: 'Oscillazioni e onde', experiments: [], soon: ['Molla', 'Pendolo', 'Onde su corda'] },
+  { id: 'oscillazioni', title: 'Oscillazioni e onde', experiments: [spring, pendulum, string, sources], soon: [] },
   { id: 'gravitazione', title: 'Gravitazione', experiments: [], soon: ['Orbite e Keplero', 'Tre corpi'] },
   { id: 'fluidi', title: 'Fluidi', experiments: [], soon: ['Archimede', 'Bernoulli'] },
   { id: 'termo', title: 'Termodinamica', experiments: [], soon: ['Gas ideale', 'Cicli termici'] },

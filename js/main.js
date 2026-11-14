@@ -266,6 +266,7 @@ function buildParams() {
   showRail(false);
 
   for (const def of exp.params) {
+    if (def.hidden) continue;
     body.appendChild(control(def, () => app.params[def.key], v => setParam(def, v)));
   }
 
@@ -1109,9 +1110,10 @@ canvas.addEventListener('pointermove', e => {
   } else if (gesture.type === 'drag') {
     if (!gesture.moved && Math.hypot(x - gesture.sx, y - gesture.sy) < 6) return;
     gesture.moved = true;
-    app.exp.drag(gesture.handle, wx, wy, app.params);
+    // Un esperimento può dichiarare "live" un trascinamento che non cambia il moto (per esempio una sonda).
+    const live = app.exp.drag(gesture.handle, wx, wy, app.params) === 'live';
     syncParams();
-    resetSim();
+    if (live) app.formulasDirty = true; else resetSim();
   } else if (gesture.type === 'pan') {
     cam.panBy(x - gesture.lx, y - gesture.ly);
     gesture.lx = x; gesture.ly = y;
