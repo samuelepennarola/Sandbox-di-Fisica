@@ -117,6 +117,17 @@ export default {
     p['v' + i] = clamp(Math.round(Math.sign(dx) * arrowMag(Math.abs(dx) * SC, r, V) * 10) / 10, -5, 5);
   },
 
+  // I carrelli per il diagramma di corpo libero: peso, reazione della rotaia e forza di contatto durante l'urto.
+  bodies(s, p, { scale }) {
+    const F = force(s, p), g = 9.81;
+    return [[1, s.x1, s.v1, p.m1, -F, 'vel'], [2, s.x2, s.v2, p.m2, F, 'weight']].map(([i, x, v, m, Fc, col]) => {
+      const forces = [{ name: 'P', fx: 0, fy: -m * g, color: 'weight' }, { name: 'N', fx: 0, fy: m * g, color: 'normal' }];
+      if (Math.abs(Fc) > 1e-6) forces.push({ name: i === 1 ? 'F_{21}' : 'F_{12}', fx: Fc, fy: 0, color: 'applied' });
+      return { key: 'c' + i, title: `\\text{il carrello ${i}}`, x, y: height(m) / 2, rPx: width(m) * scale / 2, m, forces,
+        a: [Fc / m, 0], v: [v, 0], color: col, noResize: true };
+    });
+  },
+
   mount() { stage.reset(); },
 
   draw(P, s, p, ui) {
@@ -142,7 +153,7 @@ export default {
 
     // Forze di contatto (azione e reazione) durante l'urto.
     const F = force(s, p);
-    if (p.showForce && F > 1e-6) {
+    if (p.showForce && F > 1e-6 && ui.sel !== 'c1' && ui.sel !== 'c2') {
       const { k } = contact(p.m1, p.m2, p.e), Fpk = Math.sqrt(k * p.m1 * p.m2 / (p.m1 + p.m2)) * Math.max(Math.abs(p.v1 - p.v2), 0.1);
       const L = arrowPx(F, Fpk, { min: 30, max: 90 }) / sc, xc = (s.x1 + width(p.m1) / 2 + s.x2 - width(p.m2) / 2) / 2;
       const y = Math.min(height(p.m1), height(p.m2)) * 0.45;

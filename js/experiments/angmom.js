@@ -2,7 +2,7 @@ import { tn, clamp } from '../core/math.js';
 import { tex } from '../core/manim.js';
 import { uq } from '../core/units.js';
 import { Stage, C, arrowPx, brace, symVal } from '../core/annot.js';
-import { camera3d, background3d, grid3d, axes3d, cylinder, sphere } from '../core/view3d.js';
+import { camera3d, background3d, room3d, orbit3d, axes3d, cylinder, sphere } from '../core/view3d.js';
 
 const stage = new Stage();
 const RP = 1.5;                                  // raggio della piattaforma (m)
@@ -79,13 +79,30 @@ export default {
     return 'live';
   },
 
+  // Le masse sulle guide per il diagramma di corpo libero, viste dall'alto: la guida le spinge verso l'asse
+  // (forza centripeta); peso e reazione verticale si annullano.
+  bodies(s, p, { scale }) {
+    if (!V) return [];
+    const r = s.t === 0 ? p.r : s.r, w = s.t === 0 ? p.w0 : s.w, rr = 0.12 * Math.cbrt(p.m / 6), Fc = p.m * w * w * r;
+    return [0, 1].map(k => {
+      const a = s.th + k * Math.PI, x = r * Math.cos(a), y = r * Math.sin(a), [X, Y] = V.p(x, y, rr);
+      return { key: 'm' + (k + 1), title: `\\text{la massa ${k + 1}}`, x: X, y: Y, wx: x, wy: y, z: rr, proj: (a1, b1, c1) => V.p(a1, b1, c1),
+        rPx: rr * scale + 4, m: p.m, color: 'vel', noResize: true,
+        forces: [{ name: 'N_c', fx: -Fc * Math.cos(a), fy: -Fc * Math.sin(a), color: 'normal' }],
+        a: [-w * w * r * Math.cos(a), -w * w * r * Math.sin(a)], v: [-w * r * Math.sin(a), w * r * Math.cos(a)],
+        note: '\\text{peso e reazione verticale della piattaforma si annullano}' };
+    });
+  },
+
   mount() { stage.reset(); },
   drawBackground: background3d('angmom'),
+  // In vista 3D un dito sullo spazio vuoto fa girare la camera invece di spostare la scena.
+  orbit(dx, dy, p) { return orbit3d('angmom', p.show3d, dx, dy, -1); },
 
   draw(P, s, p, ui) {
     const S = stage.begin(P, ui), M = S.M, sc = P.cam.scale, ctx = P.ctx;
     const W = camera3d(S, 'angmom', p.show3d, -58 * deg, 0), tilt = W.tilt(0.8);
-    if (W.tilt(0.01) > 0.001) grid3d(P, W);   // la griglia ruota con la camera
+    room3d(P, W, { x: [-2.5, 2.5], y: [-2.5, 2.5], z: [-1, 2.5] }, { up: 'z' });   // stanza a quadretti fissa nel mondo
     if (!ui.snapshot) V = W;
     const r = s.t === 0 ? p.r : s.r, th = s.th;
 

@@ -2,7 +2,7 @@ import { tn, clamp } from '../core/math.js';
 import { tex } from '../core/manim.js';
 import { uq } from '../core/units.js';
 import { Stage, C, arrowPx, brace, symVal } from '../core/annot.js';
-import { camera3d, background3d, stage3d, axes3d, prism, cylinder, sphere } from '../core/view3d.js';
+import { camera3d, background3d, room3d, orbit3d, axes3d, prism, cylinder, sphere } from '../core/view3d.js';
 
 const stage = new Stage();
 const G = 9.81, H = 2.6;                 // altezza dell'asse
@@ -72,13 +72,27 @@ export default {
     if (id === 'r') p.r = clamp(Math.round(Math.hypot(wx, wy - H) * 100) / 100, 0.1, 0.55);
   },
 
+  // Il peso appeso per il diagramma di corpo libero: peso e tensione (minore del peso finché la ruota accelera).
+  bodies(s, p, { scale }) {
+    if (!V) return [];
+    const k = kin(p, s.t), a = k.taut ? accOf(p) : 0, T = k.taut ? p.mh * (G - a) : 0, hs = sizeH(p), cy = k.y + hs / 2;
+    const [X, Y] = V.p(RH, cy, 0.04), v = k.taut ? -a * s.t : 0;
+    const forces = [{ name: 'P', fx: 0, fy: -p.mh * G, color: 'weight' }];
+    if (T > 0) forces.push({ name: 'T', fx: 0, fy: T, color: 'tension' });
+    else forces.push({ name: 'N', fx: 0, fy: p.mh * G, color: 'normal' });
+    return [{ key: 'mh', title: '\\text{il peso appeso}', x: X, y: Y, wx: RH, wy: cy, z: 0.04, proj: (x, y, z) => V.p(x, y, z),
+      rPx: hs * scale * 0.75, m: p.mh, forces, a: [0, -a], v: [0, v], color: 'weight', noResize: true }];
+  },
+
   mount() { stage.reset(); },
   drawBackground: background3d('inertia'),
+  // In vista 3D un dito sullo spazio vuoto fa girare la camera invece di spostare la scena.
+  orbit(dx, dy, p) { return orbit3d('inertia', p.show3d, dx, dy); },
 
   draw(P, s, p, ui) {
     const S = stage.begin(P, ui), M = S.M, sc = P.cam.scale, ctx = P.ctx;
     const W = camera3d(S, 'inertia', p.show3d, 18 * deg, -38 * deg, { swing: 0.2 }), tilt = W.tilt();
-    stage3d(P, W);   // la griglia ruota con la camera: il piano dell'esperimento sfuma, compare il pavimento
+    room3d(P, W, { x: [-2.5, 2.5], y: [0, 3.6], z: [-2, 2] }, { up: 'y' });   // stanza a quadretti fissa nel mondo
     if (!ui.snapshot) V = W;
     const k = kin(p, s.t), th = k.th;
 
@@ -107,7 +121,7 @@ export default {
 
     // Forze: peso e tensione sul blocco, tensione sul mozzo; braccio r_h e verso di rotazione.
     const a = k.taut ? accOf(p) : 0, T = k.taut ? p.mh * (G - a) : 0, Pw = p.mh * G;
-    if (p.showForce) {
+    if (p.showForce && ui.sel !== 'mh') {   // con il peso selezionato parla il diagramma di corpo libero
       const ref = Math.max(Pw, 1), L = f => arrowPx(f, ref, { min: 30, max: 90 }) / sc;
       W.arrow(P, [RH, k.y, 0.04], [RH, k.y - L(Pw), 0.04], { color: 'weight', key: 'P', width: 3, label: 'P' });
       if (T > 0) {

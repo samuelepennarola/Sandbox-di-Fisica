@@ -13,6 +13,7 @@ import { paramControl } from './core/ui.js';
 import { look, updateLook, drawParticles } from './core/look.js';
 import './core/pwa.js';
 import { Lasso } from './core/lasso.js';
+import { drawFBD, drawVel, drawTrail, fbdFormulas } from './core/fbd.js';
 import { AREAS, findExperiment } from './experiments/registry.js';
 
 const H = 1 / 480;            // passo di integrazione predefinito (s); un esperimento può dichiarare il suo (exp.dt)
@@ -43,7 +44,9 @@ const app = {
   penType: store.get('penType', 'pen'),                                       // 'pen' (penna) o 'brush' (pennello)
   penSizes: { pen: 2.6, brush: 7, ...store.get('penSizes', {}) },             // spessore base in px allo zoom corrente   // 'stroke' = tratti interi, 'part' = gomma precisa
   graphIdx: 0, formulasDirty: true, activeHandle: null,
-  sizes: {}, sizeSel: null,         // scala solo estetica degli oggetti disegnati negli esperimenti pronti
+  sizes: {}, sizeSel: null,
+  bodyVel: new Set(), bodyTrail: new Set(), trails: {},   // velocità e scie a richiesta dei corpi (exp.bodies)
+          // scala solo estetica degli oggetti disegnati negli esperimenti pronti
 };
 
 /* ---------------- Pannelli ---------------- */
@@ -270,24 +273,15 @@ function buildParams() {
     body.appendChild(control(def, () => app.params[def.key], v => setParam(def, v)));
   }
 
-  if (exp.presets?.length) {
-    const h = document.createElement('div');
-    h.className = 'sub'; h.textContent = 'Situazioni tipiche';
-    const chips = document.createElement('div');
-    chips.className = 'chips';
-    for (const pr of exp.presets) {
-      const b = document.createElement('button');
-      b.textContent = pr.label;
-      b.onclick = () => { stopSweep(); Object.assign(app.params, pr.values); syncParams(); resetSim(); fitView(); };
-      chips.appendChild(b);
-    }
-    const reset = document.createElement('button');
-    reset.textContent = 'Valori iniziali';
-    reset.onclick = () => { stopSweep(); app.params = defaults(exp); syncParams(); resetSim(); fitView(); };
-    chips.appendChild(reset);
-    body.append(h, chips);
-  }
+  // Le situazioni tipiche stanno nel cassetto ☰, come sotto-voci dell'esperimento (buildDrawer).
   buildPins();
+}
+
+// Situazione tipica (o i valori iniziali, se pr è null) dell'esperimento aperto.
+function applyPreset(pr) {
+  stopSweep();
+  if (pr) Object.assign(app.params, pr.values); else app.params = defaults(app.exp);
+  syncParams(); resetSim(); fitView();
 }
 
 function defaults(exp) { return Object.fromEntries((exp.params ?? []).map(p => [p.key, p.value])); }
@@ -327,7 +321,10 @@ function buildGraphTabs() {
 // Formule chiave (in cima all'ispettore, sempre visibili) e, se la tendina è aperta, tutte le formule.
 // Un esperimento sceglie le chiave con { key: true }; altrimenti valgono le prime due.
 function renderFormulas() {
-  const out = app.exp.formulas?.(viewSim(), app.params) ?? [];
+  let out = app.exp.formulas?.(viewSim(), app.params) ?? [];
+  // Corpo selezionato: in coda le sue forze e la verifica ΣF = m·a.
+  const fb = app.exp.bodies && app.sizeSel ? bodies(viewSim()).find(b => b.key === app.sizeSel) : null;
+  if (fb?.forces && Array.isArray(out)) out = [...out, ...fbdFormulas(fb)];
   const k = window.katex;
   const tex = f => (k ? k.renderToString(f.tex, { throwOnError: false }) : f.tex);
   const list = typeof out === 'string' ? [] : out.filter(Boolean);
@@ -390,6 +387,18 @@ function buildDrawer() {
       b.className = app.exp === e ? 'on' : '';
       b.onclick = () => { loadExperiment(e.id); toggleDrawer(false); };
       dr.appendChild(b);
+      // Struttura a cartelle: sotto l'esperimento aperto, le sue situazioni tipiche e i valori iniziali.
+      if (app.exp === e && e.presets?.length) {
+        const sub = document.createElement('div');
+        sub.className = 'drawer-sub';
+        for (const pr of [...e.presets, null]) {
+          const c = document.createElement('button');
+          c.textContent = pr ? pr.label : 'Valori iniziali';
+          c.onclick = () => { applyPreset(pr); toggleDrawer(false); };
+          sub.appendChild(c);
+        }
+        dr.appendChild(sub);
+      }
     }
     for (const s of a.soon) {
       const d = document.createElement('div');
@@ -520,7 +529,7 @@ function loadExperiment(id) {
   app.exp = exp; app.area = area;
   app.params = { ...defaults(exp), ...store.get('params.' + exp.id, {}) };
   app.sizes = store.get('sizes.' + exp.id, {});
-  app.sizeSel = null;
+  app.sizeSel = null; app.bodyVel = new Set(); app.bodyTrail = new Set();
   app.graphIdx = 0;
   store.set('lastExp', exp.id);
   $('crumbArea').textContent = area.title;
@@ -543,7 +552,7 @@ function resetSim() {
   app.sim = app.exp.init(app.params);
   app.running = false; app.acc = 0;
   app.samples = []; app.history = []; app.lastSampleT = -Infinity;
-  app.view = null; app.viewCache = null;
+  app.view = null; app.viewCache = null; app.trails = {};
   recordSample();
   app.formulasDirty = true;
   store.set('params.' + app.exp.id, app.params);
@@ -582,6 +591,11 @@ function viewSim() {
 function recordSample() {
   app.samples.push(app.exp.sample(app.sim, app.params));
   app.history.push(snapshot(app.sim));
+  // Scie dei corpi: un punto per campione (con l'indice, così la moviola ne mostra solo la parte passata).
+  if (app.bodyTrail.size) for (const b of bodies(app.sim)) {
+    if (!app.bodyTrail.has(b.key)) continue;
+    (app.trails[b.key] ??= []).push([app.history.length - 1, b.proj ? [b.wx, b.wy, b.z ?? 0] : [b.x, b.y]]);
+  }
   app.lastSampleT = app.sim.t;
 }
 
@@ -702,12 +716,25 @@ function render() {
   if (app.exp.drawBackground) app.exp.drawBackground(ctx, cam, colors);
   else drawGrid(ctx, cam, colors, !app.exp.axes);
   const P = new Painter(ctx, cam, colors);
-  app.exp.draw(P, viewSim(), app.params, { active: app.activeHandle, api, size: sizeOf });
+  app.exp.draw(P, viewSim(), app.params, { active: app.activeHandle, api, size: sizeOf, sel: app.sizeSel });
   const sel = selectedResizable();
   if (sel) {
     const [a, b] = cam.toScreen(sel.x, sel.y);
     P.ringS(a, b, sel.rPx + 7);
-    P.sizeHandleS(...sizeHandlePos(sel), app.activeHandle === 'size');
+    if (!sel.noResize) P.sizeHandleS(...sizeHandlePos(sel), app.activeHandle === 'size');
+  }
+  // Corpi: scie e velocità a richiesta, diagramma di corpo libero di quello selezionato.
+  if (app.exp.bodies) {
+    const list = bodies(viewSim()), upto = app.view ?? Infinity;
+    for (const b of list) {
+      if (app.bodyTrail.has(b.key)) {
+        const pts = (app.trails[b.key] ?? []).filter(([i]) => i <= upto).map(([, q]) => (q.length === 3 && b.proj ? b.proj(...q) : q));
+        drawTrail(P, [...pts, [b.x, b.y]], b.color ?? 'vel');
+      }
+      if (app.bodyVel.has(b.key)) drawVel(P, b);
+    }
+    const fb = list.find(b => b.key === app.sizeSel);
+    if (fb?.forces) drawFBD(P, fb);
   }
   drawParticles(P);
   ink.draw(ctx, cam, colors);
@@ -721,7 +748,7 @@ function render() {
 const ctxbar = $('ctxbar');
 let ctxKey = '';
 function updateCtxbar() {
-  const bar = !app.running && !gesture && app.mode !== 'lesson' ? app.exp.selectionBar?.(api) : null;
+  const bar = !app.running && !gesture && app.mode !== 'lesson' ? (app.exp.selectionBar?.(api) ?? bodyBar()) : null;
   ctxbar.classList.toggle('hidden', !bar);
   if (!bar) { ctxKey = ''; return; }
   const key = bar.key + '|' + bar.actions.map(a => a.label).join('|');
@@ -739,6 +766,22 @@ function updateCtxbar() {
   const [sx, sy] = cam.toScreen(bar.x, bar.y), w = ctxbar.offsetWidth || 200;
   ctxbar.style.left = Math.min(innerWidth - insp.reserved - w - 8, Math.max(cam.padFn().left - 12, sx - w / 2)) + 'px';
   ctxbar.style.top = Math.max(64, sy - 54) + 'px';
+}
+
+// Barretta del corpo selezionato negli esperimenti pronti: velocità e scia a richiesta (come nel costruttore).
+function bodyBar() {
+  if (!app.exp.bodies || !app.sizeSel) return null;
+  const b = bodies(viewSim()).find(o => o.key === app.sizeSel);
+  if (!b) return null;
+  const tog = (set, k) => () => { set.has(k) ? set.delete(k) : set.add(k); if (set === app.bodyTrail) delete app.trails[k]; };
+  return {
+    // Sopra le frecce del corpo libero (lunghe al più 110 px più l'etichetta), così non le copre.
+    key: 'body:' + b.key, x: b.x, y: b.y + (b.rPx * 1.2 + 150) / cam.scale,
+    actions: [
+      { label: (app.bodyVel.has(b.key) ? '✓ ' : '') + 'Velocità', run: tog(app.bodyVel, b.key) },
+      { label: (app.bodyTrail.has(b.key) ? '✓ ' : '') + 'Scia', run: tog(app.bodyTrail, b.key) },
+    ],
+  };
 }
 
 // Barretta Copia / Elimina sopra la selezione del lazo.
@@ -768,7 +811,7 @@ function updateTimeline() {
   $('timeline').classList.toggle('past', app.view != null);
 }
 
-let lastTs = 0, lastFormulaTs = 0, lastPinTs = 0, lastViewShown = null;
+let lastTs = 0, lastFormulaTs = 0, lastPinTs = 0, lastViewShown = null, lastSelShown = null;
 // Un errore in un fotogramma non deve fermare il ciclo: altrimenti la scena si congela e sembra che il tocco
 // non funzioni più (pinch e trascinamenti cambiano la vista, ma nessuno la ridisegna).
 let frameErr = '';
@@ -789,6 +832,7 @@ function drawFrame(ts) {
   look.live = app.running && app.view == null;
   updateLook(dt * (app.running ? app.speed : 1));
   if (app.view !== lastViewShown) { app.formulasDirty = true; lastViewShown = app.view; }
+  if (app.sizeSel !== lastSelShown) { app.formulasDirty = true; lastSelShown = app.sizeSel; }   // corpo libero nelle formule
   render();
   updateTimeline();
   const g = graphs()[app.graphIdx];
@@ -811,7 +855,12 @@ let gesture = null;
 function sizeOf(key) { return app.sizes[key] ?? 1; }
 
 function resizables() {
-  return app.exp.resizables?.(viewSim(), app.params, { scale: cam.scale, size: sizeOf }) ?? [];
+  return app.exp.resizables?.(viewSim(), app.params, { scale: cam.scale, size: sizeOf }) ?? bodies(viewSim());
+}
+
+// Corpi dichiarati dall'esperimento (diagramma di corpo libero, velocità, scie): vedi core/fbd.js.
+function bodies(s) {
+  return app.exp.bodies?.(s, app.params, { scale: cam.scale, size: sizeOf }) ?? [];
 }
 
 function selectedResizable() {
@@ -1116,7 +1165,8 @@ canvas.addEventListener('pointermove', e => {
     syncParams();
     if (live) app.formulasDirty = true; else resetSim();
   } else if (gesture.type === 'pan') {
-    cam.panBy(x - gesture.lx, y - gesture.ly);
+    // In vista 3D (exp.orbit) il trascinamento sullo spazio vuoto fa girare la camera; altrimenti sposta la scena.
+    if (!app.exp.orbit?.(x - gesture.lx, y - gesture.ly, app.params)) cam.panBy(x - gesture.lx, y - gesture.ly);
     gesture.lx = x; gesture.ly = y;
   }
 });

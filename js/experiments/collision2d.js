@@ -146,6 +146,17 @@ export default {
     p['x' + i] = nx; p['y' + i] = ny;
   },
 
+  // I dischi per il diagramma di corpo libero, visti dall'alto: nel piano agisce solo la forza di contatto.
+  bodies(s, p, { scale }) {
+    const F = force(s, p), { nx, ny } = overlapOf(s, p);
+    return [[1, s.x1, s.y1, s.vx1, s.vy1, p.m1, -1, 'vel'], [2, s.x2, s.y2, s.vx2, s.vy2, p.m2, 1, 'weight']].map(([i, x, y, vx, vy, m, sg, col]) => {
+      const forces = F > 1e-6 ? [{ name: i === 1 ? 'F_{21}' : 'F_{12}', fx: sg * F * nx, fy: sg * F * ny, color: 'applied' }] : [];
+      return { key: 'd' + i, title: `\\text{il disco ${i}}`, x, y, rPx: radius(m) * scale, m, forces,
+        a: [sg * F * nx / m, sg * F * ny / m], v: [vx, vy], color: col, noResize: true,
+        note: '\\text{peso e reazione del tavolo sono perpendicolari al piano e si annullano}' };
+    });
+  },
+
   mount() { stage.reset(); },
 
   draw(P, s, p, ui) {
@@ -176,7 +187,7 @@ export default {
 
     // Forze di contatto lungo la congiungente dei centri.
     const F = force(s, p);
-    if (p.showForce && F > 1e-6) {
+    if (p.showForce && F > 1e-6 && ui.sel !== 'd1' && ui.sel !== 'd2') {
       const { k } = contact(p.m1, p.m2, p.e), mu = p.m1 * p.m2 / (p.m1 + p.m2), Fpk = Math.sqrt(k * mu) * p.v1;
       const { nx, ny } = overlapOf(s, p), L = arrowPx(F, Fpk, { min: 30, max: 90 }) / sc;
       const cx = s.x1 + nx * r1, cy = s.y1 + ny * r1;

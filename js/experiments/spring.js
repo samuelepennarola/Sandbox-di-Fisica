@@ -74,6 +74,20 @@ export default {
 
   handles(s, p) { return [{ id: 'x0', x: p.x0, y: BH / 2 }]; },
 
+  // Il blocco per il diagramma di corpo libero: peso, reazione del piano, forza elastica, smorzamento, forzante.
+  bodies(s, p, { scale, size }) {
+    const kz = size('block'), x = s.t === 0 ? p.x0 : s.x, v = s.t === 0 ? 0 : s.v, t = s.t;
+    const forces = [
+      { name: 'P', fx: 0, fy: -p.m * 9.81, color: 'weight' },
+      { name: 'N', fx: 0, fy: p.m * 9.81, color: 'normal' },
+      { name: 'F_{el}', fx: -p.k * x, fy: 0, color: 'spring' },
+    ];
+    if (p.b > 0) forces.push({ name: 'F_v', fx: -p.b * v, fy: 0, color: 'friction' });
+    if (p.F0 > 0) forces.push({ name: 'F', fx: p.F0 * Math.cos(TWO_PI * p.ff * t), fy: 0, color: 'applied' });
+    return [{ key: 'block', title: '\\text{il blocco}', x, y: BH * kz / 2, rPx: Math.max(BW, BH) * kz * scale / 2, m: p.m,
+      forces, a: [accel(p, x, v, t), 0], v: [v, 0], color: 'vel' }];
+  },
+
   drag(id, wx, wy, p) {
     if (id === 'x0') p.x0 = clamp(Math.round(wx * 100) / 100, -0.5, 0.5);
   },
@@ -92,8 +106,9 @@ export default {
     P.line([[0, 0], [0, BH + 0.05]], { color: 'muted', width: 1, dash: [3, 4], alpha: 0.6 });
     P.text(0, 0, 'O', { color: 'muted', dy: 13, dx: -12, align: 'center', size: 12 });
 
-    coilSpring(P, [XW, BH / 2], [x - BW / 2, BH / 2], { coils: 11, amp: Math.max(6, 0.09 * P.cam.scale * BH) });
-    blockM(P, M, x, BH / 2, { w: BW, h: BH, color: 'blue', grow: S.born('block') });
+    const kz = ui.size?.('block') ?? 1;   // ingrandimento solo estetico del blocco (maniglia quadrata)
+    coilSpring(P, [XW, BH / 2], [x - BW * kz / 2, BH / 2], { coils: 11, amp: Math.max(6, 0.09 * P.cam.scale * BH) });
+    blockM(P, M, x, BH * kz / 2, { w: BW * kz, h: BH * kz, color: 'blue', grow: S.born('block') });
 
     // Spostamento: graffa da O al blocco, con il valore (a simulazione ferma è x₀, poi x(t)).
     if (Math.abs(x) * P.cam.scale > 14) {
@@ -101,7 +116,7 @@ export default {
     }
 
     // Forza elastica e forzante, in scala compressa (px) per restare leggibili.
-    if (p.showForce) {
+    if (p.showForce && ui.sel !== 'block') {   // con il blocco selezionato parla il diagramma di corpo libero
       const F = -p.k * x, ref = p.k * 0.5;
       const L = arrowPx(F, ref, { min: 30, max: 110 }) / P.cam.scale * Math.sign(F);
       const e = x + Math.sign(F) * BW / 2;   // la freccia parte dal lato del blocco verso cui tira

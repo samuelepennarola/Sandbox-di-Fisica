@@ -58,20 +58,40 @@ export class View3D {
 // In vista 3D la camera non sta mai ferma: oscilla piano attorno alla posizione scelta (ambient camera rotation di
 // Manim), ±swing rad in un periodo di `period` secondi. Nelle istantanee e con "riduci movimento" resta ferma.
 const tilts = {};   // inclinazione dell'ultima camera di ogni esperimento (per lo sfondo, disegnato prima della scena)
+const orbits = {};  // rotazione scelta con il dito: { dp, dy } in radianti, per esperimento
+
+// In vista 3D la camera non sta mai ferma: oscilla piano attorno alla posizione scelta (ambient camera rotation di
+// Manim), ±swing rad in un periodo di `period` secondi, finché non la si gira con il dito. Nelle istantanee e con
+// "riduci movimento" resta ferma.
 export function camera3d(S, key, on, pitch, yaw, { tau = 0.32, swing = 0.32, period = 14 } = {}) {
-  const amb = S.still ? 0 : swing * Math.sin(2 * Math.PI * (S.R?.now ?? 0) / period);
-  const [a, b] = S.smooth('cam3d:' + key, on ? [pitch, yaw + amb] : [0, 0], tau);
+  const o = orbits[key] ??= { dp: 0, dy: 0, user: false };
+  if (!on) Object.assign(o, { dp: 0, dy: 0, user: false });
+  const amb = S.still || o.user ? 0 : swing * Math.sin(2 * Math.PI * (S.R?.now ?? 0) / period);
+  const tp = Math.max(-1.45, Math.min(1.45, pitch + o.dp));
+  const [a, b] = S.smooth('cam3d:' + key, on ? [tp, yaw + o.dy + amb] : [0, 0], o.user ? 0.06 : tau);
   const V = new View3D().set(a, b);
   if (!S.snap) tilts[key] = Math.hypot(a, b);
   return V;
+}
+
+// Rotazione della camera con il dito (exp.orbit): dx, dy in px. Restituisce true se la vista 3D è attiva
+// (allora il trascinamento non sposta la scena ma la fa girare).
+export function orbit3d(key, on, dx, dy, sign = 1) {
+  if (!on || (tilts[key] ?? 0) < 0.05) return false;
+  const o = orbits[key] ??= { dp: 0, dy: 0, user: false };
+  o.user = true; o.dy -= dx * 0.004; o.dp += sign * dy * 0.003;
+  return true;
 }
 
 // Sfondo per gli esperimenti con la vista 3D (exp.drawBackground): finché la camera è di fronte è il solito
 // NumberPlane piatto; appena si inclina resta solo il colore di fondo e la griglia la disegna la scena (grid3d),
 // nel piano dell'esperimento, così ruota insieme a tutto il resto.
 export const background3d = key => (ctx, cam, colors) => {
-  if ((tilts[key] ?? 0) > 1e-3) { const M = palette(colors); ctx.fillStyle = M.bg; ctx.fillRect(0, 0, cam.w, cam.h); }
-  else drawGrid(ctx, cam, colors, true);
+  // Mentre la camera si inclina la griglia piatta sfuma e lascia il posto alla stanza a quadretti (room3d).
+  const k = Math.min(1, (tilts[key] ?? 0) / 0.5), M = palette(colors);
+  ctx.fillStyle = M.bg; ctx.fillRect(0, 0, cam.w, cam.h);
+  if (k >= 1) return;
+  ctx.save(); ctx.globalAlpha = 1 - k; drawGrid(ctx, cam, colors, k < 0.05); ctx.restore();
 };
 
 // Griglia del NumberPlane vista dalla camera, con le stesse linee e gli stessi colori di quella piatta.
@@ -107,13 +127,48 @@ export function grid3d(P, V, { plane = 'xy', extend = 1.8, alpha = 1, zr = 6 } =
   return { X0, X1, Y0, Y1 };
 }
 
-// Per gli esperimenti nel piano verticale: mentre la camera gira il "muro" (piano dell'esperimento) sfuma e compare
-// il pavimento, su cui gli oggetti poggiano. Va chiamata subito dopo camera3d, prima di disegnare la scena.
-export function stage3d(P, V) {
-  const k = V.tilt();
+// "Stanza" a quadretti fissa nel mondo, come stare dentro la griglia: il pavimento e le due pareti più lontane
+// dalla camera (si scelgono a ogni fotogramma, così si guarda sempre dentro la stanza). box: { x: [a, b], y: [a, b],
+// z: [a, b] } in metri; up: l'asse verticale ('y' per gli esperimenti nel piano verticale, 'z' per la piattaforma).
+// I quadretti hanno un passo fisso (step), quindi spostando o ruotando la camera la griglia non si ricalcola.
+// A camera di fronte resta lo sfondo piatto di sempre (background3d); compare man mano che la camera si inclina.
+export function room3d(P, V, box, { up = 'y', step = 1, alpha = 1 } = {}) {
+  const k = V.tilt() * alpha;
   if (k <= 0.001) return;
-  grid3d(P, V, { plane: 'xy', alpha: 1 - 0.85 * k });
-  grid3d(P, V, { plane: 'xz', alpha: k });
+  const M = P.M ?? palette(P.c), ctx = P.ctx, axes = ['x', 'y', 'z'];
+  const at = (q, ax, v) => { const r = { ...q }; r[ax] = v; return [r.x, r.y, r.z]; };
+  const mid = { x: (box.x[0] + box.x[1]) / 2, y: (box.y[0] + box.y[1]) / 2, z: (box.z[0] + box.z[1]) / 2 };
+  const faces = [{ ax: up, v: box[up][0], floor: true }];
+  for (const ax of axes.filter(a => a !== up)) {
+    // Delle due pareti perpendicolari a questo asse, quella più lontana dalla camera.
+    const [d0, d1] = box[ax].map(v => V.depth(...at(mid, ax, v)));
+    faces.push({ ax, v: d0 < d1 ? box[ax][0] : box[ax][1] });
+  }
+  ctx.save();
+  ctx.strokeStyle = M.plane;
+  for (const f of faces) {
+    const [u, w] = axes.filter(a => a !== f.ax);
+    for (const [st, a0] of [[step / 2, M.planeA[1]], [step, M.planeA[0]]]) {
+      ctx.globalAlpha = a0 * k * (f.floor ? 1 : 0.7); ctx.lineWidth = st < step ? 1 : 1.25;
+      ctx.beginPath();
+      const seg = (p, q) => { const [a1, b1] = P.S(...V.p(...p)), [a2, b2] = P.S(...V.p(...q)); ctx.moveTo(a1, b1); ctx.lineTo(a2, b2); };
+      for (const [along, other] of [[u, w], [w, u]]) {
+        for (let t = Math.ceil(box[along][0] / st - 1e-9) * st; t <= box[along][1] + 1e-9; t += st) {
+          if (st < step && Math.abs(t / step - Math.round(t / step)) < 1e-6) continue;
+          const base = { x: 0, y: 0, z: 0 }; base[f.ax] = f.v; base[along] = t;
+          seg(at(base, other, box[other][0]), at(base, other, box[other][1]));
+        }
+      }
+      ctx.stroke();
+    }
+    // Bordo della faccia, appena più marcato.
+    ctx.globalAlpha = 0.5 * k; ctx.lineWidth = 1.4; ctx.beginPath();
+    const c = { x: 0, y: 0, z: 0 }; c[f.ax] = f.v;
+    const corners = [[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]].map(([i, j]) => { const q = { ...c }; q[u] = box[u][i]; q[w] = box[w][j]; return P.S(...V.p(q.x, q.y, q.z)); });
+    corners.forEach(([a1, b1], i) => (i ? ctx.lineTo(a1, b1) : ctx.moveTo(a1, b1)));
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 // Terna levogira (x, y, z antioraria, regola della mano destra) nell'origine della scena: gli assi x e y stanno sul

@@ -686,3 +686,8 @@ body.chrome-idle .pin-x { opacity: 0; }
 .unit-row .seg.wide { flex: 1; background: transparent; padding: 0; gap: 0; }
 #drawer .unit-row .seg.wide button { display: block; width: auto; flex: 1; height: 34px; padding: 0 2px; text-align: center; font-size: 15px; color: var(--c-muted); border-radius: 8px; }
 #drawer .unit-row .seg.wide button.on { background: transparent; box-shadow: none; color: var(--accent); }
+
+/* Situazioni tipiche come sotto-voci dell'esperimento aperto, nel cassetto: rientrate, con il filo a sinistra. */
+#drawer .drawer-sub { margin: 2px 0 8px 18px; padding-left: 8px; border-left: 1px solid var(--panel-border); }
+#drawer .drawer-sub button { font-size: 15px; padding: 6px 10px; color: var(--c-muted); }
+#drawer .drawer-sub button:hover { color: var(--c-text); }

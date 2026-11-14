@@ -78,6 +78,18 @@ export default {
     { title: 'Energia', series: [{ key: 'K', label: 'K cinetica (J)', color: 'vel' }, { key: 'U', label: 'U potenziale (J)', color: 'normal' }, { key: 'E', label: 'E meccanica (J)', color: 'friction' }] },
   ],
 
+  // La pallina per il diagramma di corpo libero: peso, tensione del filo (e attrito, se c'è smorzamento).
+  bodies(s, p, { scale, size }) {
+    const fresh = s.t === 0, th = fresh ? p.th0 * deg : s.th, w = fresh ? 0 : s.w, m = p.m, g = p.g;
+    const bx = p.L * Math.sin(th), by = -p.L * Math.cos(th);
+    const T = m * (g * Math.cos(th) + p.L * w * w), ux = -Math.sin(th), uy = Math.cos(th);   // verso il punto di sospensione
+    const forces = [{ name: 'P', fx: 0, fy: -m * g, color: 'weight' }, { name: 'T', fx: T * ux, fy: T * uy, color: 'tension' }];
+    if (p.gam > 0) { const f = -m * p.gam * p.L * w; forces.push({ name: 'F_a', fx: f * Math.cos(th), fy: f * Math.sin(th), color: 'friction' }); }
+    const sx = forces.reduce((a, f) => a + f.fx, 0), sy = forces.reduce((a, f) => a + f.fy, 0);
+    return [{ key: 'bob', title: '\\text{la pallina}', x: bx, y: by, rPx: Math.max(bobR(p) * size('bob') * scale, 10), m,
+      forces, a: [sx / m, sy / m], v: [p.L * w * Math.cos(th), p.L * w * Math.sin(th)], color: 'weight' }];
+  },
+
   handles(s, p) {
     const th = p.th0 * deg;
     return [{ id: 'bob', x: p.L * Math.sin(th), y: -p.L * Math.cos(th) }];
@@ -94,7 +106,7 @@ export default {
   draw(P, s, p, ui) {
     const S = stage.begin(P, ui), M = S.M, w = w0(p), sc = P.cam.scale;
     const fresh = s.t === 0, th = fresh ? p.th0 * deg : s.th, om = fresh ? 0 : s.w;
-    const bx = p.L * Math.sin(th), by = -p.L * Math.cos(th), r = bobR(p);
+    const bx = p.L * Math.sin(th), by = -p.L * Math.cos(th), r = bobR(p) * (ui.size?.('bob') ?? 1);
 
     // Soffitto e verticale per il punto di sospensione.
     const cw = Math.max(0.25 * p.L, 40 / sc);
@@ -123,7 +135,7 @@ export default {
     ballM(P, M, bx, by, { r, color: 'red', grow: S.born('bob'), spin: th - Math.PI / 2 });
 
     // Peso e componenti: quella tangente al filo, m g sin θ, è la forza di richiamo.
-    if (p.showForce) {
+    if (p.showForce && ui.sel !== 'bob') {   // con la pallina selezionata parla il diagramma di corpo libero
       const W = p.m * p.g, ref = p.m * p.g, L1 = arrowPx(W, ref, { min: 40, max: 90 }) / sc;
       P.arrow(bx, by, bx, by - L1, { color: 'weight', key: 'P', width: 3.5, label: 'P' });
       const tx = Math.cos(th), ty = Math.sin(th), Ft = -Math.sin(th);   // versore tangente (verso θ crescente) e componente

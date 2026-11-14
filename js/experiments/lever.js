@@ -2,11 +2,12 @@ import { tn, clamp } from '../core/math.js';
 import { tex } from '../core/manim.js';
 import { uq } from '../core/units.js';
 import { Stage, C, arrowPx, arrowMag, brace, symVal } from '../core/annot.js';
-import { camera3d, background3d, stage3d, axes3d, prism } from '../core/view3d.js';
+import { camera3d, background3d, room3d, orbit3d, axes3d, prism } from '../core/view3d.js';
 
 const stage = new Stage();
 const G = 9.81, LB = 4, H = 1.3, TH = 0.12;     // lunghezza dell'asta, altezza del fulcro, spessore dell'asta (m)
-const TMAX = 20 * Math.PI / 180;                  // l'asta si ferma contro i fermi a ±20°
+// L'asta ruota finché l'estremità che scende tocca il suolo: θ massimo dalla geometria (fulcro alto H).
+const limits = p => [Math.asin(Math.min(1, H / Math.max(1e-6, LB / 2 + p.xf))), Math.asin(Math.min(1, H / Math.max(1e-6, LB / 2 - p.xf)))];
 const FREF = 40, FA = { min: 34, max: 120 };      // scala della freccia della forza applicata
 let SC = 60, V = null;                            // px per metro e camera dell'ultima scena (per le maniglie)
 const deg = Math.PI / 180;
@@ -52,29 +53,31 @@ export default {
     { key: 'dF', label: 'Punto di applicazione di F', unit: 'm', min: -2, max: 2, step: 0.05, value: 2 },
     { key: 'phi', label: 'Direzione di F', unit: '°', min: -180, max: 180, step: 1, value: 90 },
     { key: 'xf', label: 'Posizione del fulcro', unit: 'm', min: -2, max: 2, step: 0.05, value: 0 },
-    { key: 'mb', label: 'Massa dell\'asta', unit: 'kg', min: 0, max: 10, step: 0.1, value: 0 },
+    { key: 'mb', label: 'Massa dell\'asta', unit: 'kg', min: 0, max: 10, step: 0.1, value: 2 },
     { key: 'tMax', label: 'Durata della simulazione', unit: 's', min: 2, max: 30, step: 1, value: 6 },
     { key: 'show3d', type: 'toggle', label: 'Vista 3D: il momento come vettore', value: false, live: true },
     { key: 'showArm', type: 'toggle', label: 'Bracci e versi di rotazione', value: true, live: true },
   ],
 
   presets: [
-    { label: 'Altalena in equilibrio', values: { m1: 2, d1: -1.5, m2: 1.5, d2: 2, F: 0, xf: 0, mb: 0 } },
-    { label: 'Altalena sbilanciata', values: { m1: 2, d1: -1, m2: 1, d2: 1.5, F: 0, xf: 0, mb: 0 } },
-    { label: 'Leva di primo genere', values: { m1: 8, d1: -1.8, m2: 0, F: 20, dF: 2, phi: -90, xf: -1.2, mb: 0 } },
-    { label: 'Leva di secondo genere', values: { m1: 6, d1: -1, m2: 0, F: 20, dF: 2, phi: 90, xf: -2, mb: 0 } },
-    { label: 'Forza obliqua', values: { m1: 3, d1: -1, m2: 0, F: 30, dF: 2, phi: 135, xf: 0, mb: 0 } },
+    { label: 'Altalena in equilibrio', values: { m1: 2, d1: -1.5, m2: 1.5, d2: 2, F: 0, xf: 0, mb: 2 } },
+    { label: 'Altalena sbilanciata', values: { m1: 2, d1: -1, m2: 1, d2: 1.5, F: 0, xf: 0, mb: 2 } },
+    { label: 'Leva di primo genere', values: { m1: 8, d1: -1.8, m2: 0, F: 20, dF: 2, phi: -90, xf: -1.2, mb: 2 } },
+    { label: 'Leva di secondo genere', values: { m1: 6, d1: -1, m2: 0, F: 20, dF: 2, phi: 90, xf: -2, mb: 2 } },
+    { label: 'Forza obliqua', values: { m1: 3, d1: -1, m2: 0, F: 30, dF: 2, phi: 135, xf: 0, mb: 2 } },
   ],
 
   view() { return { xmin: -3.2, xmax: 3.2, ymin: -0.4, ymax: 3.6 }; },
 
-  init(p) { return { t: 0, th: 0, w: 0, tEnd: p.tMax }; },
+  init(p) { return { t: 0, th: 0, w: 0, ground: false, tEnd: p.tMax }; },
 
   step(s, dt, p) {
     const tau = forces(p).reduce((a, f) => a + torque(p, f, s.th), 0), I = inertia(p);
-    s.w += (tau / I - 1.5 * s.w) * dt;
+    s.w += (tau / I - 0.4 * s.w) * dt;   // un po' d'attrito nel perno
     s.th += s.w * dt;
-    if (Math.abs(s.th) > TMAX) { s.th = Math.sign(s.th) * TMAX; s.w = 0; }
+    const [up, dn] = limits(p);
+    if (s.th > up) { s.th = up; s.w = 0; s.ground = true; }
+    if (s.th < -dn) { s.th = -dn; s.w = 0; s.ground = true; }
     s.t += dt;
   },
 
@@ -113,14 +116,32 @@ export default {
     }
   },
 
+  // Le masse appese per il diagramma di corpo libero: peso e tensione della fune (in 3D proiettati dalla camera).
+  bodies(s, p, { scale }) {
+    if (!V) return [];
+    const th = s.th, out = [];
+    for (const [i, m, d, col] of [[1, p.m1, p.d1, 'vel'], [2, p.m2, p.d2, 'weight']]) {
+      if (m <= 0) continue;
+      const x = p.xf + (d - p.xf) * Math.cos(th), y = H + (d - p.xf) * Math.sin(th), sz = 0.22 * Math.cbrt(m), yb = y - 0.45 - sz / 2;
+      const [X, Y] = V.p(x, yb, 0);
+      out.push({ key: 'm' + i, title: `\\text{la massa ${i}}`, x: X, y: Y, wx: x, wy: yb, z: 0, proj: (a, b, c) => V.p(a, b, c),
+        rPx: sz * scale * 0.75, m, color: col, noResize: true, a: [0, 0], v: [0, 0],
+        forces: [{ name: 'P', fx: 0, fy: -m * G, color: 'weight' }, { name: 'T', fx: 0, fy: m * G, color: 'tension' }],
+        note: '\\text{la massa è appesa ferma alla fune: } T = P' });
+    }
+    return out;
+  },
+
   mount() { stage.reset(); },
   drawBackground: background3d('lever'),
+  // In vista 3D un dito sullo spazio vuoto fa girare la camera invece di spostare la scena.
+  orbit(dx, dy, p) { return orbit3d('lever', p.show3d, dx, dy); },
 
   draw(P, s, p, ui) {
     const S = stage.begin(P, ui), M = S.M, sc = P.cam.scale, ctx = P.ctx;
     if (!ui.snapshot) SC = sc;
     const W = camera3d(S, 'lever', p.show3d, 22 * deg, -40 * deg, { swing: 0.2 });
-    stage3d(P, W);   // la griglia ruota con la camera: il piano dell'esperimento sfuma, compare il pavimento
+    room3d(P, W, { x: [-3.5, 3.5], y: [0, 3.6], z: [-2.5, 2.5] }, { up: 'y' });   // stanza a quadretti fissa nel mondo
     if (!ui.snapshot) V = W;
     const th = s.t === 0 ? 0 : s.th, piv = [p.xf, H], c = Math.cos(th), sn = Math.sin(th);
     const at = u => [p.xf + (u - p.xf) * c, H + (u - p.xf) * sn];
@@ -224,7 +245,8 @@ export default {
       { h: 'Dinamica della rotazione' },
       { tex: `I=${uq('kg·m²', I, 2)}\\qquad \\alpha=\\dfrac{\\sum\\tau}{I}=${uq('rad/s²', net / I, 2)}` },
       { tex: `\\theta=${tn(s.th / deg, 1)}°` },
-    ];
+      s.ground && { tex: `\\text{l'asta è appoggiata a terra}`, cls: 'warn' },
+    ].filter(Boolean);
   },
 
   theory: `

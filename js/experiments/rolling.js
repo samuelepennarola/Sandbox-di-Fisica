@@ -2,9 +2,10 @@ import { tn } from '../core/math.js';
 import { tex } from '../core/manim.js';
 import { uq } from '../core/units.js';
 import { Stage, C, angleMark, symVal, degTeX, brace } from '../core/annot.js';
-import { camera3d, background3d, stage3d, axes3d, prism, cylinder, sphere } from '../core/view3d.js';
+import { camera3d, background3d, room3d, orbit3d, axes3d, prism, cylinder, sphere } from '../core/view3d.js';
 
 const stage = new Stage();
+let CAM = null;   // camera dell'ultima scena (per i corpi selezionabili)
 const G = 9.81, R = 0.25, W = 0.32;          // raggio e spessore dei corpi (m)
 const deg = Math.PI / 180;
 
@@ -16,6 +17,7 @@ const BODIES = [
   { id: 'block', name: 'Blocco che scivola', k: 0, kTeX: '0', kIn: '0', color: 'yellow', lane: 1.5 },
 ];
 const on = (p, b) => !!p['b_' + b.id];
+const M_COL = { blue: 'vel', green: 'normal', red: 'weight', yellow: 'acc' };   // colore della scia di ogni corpo
 const acc = (p, b) => G * Math.sin(p.alpha * deg) / (1 + b.k);
 const tFinish = (p, b) => Math.sqrt(2 * p.L / acc(p, b));
 const sAt = (p, b, t) => Math.min(p.L, 0.5 * acc(p, b) * t * t);
@@ -68,15 +70,33 @@ export default {
     { title: 'Velocità', series: BODIES.map(b => ({ key: 'v_' + b.id, label: `${b.name} (m/s)`, color: b.id === 'sphere' ? 'vel' : b.id === 'cyl' ? 'normal' : b.id === 'ring' ? 'weight' : 'acc' })) },
   ],
 
+  // I corpi in gara per il diagramma di corpo libero: peso, reazione del piano, attrito statico (che li fa ruotare).
+  bodies(s, p, { scale }) {
+    if (!CAM) return [];
+    const a = p.alpha * deg, w = p.L * Math.cos(a), h = p.L * Math.sin(a), tilt = CAM.tilt(), m = 1;
+    return BODIES.filter(b => on(p, b)).map(b => {
+      const ss = sAt(p, b, s.t), cx = ss * Math.cos(a) + Math.sin(a) * R, cy = h - ss * Math.sin(a) + Math.cos(a) * R, z = b.lane * tilt;
+      const [X, Y] = CAM.p(cx, cy, z), N = m * G * Math.cos(a), f = m * G * Math.sin(a) * b.k / (1 + b.k), ac = ss < p.L ? acc(p, b) : 0;
+      const forces = [{ name: 'P', fx: 0, fy: -m * G, color: 'weight' }, { name: 'N', fx: N * Math.sin(a), fy: N * Math.cos(a), color: 'normal' }];
+      if (b.k > 0) forces.push({ name: 'f_s', fx: -f * Math.cos(a), fy: f * Math.sin(a), color: 'friction' });
+      return { key: b.id, title: `\\text{${b.name.toLowerCase()}}`, x: X, y: Y, wx: cx, wy: cy, z, proj: (x, y, zz) => CAM.p(x, y, zz),
+        rPx: R * scale, m, forces, a: [ac * Math.cos(a), -ac * Math.sin(a)], v: [acc(p, b) * Math.min(s.t, tFinish(p, b)) * Math.cos(a), -acc(p, b) * Math.min(s.t, tFinish(p, b)) * Math.sin(a)],
+        color: M_COL[b.color], noResize: true, note: b.k > 0 ? '\\text{massa di riferimento 1 kg: le accelerazioni non dipendono dalla massa}' : '\\text{il blocco scivola senza attrito}' };
+    });
+  },
+
   mount() { stage.reset(); },
   drawBackground: background3d('rolling'),
+  // In vista 3D un dito sullo spazio vuoto fa girare la camera invece di spostare la scena.
+  orbit(dx, dy, p) { return orbit3d('rolling', p.show3d, dx, dy); },
 
   draw(P, s, p, ui) {
     const S = stage.begin(P, ui), M = S.M, ctx = P.ctx;
     const [alpha, L] = S.smooth('geo', [p.alpha, p.L], 0.15, !!ui.active);
     const a = alpha * deg, w = L * Math.cos(a), h = L * Math.sin(a);
     const V = camera3d(S, 'rolling', p.show3d, 18 * deg, -32 * deg), tilt = V.tilt();
-    stage3d(P, V);   // la griglia ruota con la camera: il piano dell'esperimento sfuma, compare il pavimento
+    if (!ui.snapshot) CAM = V;
+    room3d(P, V, { x: [-1.5, 7.5], y: [0, 3.6], z: [-2, 3] }, { up: 'y' });   // stanza a quadretti fissa nel mondo
     const zLanes = BODIES.filter(b => on(p, b)).map(b => b.lane);
     const z0 = Math.min(-0.5, ...zLanes) - 0.4, z1 = Math.max(0.5, ...zLanes) + 0.4;
 
