@@ -897,6 +897,16 @@ function sizeHandlePos(r) {
   return best;
 }
 
+// Selezione al tocco: se sotto il dito ci sono più oggetti sovrapposti (per esempio sfera, cilindro e anello che
+// partono dallo stesso punto), un nuovo tocco su quello già selezionato passa al successivo.
+function pickResizable(sx, sy) {
+  const hits = resizables().map(r => { const [a, b] = cam.toScreen(r.x, r.y); return { r, d: Math.hypot(a - sx, b - sy) }; })
+    .filter(h => h.d < h.r.rPx + 10).sort((u, v) => u.d - v.d);
+  if (!hits.length) return null;
+  const i = hits.findIndex(h => h.r.key === app.sizeSel);
+  return i >= 0 && hits.length > 1 ? hits[(i + 1) % hits.length].r : hits[0].r;
+}
+
 function hitResizable(sx, sy) {
   let best = null, bestD = Infinity;
   for (const r of resizables()) {
@@ -1091,7 +1101,7 @@ function onPointerDown(e) {
   const g = objectGesture(x, y, wx, wy, e.pointerId, false);
   if (g) { gesture = g; return; }
   // Un tocco su un oggetto ridimensionabile lo seleziona (compare la maniglia); altrove deseleziona.
-  app.sizeSel = hitResizable(x, y)?.key ?? null;
+  app.sizeSel = pickResizable(x, y)?.key ?? null;
   gesture = { type: 'pan', id: e.pointerId, lx: x, ly: y };
 }
 
@@ -1211,7 +1221,7 @@ function endPointer(e) {
   if (gesture.type === 'lassoMove' || gesture.type === 'lassoScale') { lasso.save(app.exp); recordInk(); }
   if (gesture.type === 'size') store.set('sizes.' + app.exp.id, app.sizes);
   // Tocco senza trascinare su una maniglia che coincide con un oggetto: lo seleziona per ridimensionarlo.
-  if (gesture.type === 'drag' && !gesture.moved) app.sizeSel = hitResizable(gesture.sx, gesture.sy)?.key ?? null;
+  if (gesture.type === 'drag' && !gesture.moved) app.sizeSel = pickResizable(gesture.sx, gesture.sy)?.key ?? null;
   if (gesture.type === 'custom') {
     const [sx, sy] = pos(e), [wx, wy] = cam.toWorld(sx, sy);
     gesture.custom.up?.({ wx, wy, sx, sy, cancelled: e.type === 'pointercancel' });
