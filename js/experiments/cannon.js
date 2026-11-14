@@ -12,6 +12,7 @@ const VA = { min: 36, max: 110 };
 let shots = [], lastSim = null;          // colpi precedenti (scelta «Colpi precedenti»)
 
 const r0 = p => RE + p.h;
+const near = p => Math.max(1600, 4 * p.h);   // larghezza (km) dell'inquadratura di partenza
 const vCirc = p => Math.sqrt(398600 / r0(p));   // km/s
 
 export default {
@@ -40,7 +41,26 @@ export default {
     { label: 'Velocità di fuga', values: { v: 10.7, h: 600 } },
   ],
 
-  view(p) { const R = r0(p) * 1.9; return { xmin: -R, xmax: R, ymin: -R, ymax: R * 0.95 }; },
+  // Si parte da vicino: attorno al cannone la Terra sembra un piano. Mentre il colpo sale e si allontana la camera
+  // lo segue (follow) e arretra, e il "piano" si curva fino a diventare il globo.
+  view(p) { const W = near(p); return { xmin: -W * 0.45, xmax: W * 0.95, ymin: r0(p) - W * 0.5, ymax: r0(p) + W * 0.25 }; },
+
+  follow(s, p) {
+    const W = near(p), pts = [[0, r0(p)], [s.x, s.y]], r = Math.hypot(s.x, s.y);
+    // Il punto del suolo sotto il proiettile: la curvatura si vede tra il cannone e lì.
+    pts.push([s.x / r * RE, s.y / r * RE]);
+    // Quando il colpo è lontano (o ha fatto mezzo giro) entra tutta la Terra.
+    const far = r > 1.6 * RE || Math.atan2(s.x, s.y) > Math.PI / 2 || Math.atan2(s.x, s.y) < -0.2;
+    if (far) pts.push([-RE, -RE], [RE, RE]);
+    let x0 = Math.min(...pts.map(q => q[0])), x1 = Math.max(...pts.map(q => q[0]));
+    let y0 = Math.min(...pts.map(q => q[1])), y1 = Math.max(...pts.map(q => q[1]));
+    const pad = 0.25 * Math.max(x1 - x0, y1 - y0, W);
+    x0 -= pad; x1 += pad; y0 -= pad; y1 += pad;
+    // Mai più vicino dell'inquadratura di partenza.
+    if (x1 - x0 < W * 1.4) { const c = (x0 + x1) / 2; x0 = c - W * 0.7; x1 = c + W * 0.7; }
+    if (y1 - y0 < W * 0.75) { const c = (y0 + y1) / 2; y0 = c - W * 0.375; y1 = c + W * 0.375; }
+    return { xmin: x0, xmax: x1, ymin: y0, ymax: y1 };
+  },
 
   init(p) {
     // Il colpo appena finito resta tra i precedenti (se ha volato davvero).

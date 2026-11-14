@@ -11,7 +11,16 @@ const VA = { min: 40, max: 120 };        // freccia della velocità (px)
 const NW = 12;                           // spicchi per periodo (orbite chiuse)
 let CAM = null, SC = 50;
 
-const mu = p => scaleOf(p).G * p.M;
+// Massa del pianeta: in masse terrestri nel sistema solare, nella stessa unità di M con G = 1. Entra nel moto
+// relativo come G(M + m) e decide la grandezza del disegno.
+const EARTH = 3.003e-6;   // massa della Terra in masse solari
+const mPlanet = p => (p.scale === 'solar' ? (p.mp ?? 1) * EARTH : (p.mp ?? 0.001));
+const mu = p => scaleOf(p).G * (p.M + mPlanet(p));
+// Raggi disegnati (px): crescono con la radice cubica della massa, su scale diverse per stella e pianeta
+// (quella vera non entrerebbe in nessuno schermo); la maniglia quadrata li ingrandisce ancora.
+const sunPx = p => 12 + 6 * Math.cbrt(p.M);
+// Terra ≈ 5 px, Giove ≈ 14 px; mai più grande di quattro quinti della stella.
+const planetPx = p => Math.min(0.8 * sunPx(p), 3 + 1.6 * Math.cbrt(p.scale === 'solar' ? (p.mp ?? 1) : (p.mp ?? 0.001) / 0.001 / 300));
 const vCirc = p => Math.sqrt(mu(p) / p.r0);
 // Stato iniziale: pianeta in (r0, 0), velocità k·v_circ inclinata di φ rispetto alla direzione radiale.
 const init0 = p => { const v = p.k * vCirc(p); return { x: p.r0, y: 0, vx: v * Math.cos(p.phi * deg), vy: v * Math.sin(p.phi * deg) }; };
@@ -25,11 +34,17 @@ export default {
   title: 'Orbite e leggi di Keplero',
   subtitle: 'Ellissi, aree uguali, T² ∝ a³',
   timeUnit: p => scaleOf(p).T,
+  // Il tempo scorre in proporzione all'orbita: un giro dura circa otto secondi, che sia Mercurio o una cometa.
+  timeScale(s, p) {
+    const e = el0(p), Tc = e.bound ? e.T : 4 * p.r0 / Math.max(p.k * vCirc(p), 1e-9);
+    return Math.min(500, Math.max(1e-3, Tc / 8));
+  },
   axes: true,
 
   params: [
     scaleParam('solar'),
     { key: 'M', label: 'Massa centrale M', unit: '', min: 0.01, max: 1000, step: 0.1, value: 1, refit: true },
+    { key: 'mp', label: 'Massa del pianeta (masse terrestri o unità)', unit: '', min: 0.001, max: 1000, step: 0.001, value: 1 },
     { key: 'r0', label: 'Distanza iniziale r₀', unit: '', min: 0.05, max: 100, step: 0.01, value: 1, refit: true },
     { key: 'k', label: 'Velocità iniziale (in v circolari)', unit: '', min: 0, max: 3, step: 0.01, value: 1, refit: true },
     { key: 'phi', label: 'Angolo tra v₀ e il raggio', unit: '°', min: 0, max: 180, step: 1, value: 90, refit: true },
@@ -40,14 +55,15 @@ export default {
   ],
 
   presets: [
-    { label: 'Terra', values: { scale: 'solar', M: 1, r0: 1, k: 1, phi: 90 } },
-    { label: 'Marte', values: { scale: 'solar', M: 1, r0: 1.52, k: 1, phi: 90 } },
-    { label: 'Mercurio (ellittica)', values: { scale: 'solar', M: 1, r0: 0.31, k: 1.095, phi: 90 } },
-    { label: 'Una cometa', values: { scale: 'solar', M: 1, r0: 0.6, k: 1.38, phi: 90, tMax: 60 } },
-    { label: 'Ellisse (unità semplici)', values: { scale: 'simple', M: 1, r0: 1, k: 0.75, phi: 90 } },
-    { label: 'Parabola: velocità di fuga', values: { scale: 'simple', M: 1, r0: 1, k: 1.41, phi: 90 } },
-    { label: 'Iperbole', values: { scale: 'simple', M: 1, r0: 1, k: 1.7, phi: 90 } },
-    { label: 'Lancio obliquo', values: { scale: 'simple', M: 1, r0: 1, k: 0.9, phi: 60 } },
+    { label: 'Terra', values: { scale: 'solar', M: 1, mp: 1, r0: 1, k: 1, phi: 90 } },
+    { label: 'Marte', values: { scale: 'solar', M: 1, mp: 0.107, r0: 1.52, k: 1, phi: 90 } },
+    { label: 'Giove', values: { scale: 'solar', M: 1, mp: 318, r0: 5.2, k: 1, phi: 90 } },
+    { label: 'Mercurio (ellittica)', values: { scale: 'solar', M: 1, mp: 0.055, r0: 0.31, k: 1.095, phi: 90 } },
+    { label: 'Una cometa', values: { scale: 'solar', M: 1, mp: 0.001, r0: 0.6, k: 1.38, phi: 90, tMax: 200 } },
+    { label: 'Ellisse (unità semplici)', values: { scale: 'simple', M: 1, mp: 0.001, r0: 1, k: 0.75, phi: 90 } },
+    { label: 'Parabola: velocità di fuga', values: { scale: 'simple', M: 1, mp: 0.001, r0: 1, k: 1.41, phi: 90 } },
+    { label: 'Iperbole', values: { scale: 'simple', M: 1, mp: 0.001, r0: 1, k: 1.7, phi: 90 } },
+    { label: 'Lancio obliquo', values: { scale: 'simple', M: 1, mp: 0.001, r0: 1, k: 0.9, phi: 60 } },
   ],
 
   view(p) {
@@ -116,11 +132,12 @@ export default {
   },
 
   // Il pianeta per il diagramma di corpo libero: la sola forza di gravità, diretta verso il Sole.
-  bodies(s, p, { scale }) {
+  bodies(s, p, { scale, size }) {
     if (!CAM) return [];
-    const m = mu(p), r = Math.hypot(s.x, s.y), g = m / (r * r), [X, Y] = CAM.p(s.x, s.y, 0);
-    return [{ key: 'planet', title: 'il pianeta', x: X, y: Y, wx: s.x, wy: s.y, z: 0, proj: (a, b, c) => CAM.p(a, b, c),
-      rPx: 9, m: 1, color: 'vel', noResize: true, v: [s.vx, s.vy], a: [-g * s.x / r, -g * s.y / r],
+    const m = mu(p), r = Math.hypot(s.x, s.y), g = m / (r * r), [X, Y] = CAM.p(s.x, s.y, 0), [SX, SY] = CAM.p(0, 0, 0);
+    return [{ key: 'sun', title: 'la stella', x: SX, y: SY, rPx: sunPx(p) * size('sun'), m: p.M, color: 'acc' },
+      { key: 'planet', title: 'il pianeta', x: X, y: Y, wx: s.x, wy: s.y, z: 0, proj: (a, b, c) => CAM.p(a, b, c),
+      rPx: Math.max(9, planetPx(p) * size('planet')), m: 1, color: 'vel', v: [s.vx, s.vy], a: [-g * s.x / r, -g * s.y / r],
       forces: [{ name: 'F_g', fx: -g * s.x / r, fy: -g * s.y / r, color: 'weight' }],
       note: '\\text{forza per unità di massa del pianeta: } F_g = G M m / r^2' }];
   },
@@ -170,10 +187,10 @@ export default {
     line(s.path, { color: 'vel', width: 2, alpha: 0.75 });
 
     // Sole e pianeta.
-    const [ox, oy] = pr(0, 0), sunPx = Math.max(7, Math.min(16, 9 + 2 * Math.log(p.M)));
-    star(P, ox, oy, sunPx);
+    const [ox, oy] = pr(0, 0);
+    star(P, ox, oy, sunPx(p) * (ui.size?.('sun') ?? 1));
     const [X, Y] = pr(s.x, s.y);
-    planet(P, X, Y, 7, 'blue', { alpha: S.born('planet') });
+    planet(P, X, Y, planetPx(p) * (ui.size?.('planet') ?? 1), 'blue', { alpha: S.born('planet') });
 
     // Velocità del pianeta (scala compressa) e, a simulazione ferma, le maniglie.
     const v = Math.hypot(s.vx, s.vy), vc = vCirc(p);

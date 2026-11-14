@@ -42,6 +42,15 @@ export default {
   title: 'Il problema dei tre corpi',
   subtitle: 'Orbite periodiche, Lagrange e caos',
   timeUnit: p => scaleOf(p).T,
+  // Il tempo scorre in proporzione al tempo caratteristico del sistema (un "giro" del corpo più lontano dal centro
+  // di massa dura circa otto secondi): né frenetico né lentissimo, qualunque siano masse e distanze.
+  timeScale(s, p) {
+    const bs = bodiesOf(p).filter(b => b.m > 0), Mt = bs.reduce((a, b) => a + b.m, 0);
+    if (!(Mt > 0)) return 1;
+    const cx = bs.reduce((a, b) => a + b.m * b.x, 0) / Mt, cy = bs.reduce((a, b) => a + b.m * b.y, 0) / Mt;
+    const R = Math.max(...bs.map(b => Math.hypot(b.x - cx, b.y - cy)), 1e-3);
+    return Math.min(500, Math.max(1e-3, 2 * Math.PI * Math.sqrt(R ** 3 / (scaleOf(p).G * Mt)) / 8));
+  },
   axes: true,
 
   params: [
@@ -139,7 +148,7 @@ export default {
   },
 
   // Ogni corpo per il diagramma di corpo libero: l'attrazione di ciascuno degli altri due.
-  bodies(s, p) {
+  bodies(s, p, { size }) {
     const bs = bodiesOf(p), G = scaleOf(p).G, st = s.st, Mmax = Math.max(...bs.map(b => b.m));
     return bs.filter(b => b.m > 0).map(b => {
       const i = b.i, x = st[4 * i], y = st[4 * i + 1], forces = [];
@@ -150,7 +159,7 @@ export default {
         forces.push({ name: `F_{${i + 1}${o.i + 1}}`, fx: F * dx / r, fy: F * dy / r, color: KEYS[o.i] });
         ax += F * dx / r / b.m; ay += F * dy / r / b.m;
       }
-      return { key: 'b' + i, title: `il corpo ${i + 1}`, x, y, rPx: Math.max(8, rad(b.m, Mmax) * SC), m: b.m, color: KEYS[i], noResize: true,
+      return { key: 'b' + i, title: `il corpo ${i + 1}`, x, y, rPx: Math.max(8, rad(b.m, Mmax) * SC * size('b' + i)), m: b.m, color: KEYS[i],
         forces, a: [ax, ay], v: [st[4 * i + 2], st[4 * i + 3]] };
     });
   },
@@ -175,7 +184,7 @@ export default {
 
     bs.forEach((b, i) => {
       if (b.m <= 0) return;
-      const x = s.st[4 * i], y = s.st[4 * i + 1], r = Math.max(6, rad(b.m, Mmax) * sc);
+      const x = s.st[4 * i], y = s.st[4 * i + 1], r = Math.max(6, rad(b.m, Mmax) * sc) * (ui.size?.('b' + i) ?? 1);
       if (b.m >= Mmax * 50 && Mmax > 0) star(P, x, y, r); else planet(P, x, y, r, COLORS[i], { alpha: S.born('b' + i) });
       // Velocità iniziali (trascinabili) a simulazione ferma.
       if (s.t === 0) {
