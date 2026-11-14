@@ -34,7 +34,7 @@ export function seriesColor(M, colors, c) { return M.vec[c] ?? colors[c] ?? c; }
 
 // Grafico a linee di più serie in funzione del tempo. samples: [{t, ...}], graph: {series:[{key|get,color}]}.
 // cursor: indice del campione mostrato dalla moviola (null = ultimo istante).
-export function drawPlot(canvas, samples, graph, colors, cursor = null) {
+export function drawPlot(canvas, samples, graph, colors, cursor = null, tUnit = 's') {
   // Ogni serie nell'unità scelta nel menu Unità: l'etichetta porta l'unità tra parentesi, i valori il fattore.
   const series = graph.series.map(s => {
     const U = unitLabel(s.label), g0 = s.get ?? (o => o[s.key]);
@@ -131,7 +131,7 @@ export function drawPlot(canvas, samples, graph, colors, cursor = null) {
   const below = y0 + 14 < H - 4;
   for (const [x, t] of xl) tex(P, x, below ? y0 + 13 : y0 - 12, t, { size: 12, color: M.muted, halo: M.bg });
   for (const [y, t] of yl) if (!(Math.abs(y - y0) < 3 && xAxisV === 0)) tex(P, L - 8, y, t, { size: 12, color: M.muted, align: 'right', halo: M.bg });
-  tex(P, xr + 2, below ? y0 + 13 : y0 - 12, 't\\ (\\mathrm{s})', { size: 13, color: M.text, align: 'right', halo: M.bg });
+  tex(P, xr + 2, below ? y0 + 13 : y0 - 12, `t\\ (\\mathrm{${tUnit}})`, { size: 13, color: M.text, align: 'right', halo: M.bg });
   if (unit) tex(P, L + 10, T - 13, `(${unitTeX(unit)})`, { size: 13, color: M.text, align: 'left', halo: M.bg });
 
   // Curve: si tracciano fino all'istante raggiunto dal Create (in proporzione al tempo mostrato).

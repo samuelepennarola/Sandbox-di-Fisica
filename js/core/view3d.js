@@ -88,13 +88,14 @@ export function orbit3d(key, on, dx, dy, sign = 1) {
 // Sfondo per gli esperimenti con la vista 3D (exp.drawBackground): finché la camera è di fronte è il solito
 // NumberPlane piatto; appena si inclina resta solo il colore di fondo e la griglia la disegna la scena (grid3d),
 // nel piano dell'esperimento, così ruota insieme a tutto il resto.
-export const background3d = key => (ctx, cam, colors) => {
+// labels: false per gli esperimenti in cui i numeri della griglia (in metri) non avrebbero senso (UA, km...).
+export const background3d = (key, { labels = true } = {}) => (ctx, cam, colors) => {
   // Mentre la camera si inclina la griglia piatta sfuma e lascia il posto alla stanza a quadretti (room3d).
   // Lo scambio con la stanza avviene nei primi gradi d'inclinazione: le due griglie non devono mai convivere.
   const k = Math.min(1, (tilts[key] ?? 0) / FADE), M = palette(colors);
   ctx.fillStyle = M.bg; ctx.fillRect(0, 0, cam.w, cam.h);
   if (k >= 1) return;
-  ctx.save(); ctx.globalAlpha = 1 - k; drawGrid(ctx, cam, colors, k < 0.05); ctx.restore();
+  ctx.save(); ctx.globalAlpha = 1 - k; drawGrid(ctx, cam, colors, labels && k < 0.05); ctx.restore();
 };
 
 // Griglia del NumberPlane vista dalla camera, con le stesse linee e gli stessi colori di quella piatta.

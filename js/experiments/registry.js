@@ -15,6 +15,10 @@ import lever from './lever.js';
 import rolling from './rolling.js';
 import inertia from './inertia.js';
 import angmom from './angmom.js';
+import orbits from './orbits.js';
+import cannon from './cannon.js';
+import gfield from './gfield.js';
+import threebody from './threebody.js';
 
 // Mappa dei moduli. Le voci senza esperimenti compaiono come "in arrivo".
 export const AREAS = [
@@ -23,7 +27,7 @@ export const AREAS = [
   { id: 'sistemi', title: 'Sistemi e urti', experiments: [collision1d, collision2d], soon: ['Centro di massa', 'Carrucole e funi'] },
   { id: 'rigido', title: 'Corpo rigido', experiments: [lever, rolling, inertia, angmom], soon: [] },
   { id: 'oscillazioni', title: 'Oscillazioni e onde', experiments: [spring, pendulum, string, sources], soon: [] },
-  { id: 'gravitazione', title: 'Gravitazione', experiments: [], soon: ['Orbite e Keplero', 'Tre corpi'] },
+  { id: 'gravitazione', title: 'Gravitazione', experiments: [orbits, cannon, gfield, threebody], soon: [] },
   { id: 'fluidi', title: 'Fluidi', experiments: [], soon: ['Archimede', 'Bernoulli'] },
   { id: 'termo', title: 'Termodinamica', experiments: [], soon: ['Gas ideale', 'Cicli termici'] },
   { id: 'em', title: 'Elettromagnetismo', experiments: [charges], soon: ['Potenziale ed equipotenziali', 'Cariche in campi E e B'] },

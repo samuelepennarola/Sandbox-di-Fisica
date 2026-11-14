@@ -300,6 +300,8 @@ function setParam(def, value) {
   app.formulasDirty = true;
 }
 
+function timeUnit() { const u = app.exp.timeUnit; return (typeof u === 'function' ? u(app.params) : u) ?? 's'; }
+
 function graphs() {
   const g = app.exp.graphs;
   return typeof g === 'function' ? g(app.sim, app.params) : g;
@@ -811,8 +813,10 @@ function updateTimeline() {
   if (pct !== tlPct) tlRange.style.setProperty('--p', tlPct = pct);
   tlRange.disabled = n < 1;
   const t = viewSim().t;
-  $('clock').textContent = `t = ${fmt(t)} s`;
-  tlLabel.textContent = app.view == null ? `${fmt(t)} s` : `◀ ${fmt(t)} / ${fmt(app.sim.t)} s`;
+  // Unità del tempo della simulazione: secondi, salvo che l'esperimento ne dichiari un'altra (anni, minuti...).
+  const tu = timeUnit();
+  $('clock').textContent = `t = ${fmt(t)} ${tu}`;
+  tlLabel.textContent = app.view == null ? `${fmt(t)} ${tu}` : `◀ ${fmt(t)} / ${fmt(app.sim.t)} ${tu}`;
   $('timeline').classList.toggle('past', app.view != null);
 }
 
@@ -841,7 +845,7 @@ function drawFrame(ts) {
   render();
   updateTimeline();
   const g = graphs()[app.graphIdx];
-  if (insp.showing('graphs') && g) drawPlot(plotCanvas, app.samples, g, colors, app.view);
+  if (insp.showing('graphs') && g) drawPlot(plotCanvas, app.samples, g, colors, app.view, timeUnit());
   if (app.formulasDirty && ts - lastFormulaTs > 120 && insp.shown) {
     renderFormulas(); lastFormulaTs = ts; app.formulasDirty = false;
   }

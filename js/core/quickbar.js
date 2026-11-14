@@ -36,6 +36,12 @@ const ICONS = {
   ring: SVG('<circle cx="10" cy="10" r="7"/><circle cx="10" cy="10" r="5"/>'),
   block: SVG('<rect x="4" y="5" width="12" height="10" rx="1"/>'),
   probe: SVG('<circle cx="5" cy="10" r="2" fill="currentColor"/><path d="M8 10c1.5-5 3-5 4.5 0s3 5 4.5 0"/>'),
+  wedge: SVG('<circle cx="5" cy="10" r="1.8" fill="currentColor"/><path d="M5 10L16 4A9 9 0 0 1 17 13Z" fill="currentColor" fill-opacity=".25"/>'),
+  orbit: SVG('<ellipse cx="10" cy="10" rx="8" ry="5" stroke-dasharray="2 2"/><circle cx="6" cy="10" r="1.8" fill="currentColor"/>'),
+  field: SVG(ARROW(3, 4, 7, 8) + ARROW(17, 4, 13, 8) + ARROW(3, 16, 7, 12) + ARROW(17, 16, 13, 12) + '<circle cx="10" cy="10" r="1.8" fill="currentColor"/>'),
+  contours: SVG('<circle cx="10" cy="10" r="2.5"/><circle cx="10" cy="10" r="5.5" stroke-dasharray="2 1.5"/><circle cx="10" cy="10" r="8.5" stroke-dasharray="2 2"/>'),
+  cm: SVG('<circle cx="10" cy="10" r="5"/><path d="M10 5v10M5 10h10"/>'),
+  cannon: SVG('<path d="M3 16h14"/><path d="M5 15l6-5" stroke-width="3"/><path d="M11 10q4-4 7 0" stroke-dasharray="1.5 2"/>'),
   eye: SVG('<path d="M2 10s3-6 8-6 8 6 8 6-3 6-8 6-8-6-8-6z"/><circle cx="10" cy="10" r="2.5"/>'),
 };
 
@@ -49,6 +55,9 @@ const BY_KEY = {
   showEnv: ['Inviluppo', 'envelope'], showHarm: ['Moto armonico', 'harmonic'], showTri: ['Triangolo', 'triangle'],
   auto: ['Automatico', 'loop'], b_sphere: ['Sfera', 'sphere'], b_cyl: ['Cilindro', 'cylinder'], b_ring: ['Anello', 'ring'],
   b_block: ['Blocco', 'block'],
+  showAreas: ['Aree uguali', 'wedge'], showConic: ['Orbita prevista', 'orbit'], keepShots: ['Colpi precedenti', 'cannon'],
+  showVec: ['Vettori del campo', 'field'], showEquip: ['Equipotenziali', 'contours'], showCM: ['Centro di massa', 'cm'],
+  showTrails: ['Scie', 'trace'],
 };
 
 export function quickLabel(def) { return def.short ?? BY_KEY[def.key]?.[0] ?? def.label.split(/[:(]/)[0].trim(); }
