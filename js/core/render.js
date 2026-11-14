@@ -1,6 +1,7 @@
 import { niceStep } from './math.js';
 import { palette, drawPlaneGrid, manimColors, arrowS, arrowLabel, vecLabel, tex, textToTeX, groundM } from './manim.js';
 
+const STROKE = 1.35;
 const COLOR_KEYS = ['bg', 'grid', 'gridMajor', 'axis', 'text', 'muted', 'ink', 'inkRed', 'inkBlue', 'inkGreen', 'inkYellow',
   'vel', 'acc', 'weight', 'normal', 'friction', 'ground', 'groundEdge', 'body', 'bodyEdge', 'ideal', 'handle',
   'tension', 'spring', 'applied', 'skyTop', 'skyBottom', 'soil', 'soilDark', 'dust', 'brick', 'paper', 'paperLine'];
@@ -24,9 +25,10 @@ export class Painter {
     if (pts.length < 2) return;
     const ctx = this.ctx;
     ctx.save();
-    ctx.globalAlpha = alpha; ctx.strokeStyle = this.col(color); ctx.lineWidth = width;
+    // Tratti un po' più decisi di quanto chiesto (STROKE): le linee della scena devono reggere il confronto con la griglia.
+    ctx.globalAlpha = alpha; ctx.strokeStyle = this.col(color); ctx.lineWidth = width * STROKE;
     ctx.lineJoin = ctx.lineCap = 'round';
-    if (dash) ctx.setLineDash(dash);
+    if (dash) ctx.setLineDash(dash.map(d => d * STROKE));
     ctx.beginPath();
     pts.forEach(([x, y], i) => { const [a, b] = this.S(x, y); i ? ctx.lineTo(a, b) : ctx.moveTo(a, b); });
     ctx.stroke();
@@ -70,7 +72,7 @@ export class Painter {
 
   arrow(x0, y0, x1, y1, { color = 'vel', width = 3.5, label, dash = null, alpha = 1, head = 13 } = {}) {
     const [a, b] = this.S(x0, y0), [c, d] = this.S(x1, y1), col = this.col(color);
-    const tip = arrowS(this.ctx, a, b, c, d, col, { width: Math.max(2, width * 0.8), tip: Math.max(10, head + 1), alpha, halo: this.M.bg, dash });
+    const tip = arrowS(this.ctx, a, b, c, d, col, { width: Math.max(2.5, width), tip: Math.max(12, head + 3), alpha, halo: this.M.bg, dash });
     if (tip && label && tip.len > 18) arrowLabel(this, tip, vecLabel(label), col, this.M, alpha);
   }
 

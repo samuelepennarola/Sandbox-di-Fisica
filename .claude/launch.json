@@ -6,6 +6,12 @@
       "runtimeExecutable": "python3",
       "runtimeArgs": [".claude/devserver.py", "5173"],
       "port": 5173
+    },
+    {
+      "name": "fisica-2",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [".claude/devserver.py", "5174"],
+      "port": 5174
     }
   ]
 }

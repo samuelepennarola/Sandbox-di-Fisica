@@ -122,7 +122,7 @@ export function brace(P, a, b, label, { side = 1, gap = 8, color, alpha = 1, gro
   const w = Math.min(11, Math.max(5, len * 0.12)), q = Math.min(w * 1.2, len / 4);
   const p = (s, h) => [ax + ux * s + nx * (gap + h), ay + uy * s + ny * (gap + h)];
   ctx.save();
-  ctx.globalAlpha = alpha; ctx.strokeStyle = col; ctx.lineWidth = 1.8; ctx.lineJoin = ctx.lineCap = 'round';
+  ctx.globalAlpha = alpha; ctx.strokeStyle = col; ctx.lineWidth = 2.4; ctx.lineJoin = ctx.lineCap = 'round';
   ctx.beginPath();
   ctx.moveTo(...p(0, 0));
   ctx.quadraticCurveTo(...p(0, w / 2), ...p(q, w / 2));
@@ -147,7 +147,7 @@ export function angleMark(P, x, y, r, a0, a1, label, { color, alpha = 1, grow = 
   const e = a0 + (a1 - a0) * grow;
   if (Math.abs(e - a0) < 1e-3 || alpha <= 0) return;
   ctx.save();
-  ctx.globalAlpha = alpha; ctx.strokeStyle = col; ctx.lineWidth = 1.8; ctx.lineCap = 'round';
+  ctx.globalAlpha = alpha; ctx.strokeStyle = col; ctx.lineWidth = 2.4; ctx.lineCap = 'round';
   ctx.beginPath(); ctx.arc(cx, cy, r, -a0, -e, e > a0); ctx.stroke();
   ctx.restore();
   if (!label) return;

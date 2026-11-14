@@ -10,7 +10,7 @@ export const isDark = () => document.documentElement.dataset.theme === 'dark';
 // Palette: nel tema scuro i colori di Manim su fondo quasi nero; nel tema chiaro le stesse tinte, scurite per la carta.
 export function palette(c) {
   if (isDark()) return {
-    dark: true, bg: '#0b0b0d', text: '#ece9e0', muted: MANIM.greyB, axis: '#ffffff', plane: MANIM.blueD, planeA: [0.42, 0.13],
+    dark: true, bg: '#0b0b0d', text: '#ece9e0', muted: MANIM.greyB, axis: '#ffffff', plane: MANIM.blueD, planeA: [0.4, 0.12],
     pos: MANIM.red, neg: MANIM.blue, force: MANIM.yellow, fx: MANIM.teal, fy: MANIM.green, field: MANIM.gold, sel: MANIM.blue,
     ramp: [MANIM.blueE, MANIM.blueD, MANIM.blue, MANIM.teal, MANIM.green], lineA: 0.9,
     // Vettori del costruttore (chiavi dei colori dell'app) e colori dei corpi.
@@ -49,9 +49,9 @@ export function drawPlaneGrid(ctx, cam, M) {
   const step = niceStep(80 / cam.scale), minor = step / 2;
   const { x0, y0, x1, y1 } = cam.bounds();
   ctx.save();
-  ctx.strokeStyle = M.plane; ctx.lineWidth = 1;
+  ctx.strokeStyle = M.plane;
   for (const [s, alpha] of [[minor, M.planeA[1]], [step, M.planeA[0]]]) {
-    ctx.globalAlpha = alpha;
+    ctx.globalAlpha = alpha; ctx.lineWidth = s === minor ? 1 : 1.25;
     ctx.beginPath();
     for (let x = Math.ceil(x0 / s) * s; x <= x1; x += s) {
       if (s === minor && Math.abs(x / step - Math.round(x / step)) < 1e-6) continue;
@@ -264,8 +264,12 @@ function box(ctx, nodes, size) {
   return { ops, w: x, top, bot };
 }
 
+// Tutte le scritte della scena sono ingrandite di SCENE_TEXT rispetto al corpo richiesto: nei video di
+// 3Blue1Brown le scritte sono grandi rispetto al quadro. Un solo numero da ritoccare per tutta l'app.
+export const SCENE_TEXT = 1.2;
 const cache = new Map();
 function layout(ctx, src, size) {
+  size = Math.round(size * SCENE_TEXT * 2) / 2;
   const key = src + '|' + size;
   let L = cache.get(key);
   if (L) return L;
@@ -411,18 +415,14 @@ export function chargeDisk(ctx, a, b, r, hue, M, selected = false, glow = true) 
 
 /* ---------------- Oggetti della meccanica, in stile diagramma ---------------- */
 
-// Suolo: linea netta con il tratteggio obliquo sotto (come nei disegni dei libri) e una fascia appena più chiara.
+// Suolo: una linea netta, come nei video, con sotto una fascia appena più chiara.
 export function groundM(P, M, y0 = 0) {
   const { ctx, cam } = P, [, sy] = P.S(0, y0);
   if (sy > cam.h) return;
   ctx.save();
   ctx.fillStyle = M.dark ? 'rgba(255,255,255,0.035)' : 'rgba(40,30,10,0.05)';
   ctx.fillRect(0, sy, cam.w, cam.h - sy);
-  ctx.strokeStyle = M.solidEdge; ctx.globalAlpha = 0.5; ctx.lineWidth = 1;
-  ctx.beginPath();
-  for (let x = -((sy) % 14) - 20; x < cam.w + 20; x += 14) { ctx.moveTo(x, sy + 16); ctx.lineTo(x + 16, sy); }
-  ctx.stroke();
-  ctx.globalAlpha = 0.9; ctx.lineWidth = 2;
+  ctx.strokeStyle = M.dark ? '#ffffff' : M.solidEdge; ctx.globalAlpha = 0.95; ctx.lineWidth = 2.5;
   ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(cam.w, sy); ctx.stroke();
   ctx.restore();
 }
@@ -535,8 +535,8 @@ export function anchorM(P, M, x, y, { selected = false } = {}) {
 
 // Etichetta oltre la punta di una freccia: se è lunga si allinea dal lato verso cui punta la freccia.
 export function arrowLabel(P, tip, src, col, M, alpha = 1) {
-  const w = texWidth(P, src, 17), d = 17 + Math.max(0, w / 2 - 8) * Math.abs(tip.ux);
-  tex(P, tip.x + tip.ux * d, tip.y + tip.uy * 17, src, { size: 17, color: col, halo: M.bg, alpha, align: 'center' });
+  const w = texWidth(P, src, 17), d = 19 + Math.max(0, w / 2 - 9) * Math.abs(tip.ux);
+  tex(P, tip.x + tip.ux * d, tip.y + tip.uy * 19, src, { size: 17, color: col, halo: M.bg, alpha, align: 'center' });
 }
 
 // Etichetta di un vettore dell'app ("P", "F₁₂", "qE", "fs") in TeX: \vec P, \vec F_{12}, q\vec E, \vec f_s.
@@ -568,7 +568,7 @@ export function manimPainter(P0, M, PainterClass, { grow = () => 1 } = {}) {
   const P = new PainterClass(P0.ctx, P0.cam, manimColors(P0.c, M));
   P.arrow = (x0, y0, x1, y1, { color = 'vel', width = 3.5, label, dash = null, alpha = 1, head = 13 } = {}) => {
     const [a, b] = P.S(x0, y0), [c, d] = P.S(x1, y1), col = M.vec[color] ?? P.col(color), g = grow({ color, label });
-    const tip = arrowS(P.ctx, a, b, c, d, col, { width: Math.max(2, width * 0.8), tip: Math.max(10, head + 1), grow: g, alpha, halo: M.bg, dash });
+    const tip = arrowS(P.ctx, a, b, c, d, col, { width: Math.max(2.5, width), tip: Math.max(12, head + 3), grow: g, alpha, halo: M.bg, dash });
     if (tip && label && tip.len > 18) arrowLabel(P, tip, vecLabel(label), col, M, alpha * g);
   };
   return P;

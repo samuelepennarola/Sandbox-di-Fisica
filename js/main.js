@@ -5,6 +5,7 @@ import { Panel } from './core/panels.js';
 import { Inspector } from './core/inspector.js';
 import { drawPlot, seriesColor } from './core/plot.js';
 import { palette as manimPalette } from './core/manim.js';
+import { rate } from './core/anim.js';
 import { icons, applyIcons } from './core/icons.js';
 import { store } from './core/store.js';
 import { fmt } from './core/math.js';
@@ -445,25 +446,73 @@ function expSnapshot(exp, w, h) {
   return cv;
 }
 
-// Dissolvenza della scena (cambio di esperimento o di tema), come una transizione di regia di Manim:
-// una copia dell'ultimo fotogramma sopra la tela sfuma in 0,35 s con la curva "smooth". La copia non riceve
-// tocchi, quindi la nuova scena è subito utilizzabile. Rispetta "riduci movimento".
+// Regia del cambio di scena, come in un video di 3Blue1Brown. Una tela sopra la scena (non riceve tocchi, quindi
+// la nuova scena è subito utilizzabile):
+//  - sceneFade: la copia dell'ultimo fotogramma sfuma in 0,35 s (cambio di tema);
+//  - sceneIntro: la scena vecchia sfuma nel nero, il titolo del nuovo esperimento si scrive al centro (Write di
+//    Manim: prima il contorno delle lettere, una dopo l'altra, poi il pieno) e infine sfuma scoprendo la scena.
+// Entrambe rispettano "riduci movimento".
 const fadeCv = document.createElement('canvas');
 fadeCv.id = 'sceneFade';
 canvas.after(fadeCv);
-let fadeTimer = 0;
-function sceneFade(ms = 350) {
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches || !canvas.width) return;
+let fadeTimer = 0, introRaf = 0;
+const noMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+function fadeSetup() {
+  cancelAnimationFrame(introRaf); clearTimeout(fadeTimer);
   fadeCv.width = canvas.width; fadeCv.height = canvas.height;
   fadeCv.style.width = canvas.style.width; fadeCv.style.height = canvas.style.height;
-  fadeCv.getContext('2d').drawImage(canvas, 0, 0);
   fadeCv.style.transition = 'none'; fadeCv.style.opacity = '1';
   fadeCv.classList.add('on');
+  return fadeCv.getContext('2d');
+}
+function sceneFade(ms = 350) {
+  if (noMotion() || !canvas.width) return;
+  fadeSetup().drawImage(canvas, 0, 0);
   fadeCv.getBoundingClientRect();   // applica l'opacità piena prima di avviare la transizione
   fadeCv.style.transition = `opacity ${ms}ms cubic-bezier(.6, 0, .4, 1)`;
   fadeCv.style.opacity = '0';
-  clearTimeout(fadeTimer);
   fadeTimer = setTimeout(() => fadeCv.classList.remove('on'), ms + 50);
+}
+const smooth01 = t => (t <= 0 ? 0 : t >= 1 ? 1 : rate.smooth(t));
+// Scritta che si traccia lettera per lettera (f: 0 → 1), centrata in (x, y).
+function writeText(c, str, x, y, size, color, f, alpha = 1) {
+  if (f <= 0 || alpha <= 0) return;
+  c.save();
+  c.font = `${size}px KaTeX_Main, "Times New Roman", serif`;
+  c.textBaseline = 'middle'; c.textAlign = 'left'; c.lineJoin = c.lineCap = 'round';
+  c.fillStyle = c.strokeStyle = color; c.lineWidth = Math.max(1, size * 0.022);
+  const chars = [...str], n = chars.length, per = size * 5;
+  let cx = x - c.measureText(str).width / 2;
+  chars.forEach((ch, i) => {
+    const w = c.measureText(ch).width, g = (f - (i / n) * 0.6) / 0.4;
+    if (g > 0 && ch !== ' ') {
+      const s = smooth01(g / 0.65), fill = smooth01((g - 0.45) / 0.55);
+      if (fill < 1) { c.globalAlpha = alpha * (1 - fill); c.setLineDash([per * s, per]); c.strokeText(ch, cx, y); }
+      if (fill > 0) { c.globalAlpha = alpha * fill; c.fillText(ch, cx, y); }
+    }
+    cx += w;
+  });
+  c.restore();
+}
+function sceneIntro(title, sub, hadScene) {
+  if (noMotion() || !canvas.width) return;
+  let old = null;
+  if (hadScene) { old = document.createElement('canvas'); old.width = canvas.width; old.height = canvas.height; old.getContext('2d').drawImage(canvas, 0, 0); }
+  const c2 = fadeSetup(), t0 = performance.now(), k = canvas.width / cam.w;
+  const step = now => {
+    const t = (now - t0) / 1000, out = smooth01((t - 1.25) / 0.6), M = manimPalette(colors), pad = cam.padFn();
+    const x = (pad.left + cam.w - pad.right) / 2, y = cam.h * 0.46 - out * 14, size = Math.min(58, Math.max(34, cam.w / 16));
+    c2.setTransform(k, 0, 0, k, 0, 0);
+    c2.clearRect(0, 0, cam.w, cam.h);
+    c2.globalAlpha = 1 - out; c2.fillStyle = M.bg; c2.fillRect(0, 0, cam.w, cam.h);
+    if (old && t < 0.3) { c2.globalAlpha = 1 - smooth01(t / 0.3); c2.drawImage(old, 0, 0, cam.w, cam.h); }
+    c2.globalAlpha = 1;
+    writeText(c2, title, x, y, size, M.text, (t - 0.18) / 0.85, 1 - out);
+    if (sub) writeText(c2, sub, x, y + size * 0.95, size * 0.4, M.muted, (t - 0.55) / 0.6, 1 - out);
+    if (t < 1.9) introRaf = requestAnimationFrame(step);
+    else fadeCv.classList.remove('on');
+  };
+  introRaf = requestAnimationFrame(step);
 }
 // I controlli del nuovo esperimento entrano con un breve fade (CSS: #inspector.swap).
 function inspectorSwap() {
@@ -474,11 +523,13 @@ function inspectorSwap() {
 }
 
 function loadExperiment(id) {
-  if (app.exp) { sceneFade(); inspectorSwap(); }
+  const hadScene = !!app.exp;
+  if (hadScene) inspectorSwap();
   ink.end();
   stopSweep();
   app.exp?.unmount?.(api);
   const { exp, area } = findExperiment(id);
+  sceneIntro(exp.title, area.title, hadScene);
   app.exp = exp; app.area = area;
   app.params = { ...defaults(exp), ...store.get('params.' + exp.id, {}) };
   app.sizes = store.get('sizes.' + exp.id, {});
@@ -591,6 +642,7 @@ function togglePlay() {
 
 function updatePlayBtn() {
   $('playBtn').innerHTML = app.running ? icons.pause : icons.play;
+  document.body.classList.toggle('playing', app.running);   // mentre scorre l'interfaccia si attenua (css: chrome-idle)
 }
 
 function fitView() { app.exp.fit ? app.exp.fit(cam, api) : cam.fit(app.exp.view(app.params, app.sim)); }
@@ -714,11 +766,14 @@ function updateSelbar() {
 }
 
 const tlRange = $('tlRange'), tlLabel = $('tlLabel');
+let tlPct = '';
 function updateTimeline() {
   const n = app.history.length - 1;
   const idx = app.view ?? n;
   tlRange.max = Math.max(1, n);
   tlRange.value = idx;
+  const pct = (n < 1 ? 0 : Math.round(idx / n * 1000) / 10) + '%';
+  if (pct !== tlPct) tlRange.style.setProperty('--p', tlPct = pct);
   tlRange.disabled = n < 1;
   const t = viewSim().t;
   $('clock').textContent = `t = ${fmt(t)} s`;
@@ -1326,6 +1381,21 @@ addEventListener('keydown', e => {
   else if (e.key === '0') fitView();
   else app.exp.onKey?.(e, api);
 });
+
+// Interfaccia "da video": a riposo si attenua (css: body.chrome-idle), toccando una barra torna piena per qualche secondo.
+let chromeTimer = 0;
+function wakeChrome(ms = 3500) {
+  document.body.classList.remove('chrome-idle');
+  clearTimeout(chromeTimer);
+  chromeTimer = setTimeout(() => document.body.classList.add('chrome-idle'), ms);
+}
+for (const el of [document.querySelector('.topbar'), $('timeline'), $('rail'), $('penPop'), $('pins')]) {
+  el.addEventListener('pointerdown', () => wakeChrome(), { passive: true, capture: true });
+  el.addEventListener('pointermove', () => wakeChrome(), { passive: true });
+}
+// Con il mouse basta avvicinarsi al bordo in alto o in basso.
+addEventListener('pointermove', e => { if (e.pointerType === 'mouse' && (e.clientY < 64 || e.clientY > innerHeight - 56)) wakeChrome(); }, { passive: true });
+wakeChrome(5000);
 
 addEventListener('resize', resize);
 // Prima di chiudere o mandare in background l'app, salva subito gli appunti in sospeso.
