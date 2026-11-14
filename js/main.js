@@ -880,10 +880,18 @@ function selectedResizable() {
   return app.sizeSel ? resizables().find(r => r.key === app.sizeSel) ?? null : null;
 }
 
-// La maniglia sta in basso a destra dell'oggetto, a 45°.
+// La maniglia sta su una diagonale dell'oggetto, un po' staccata: quella più lontana dalle maniglie dei parametri
+// (per esempio il centro del corpo che allunga il filo, o la punta di una freccia), così le due non si confondono.
 function sizeHandlePos(r) {
-  const [a, b] = cam.toScreen(r.x, r.y), d = (r.rPx + 7) * Math.SQRT1_2;
-  return [a + d, b + d];
+  const [a, b] = cam.toScreen(r.x, r.y), d = (r.rPx + 16) * Math.SQRT1_2;
+  const others = (app.exp.handles?.(viewSim(), app.params) ?? []).map(h => cam.toScreen(h.x, h.y));
+  let best = [a + d, b + d], bestD = -1;
+  for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {   // prima in basso a destra, se è libera
+    const q = [a + sx * d, b + sy * d], m = Math.min(Infinity, ...others.map(o => Math.hypot(o[0] - q[0], o[1] - q[1])));
+    if (m > bestD + 8) { best = q; bestD = m; }
+    if (m > HIT_PX * 2) break;
+  }
+  return best;
 }
 
 function hitResizable(sx, sy) {
@@ -1095,10 +1103,12 @@ function objectGesture(x, y, wx, wy, id, pen) {
   }
   if (custom) return null;
 
-  const sel = selectedResizable();
-  if (sel) {
-    const [hx, hy] = sizeHandlePos(sel);
-    if (Math.hypot(hx - x, hy - y) < HIT_PX) {
+  // Se il dito è vicino sia alla maniglia di ridimensionamento sia a una maniglia dei parametri, vince la più vicina.
+  const sel = selectedResizable(), hp = hitHandle(x, y);
+  if (sel && !sel.noResize) {
+    const [hx, hy] = sizeHandlePos(sel), ds = Math.hypot(hx - x, hy - y);
+    const dh = hp ? Math.hypot(...cam.toScreen(hp.x, hp.y).map((v, i) => v - [x, y][i])) : Infinity;
+    if (ds < HIT_PX && ds <= dh) {
       const [cx, cy] = cam.toScreen(sel.x, sel.y);
       app.activeHandle = 'size';
       return { type: 'size', id, key: sel.key, k0: sizeOf(sel.key), d0: Math.max(8, Math.hypot(x - cx, y - cy)) };
