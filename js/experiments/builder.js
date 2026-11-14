@@ -1243,26 +1243,32 @@ function buildPanel(body, api) {
   const scene = api.section(body, 'Scena', 'b.scene', true);
   scene.appendChild(api.control({ key: 'g', label: 'Gravità g', unit: 'm/s²', min: 0, max: 25, step: 0.01 }, () => spec.g, v => { spec.g = v; save(); api.reset(); }, 'scene.g'));
   scene.appendChild(api.control({ key: 'muFloor', label: 'Attrito μ del suolo', unit: '', min: 0, max: 1.5, step: 0.01 }, () => spec.muFloor, v => { spec.muFloor = v; save(); api.reset(); }, 'scene.mu'));
-  const show = api.section(body, 'Mostra', 'b.show', true);
-  for (const [k, label] of [['fbd', 'Diagramma di corpo libero'], ['all', '…su tutti i corpi e le cariche'], ['vel', 'Vettori velocità'], ['trail', 'Scie']]) {
-    show.appendChild(api.control({ key: k, type: 'toggle', label }, () => spec.show[k], v => { spec.show[k] = v; save(); api.refresh(); }, 'show.' + k));
-  }
+  // Gli interruttori di «Mostra» e quelli elettrici stanno nella barra sulla scena (toggles), gli esempi nel cassetto.
   const hasEM = spec.E || spec.objects.some(o => o.q);
   const em = api.section(body, 'Elettromagnetismo', 'b.em', !!hasEM);
   em.appendChild(api.control({ key: 'E', label: 'Campo elettrico uniforme E', unit: 'kN/C', min: 0, max: 2000, step: 5 }, () => spec.E ?? 0, v => { spec.E = v; save(); api.reset(); }, 'scene.E'));
   em.appendChild(api.control({ key: 'Eangle', label: 'Direzione del campo', unit: '°', min: -180, max: 180, step: 1 }, () => spec.Eangle ?? 0, v => { spec.Eangle = v; save(); api.reset(); }, 'scene.Ea'));
-  for (const [k, label, def] of [['field', 'Linee di campo elettrico', true], ['Evec', 'Vettori del campo E', false], ['Fe', 'Forze elettriche sulle cariche', true], ['dist', 'Distanze tra le cariche', true]]) {
-    em.appendChild(api.control({ key: k, type: 'toggle', label }, () => spec.show[k] ?? def, v => { spec.show[k] = v; save(); api.refresh(); }, 'show.' + k));
-  }
   em.appendChild(el('div', 'hint', 'Per caricare un blocco o una sfera, selezionalo e cambia la sua carica q.'));
-  const exs = api.section(body, 'Esempi', 'b.examples', false);
-  const chips = el('div', 'chips');
-  for (const ex of EXAMPLES) {
-    const b = el('button', '', ex.label);
-    b.onclick = () => loadScene(ex.make());
-    chips.appendChild(b);
-  }
-  exs.appendChild(chips);
+}
+
+// Interruttori della scena nella barra in basso: quelli elettrici solo se in scena c'è qualcosa di carico.
+const SHOW_TOGGLES = [
+  ['fbd', 'Diagramma di corpo libero', 'Corpo libero', 'force', false],
+  ['all', 'Corpo libero su tutti i corpi e le cariche', 'Su tutti', 'balance', false],
+  ['vel', 'Vettori velocità', 'Velocità', 'vel', false],
+  ['trail', 'Scie', 'Scie', 'trace', false],
+  ['field', 'Linee di campo elettrico', 'Linee di campo', 'flines', true, true],
+  ['Evec', 'Vettori del campo E', 'Vettori E', 'field', true, false],
+  ['Fe', 'Forze elettriche sulle cariche', 'Forze elettriche', 'force', true, true],
+  ['dist', 'Distanze tra le cariche', 'Distanze', 'arm', true, true],
+];
+function builderToggles() {
+  const spec = B.spec, hasEM = spec.E || spec.objects.some(o => o.q);
+  return SHOW_TOGGLES.filter(t => !t[4] || hasEM).map(([key, label, short, icon, , def]) => ({
+    key, label, short, icon,
+    get: () => !!(B.spec.show[key] ?? def),
+    set: v => { B.spec.show[key] = v; save(); B.api.refresh(); },
+  }));
 }
 
 function loadScene(spec) {
@@ -1378,6 +1384,9 @@ export default {
   title: 'Costruttore libero',
   subtitle: 'Componi blocchi, piani, molle, funi, carrucole e cariche',
   panelTitle: 'Costruttore',
+  // Interruttori nella barra sulla scena ed esempi nel cassetto ☰, come negli altri esperimenti.
+  toggles: () => builderToggles(),
+  get presets() { return EXAMPLES.map(ex => ({ label: ex.label, apply: () => loadScene(ex.make()) })); },
   axes: true,
   // Fondo quasi nero (o carta nel tema chiaro) con la griglia del piano di Manim.
   drawBackground(ctx, cam, c) {
