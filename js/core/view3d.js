@@ -3,6 +3,8 @@
 // dove vivono i vettori "fuori dal piano" (momento di una forza, velocità angolare, momento angolare).
 // Le coordinate proiettate sono coordinate mondo 2D, quindi si disegnano con il Painter di sempre.
 import { palette, tex } from './manim.js';
+import { niceStep } from './math.js';
+import { drawGrid } from './render.js';
 
 export class View3D {
   constructor() { this.pitch = 0; this.yaw = 0; }
@@ -55,10 +57,77 @@ export class View3D {
 // regia (valori che inseguono con morbidezza, come move_camera di Manim).
 // In vista 3D la camera non sta mai ferma: oscilla piano attorno alla posizione scelta (ambient camera rotation di
 // Manim), ±swing rad in un periodo di `period` secondi. Nelle istantanee e con "riduci movimento" resta ferma.
+const tilts = {};   // inclinazione dell'ultima camera di ogni esperimento (per lo sfondo, disegnato prima della scena)
 export function camera3d(S, key, on, pitch, yaw, { tau = 0.32, swing = 0.32, period = 14 } = {}) {
   const amb = S.still ? 0 : swing * Math.sin(2 * Math.PI * (S.R?.now ?? 0) / period);
   const [a, b] = S.smooth('cam3d:' + key, on ? [pitch, yaw + amb] : [0, 0], tau);
-  return new View3D().set(a, b);
+  const V = new View3D().set(a, b);
+  if (!S.snap) tilts[key] = Math.hypot(a, b);
+  return V;
+}
+
+// Sfondo per gli esperimenti con la vista 3D (exp.drawBackground): finché la camera è di fronte è il solito
+// NumberPlane piatto; appena si inclina resta solo il colore di fondo e la griglia la disegna la scena (grid3d),
+// nel piano dell'esperimento, così ruota insieme a tutto il resto.
+export const background3d = key => (ctx, cam, colors) => {
+  if ((tilts[key] ?? 0) > 1e-3) { const M = palette(colors); ctx.fillStyle = M.bg; ctx.fillRect(0, 0, cam.w, cam.h); }
+  else drawGrid(ctx, cam, colors, true);
+};
+
+// Griglia del NumberPlane vista dalla camera, con le stesse linee e gli stessi colori di quella piatta.
+//   plane 'xy': il piano dell'esperimento (z = 0); a camera di fronte coincide con lo sfondo piatto.
+//   plane 'xz': il pavimento (y = 0), che in 3D fa da appoggio agli oggetti; zr è la sua profondità (±zr).
+// È estesa e finita come un piano di Manim; alpha la sfuma (per incrociare muro e pavimento mentre la camera gira).
+export function grid3d(P, V, { plane = 'xy', extend = 1.8, alpha = 1, zr = 6 } = {}) {
+  if (alpha <= 0.01) return null;
+  const M = P.M ?? palette(P.c), cam = P.cam, step = niceStep(80 / cam.scale), minor = step / 2;
+  const { x0, y0, x1, y1 } = cam.bounds(), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  const hx = (x1 - x0) / 2 * extend, hy = plane === 'xz' ? zr : (y1 - y0) / 2 * extend, cv = plane === 'xz' ? 0 : cy;
+  const X0 = Math.floor((cx - hx) / step) * step, X1 = Math.ceil((cx + hx) / step) * step;
+  const Y0 = Math.floor((cv - hy) / step) * step, Y1 = Math.ceil((cv + hy) / step) * step;
+  const pt = (u, v) => (plane === 'xz' ? [u, 0, v] : [u, v, 0]);
+  const ctx = P.ctx;
+  ctx.save();
+  ctx.strokeStyle = M.plane;
+  for (const [s, a] of [[minor, M.planeA[1]], [step, M.planeA[0]]]) {
+    ctx.globalAlpha = a * alpha; ctx.lineWidth = s === minor ? 1 : 1.25;
+    ctx.beginPath();
+    const seg = (p, q) => { const [a1, b1] = P.S(...V.p(...p)), [a2, b2] = P.S(...V.p(...q)); ctx.moveTo(a1, b1); ctx.lineTo(a2, b2); };
+    for (let x = X0; x <= X1 + 1e-9; x += s) {
+      if (s === minor && Math.abs(x / step - Math.round(x / step)) < 1e-6) continue;
+      seg(pt(x, Y0), pt(x, Y1));
+    }
+    for (let y = Y0; y <= Y1 + 1e-9; y += s) {
+      if (s === minor && Math.abs(y / step - Math.round(y / step)) < 1e-6) continue;
+      seg(pt(X0, y), pt(X1, y));
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+  return { X0, X1, Y0, Y1 };
+}
+
+// Per gli esperimenti nel piano verticale: mentre la camera gira il "muro" (piano dell'esperimento) sfuma e compare
+// il pavimento, su cui gli oggetti poggiano. Va chiamata subito dopo camera3d, prima di disegnare la scena.
+export function stage3d(P, V) {
+  const k = V.tilt();
+  if (k <= 0.001) return;
+  grid3d(P, V, { plane: 'xy', alpha: 1 - 0.85 * k });
+  grid3d(P, V, { plane: 'xz', alpha: k });
+}
+
+// Terna levogira (x, y, z antioraria, regola della mano destra) nell'origine della scena: gli assi x e y stanno sul
+// piano della griglia, z ne esce. Ruota con la camera insieme alla griglia; compare man mano che la camera si inclina.
+export function axes3d(P, V, { origin = [0, 0, 0], lx = 3, ly = 3, lz = 2.5, alpha = 1 } = {}) {
+  const k = V.tilt() * alpha;
+  if (k < 0.02) return;
+  const M = P.M ?? palette(P.c), [ox, oy, oz] = origin;
+  const ax = [['x', [ox + lx, oy, oz]], ['y', [ox, oy + ly, oz]], ['z', [ox, oy, oz + lz]]];
+  for (const [n, e] of ax) {
+    V.arrow(P, [ox, oy, oz], e, { color: M.axis, key: 'ax' + n, width: 2, alpha: 0.85 * k, head: 10 });
+    const [a, b] = V.S(P, ...e), [c, d] = V.S(P, ox, oy, oz), L = Math.hypot(a - c, b - d) || 1;
+    tex(P, a + (a - c) / L * 16, b + (b - d) / L * 16, n, { size: 18, color: M.text, halo: M.bg, alpha: k });
+  }
 }
 
 // Terna levogira (x, y, z antioraria, regola della mano destra) nell'angolo in basso a sinistra della scena:

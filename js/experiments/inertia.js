@@ -2,7 +2,7 @@ import { tn, clamp } from '../core/math.js';
 import { tex } from '../core/manim.js';
 import { uq } from '../core/units.js';
 import { Stage, C, arrowPx, brace, symVal } from '../core/annot.js';
-import { camera3d, triad, prism, cylinder, sphere } from '../core/view3d.js';
+import { camera3d, background3d, stage3d, axes3d, prism, cylinder, sphere } from '../core/view3d.js';
 
 const stage = new Stage();
 const G = 9.81, H = 2.6;                 // altezza dell'asse
@@ -73,14 +73,16 @@ export default {
   },
 
   mount() { stage.reset(); },
+  drawBackground: background3d('inertia'),
 
   draw(P, s, p, ui) {
     const S = stage.begin(P, ui), M = S.M, sc = P.cam.scale, ctx = P.ctx;
-    const W = camera3d(S, 'inertia', p.show3d, 14 * deg, -40 * deg), tilt = W.tilt();
+    const W = camera3d(S, 'inertia', p.show3d, 18 * deg, -38 * deg, { swing: 0.2 }), tilt = W.tilt();
+    stage3d(P, W);   // la griglia ruota con la camera: il piano dell'esperimento sfuma, compare il pavimento
     if (!ui.snapshot) V = W;
     const k = kin(p, s.t), th = k.th;
 
-    P.ground(0);
+    if (W.tilt() < 0.05) P.ground(0);   // in 3D il suolo è un piano perpendicolare: la linea piatta taglierebbe la scena
     // Supporto: colonna dietro la ruota.
     prism(P, W, [[-0.08, 0], [0.08, 0], [0.08, H], [-0.08, H]], -0.32, -0.16, { fill: M.solid, stroke: M.solidEdge, alpha: 0.95 });
     W.line(P, [[0, H, -0.24], [0, H, 0.12]], { color: 'text', width: 2.5 });
@@ -133,7 +135,7 @@ export default {
     }
 
     if (s.t === 0) for (const h of this.handles(s, p)) P.handle(h.x, h.y, ui.active === h.id);
-    triad(P, W);
+    axes3d(P, W, { origin: [-2, 0, 0], lx: 4.2, ly: 3.4, lz: 2 });
   },
 
   formulas(s, p) {

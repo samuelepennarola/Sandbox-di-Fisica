@@ -2,7 +2,7 @@ import { tn, clamp } from '../core/math.js';
 import { tex } from '../core/manim.js';
 import { uq } from '../core/units.js';
 import { Stage, C, arrowPx, brace, symVal } from '../core/annot.js';
-import { camera3d, triad, cylinder, sphere } from '../core/view3d.js';
+import { camera3d, background3d, grid3d, axes3d, cylinder, sphere } from '../core/view3d.js';
 
 const stage = new Stage();
 const RP = 1.5;                                  // raggio della piattaforma (m)
@@ -80,10 +80,12 @@ export default {
   },
 
   mount() { stage.reset(); },
+  drawBackground: background3d('angmom'),
 
   draw(P, s, p, ui) {
     const S = stage.begin(P, ui), M = S.M, sc = P.cam.scale, ctx = P.ctx;
     const W = camera3d(S, 'angmom', p.show3d, -58 * deg, 0), tilt = W.tilt(0.8);
+    if (W.tilt(0.01) > 0.001) grid3d(P, W);   // la griglia ruota con la camera
     if (!ui.snapshot) V = W;
     const r = s.t === 0 ? p.r : s.r, th = s.th;
 
@@ -132,7 +134,7 @@ export default {
     }
 
     if (!p.auto) for (const h of this.handles(s, p)) P.handle(h.x, h.y, ui.active === h.id);
-    triad(P, W);
+    axes3d(P, W, { origin: [0, 0, 0], lx: 2.4, ly: 2.4, lz: 2.4 });
   },
 
   formulas(s, p) {

@@ -2,7 +2,7 @@ import { tn } from '../core/math.js';
 import { tex } from '../core/manim.js';
 import { uq } from '../core/units.js';
 import { Stage, C, angleMark, symVal, degTeX, brace } from '../core/annot.js';
-import { camera3d, triad, prism, cylinder, sphere } from '../core/view3d.js';
+import { camera3d, background3d, stage3d, axes3d, prism, cylinder, sphere } from '../core/view3d.js';
 
 const stage = new Stage();
 const G = 9.81, R = 0.25, W = 0.32;          // raggio e spessore dei corpi (m)
@@ -69,12 +69,14 @@ export default {
   ],
 
   mount() { stage.reset(); },
+  drawBackground: background3d('rolling'),
 
   draw(P, s, p, ui) {
     const S = stage.begin(P, ui), M = S.M, ctx = P.ctx;
     const [alpha, L] = S.smooth('geo', [p.alpha, p.L], 0.15, !!ui.active);
     const a = alpha * deg, w = L * Math.cos(a), h = L * Math.sin(a);
     const V = camera3d(S, 'rolling', p.show3d, 18 * deg, -32 * deg), tilt = V.tilt();
+    stage3d(P, V);   // la griglia ruota con la camera: il piano dell'esperimento sfuma, compare il pavimento
     const zLanes = BODIES.filter(b => on(p, b)).map(b => b.lane);
     const z0 = Math.min(-0.5, ...zLanes) - 0.4, z1 = Math.max(0.5, ...zLanes) + 0.4;
 
@@ -140,7 +142,7 @@ export default {
       tex(P, x0 + 212, y0 + row * 30 - 6, '\\text{traslazione}', { size: 12, color: M.muted, halo: M.bg, align: 'left', alpha: gT });
       tex(P, x0 + 212, y0 + row * 30 + 10, '\\text{rotazione (velata)}', { size: 12, color: M.muted, halo: M.bg, align: 'left', alpha: gT });
     }
-    triad(P, V);
+    axes3d(P, V, { origin: [-1, 0, 0], lx: 8, ly: 3.4, lz: 1.6 });
   },
 
   formulas(s, p) {

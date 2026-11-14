@@ -2,7 +2,7 @@ import { tn, clamp } from '../core/math.js';
 import { tex } from '../core/manim.js';
 import { uq } from '../core/units.js';
 import { Stage, C, arrowPx, arrowMag, brace, symVal } from '../core/annot.js';
-import { camera3d, triad, prism } from '../core/view3d.js';
+import { camera3d, background3d, stage3d, axes3d, prism } from '../core/view3d.js';
 
 const stage = new Stage();
 const G = 9.81, LB = 4, H = 1.3, TH = 0.12;     // lunghezza dell'asta, altezza del fulcro, spessore dell'asta (m)
@@ -114,17 +114,19 @@ export default {
   },
 
   mount() { stage.reset(); },
+  drawBackground: background3d('lever'),
 
   draw(P, s, p, ui) {
     const S = stage.begin(P, ui), M = S.M, sc = P.cam.scale, ctx = P.ctx;
     if (!ui.snapshot) SC = sc;
-    const W = camera3d(S, 'lever', p.show3d, 26 * deg, -55 * deg);
+    const W = camera3d(S, 'lever', p.show3d, 22 * deg, -40 * deg, { swing: 0.2 });
+    stage3d(P, W);   // la griglia ruota con la camera: il piano dell'esperimento sfuma, compare il pavimento
     if (!ui.snapshot) V = W;
     const th = s.t === 0 ? 0 : s.th, piv = [p.xf, H], c = Math.cos(th), sn = Math.sin(th);
     const at = u => [p.xf + (u - p.xf) * c, H + (u - p.xf) * sn];
     const tilt = W.tilt();
 
-    P.ground(0);
+    if (W.tilt() < 0.05) P.ground(0);   // in 3D il suolo è un piano perpendicolare: la linea piatta taglierebbe la scena
     // Sostegno del fulcro: un triangolo pieno (prisma in 3D).
     prism(P, W, [[p.xf - 0.28, 0], [p.xf + 0.28, 0], [p.xf, H - 0.02]], -0.2, 0.2, { fill: M.solid, stroke: M.solidEdge, alpha: 0.95 });
 
@@ -201,7 +203,7 @@ export default {
     }
 
     if (s.t === 0) for (const h of this.handles(s, p)) P.handle(h.x, h.y, ui.active === h.id);
-    triad(P, W);
+    axes3d(P, W, { origin: [-3, 0, 0], lx: 6.4, ly: 3.4, lz: 2.6 });
   },
 
   formulas(s, p) {
