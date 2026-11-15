@@ -142,7 +142,7 @@ function segDist(x, y, [ax, ay], [bx, by]) {
   return Math.hypot(x - ax - t * dx, y - ay - t * dy);
 }
 
-// Le linee partono dalle sorgenti positive (o, se prevale la carica negativa, arrivano a quelle negative):
+// Le linee partono dalle sorgenti positive e arrivano a quelle negative (anche da lontano, da dietro):
 // il loro numero è proporzionale alla carica. Si ricalcolano solo quando cambiano le sorgenti.
 function fieldLines() {
   // Durante il trascinamento il passo è più largo (ricalcolo leggero a ogni fotogramma); al rilascio torna fine.
@@ -187,10 +187,23 @@ function fieldLines() {
       sign > 0 ? (pos += count) : (neg += count);
     }
   }
-  // Si traccia dal segno che "possiede" più linee: le altre arrivano da sole sulle sorgenti opposte.
-  const from = pos >= neg ? 1 : -1;
-  const box = bounds(0.9);
-  return (B.lines = seeds.filter(sd => sd.sign === from).map(sd => ({ pts: trace(sd, from, box), dir: from })));
+  // Le linee escono dalle sorgenti positive e vanno o su una negativa o lontano. Quelle che arrivano alle negative da
+  // lontano (da dietro, in un dipolo o con una carica negativa sola) si tracciano a ritroso dalle negative; di queste si
+  // tengono solo quelle che non finiscono su una positiva (sarebbero doppioni) e si girano, così si disegnano da
+  // lontano verso la carica, nel verso del campo.
+  const box = bounds(1.4), out = [];
+  const onPositive = ([x, y]) => src.some(o => {
+    const sg = Math.sign(o.type === 'point' ? o.q : o.type === 'rod' ? o.Q : o.sigma);
+    if (sg <= 0) return false;
+    return o.type === 'point' ? Math.hypot(x - o.x, y - o.y) < radius(o.q) * 1.3 : segDist(x, y, ...ends(o)) < 0.012;
+  });
+  for (const sd of seeds) {
+    if (sd.sign > 0) { out.push({ pts: trace(sd, 1, box), dir: 1 }); continue; }
+    const pts = trace(sd, -1, box);
+    if (!onPositive(pts[pts.length - 1])) out.push({ pts: pts.reverse(), dir: 1 });
+  }
+  void pos; void neg;
+  return (B.lines = out);
 }
 
 function bounds(m) {
