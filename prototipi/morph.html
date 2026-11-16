@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="it" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Prototipo · Formule che si trasformano</title>
+  <link rel="stylesheet" href="../vendor/katex/katex.min.css">
+  <link rel="stylesheet" href="../css/style.css">
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: var(--c-bg); }
+    canvas { position: fixed; inset: 0; touch-action: none; }
+    #bar { position: fixed; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+      display: flex; gap: 8px; align-items: center; padding: 8px; border-radius: 16px; max-width: calc(100vw - 32px);
+      background: var(--panel-bg, rgba(246, 243, 234, .94)); border: 1px solid var(--panel-border, rgba(0, 0, 0, .12)); }
+    #bar button { font: 500 15px var(--ui-font, -apple-system, sans-serif); color: var(--c-text); background: transparent;
+      border: 1px solid var(--panel-border, rgba(0, 0, 0, .12)); border-radius: 11px; min-height: 44px; padding: 0 14px; cursor: pointer; white-space: nowrap; }
+    #bar button.primary { background: #58C4DD; color: #0b0b0d; border-color: transparent; font-weight: 700; }
+    #bar button:disabled { opacity: .35; }
+    #step { color: var(--c-muted); font: 13px var(--ui-font, sans-serif); min-width: 5.5em; text-align: center; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div id="bar">
+    <button id="restart" title="Da capo">↺</button>
+    <button id="prev" title="Indietro">‹</button>
+    <span id="step">—</span>
+    <button id="next" class="primary">Avanti ›</button>
+    <button id="all">▶ Tutto</button>
+    <button id="theme" title="Tema chiaro / scuro">◐</button>
+  </div>
+  <script type="module">
+    // Soluzione animata del piano inclinato: P∥ = mg sinα → numeri → risultato, con le formule che si trasformano.
+    import { Camera } from '../js/core/camera.js';
+    import { Painter, readColors } from '../js/core/render.js';
+    import { crate } from '../js/core/shapes.js';
+    import { angleMark } from '../js/core/annot.js';
+    import { tex, fontsReady } from '../js/core/manim.js';
+    import { rate } from '../js/core/anim.js';
+    import { TexSteps } from '../js/core/morph.js';
+
+    const canvas = document.getElementById('c'), ctx = canvas.getContext('2d'), cam = new Camera();
+    const p = { alpha: 30, m: 3, g: 9.81 }, L = 10, BW = 1, BH = 0.6, KF = 0.11;
+
+    const sol = new TexSteps([
+      { tex: 'P_{\\parallel} = m g \\sin\\alpha' },
+      { indicate: ['m g', '\\alpha'] },
+      { tex: 'P_{\\parallel} = 3,0\\cdot 9,81\\cdot\\sin 30\\circ', map: { m: '3,0', g: '9,81', '\\alpha': '30\\circ' } },
+      { tex: 'P_{\\parallel} = 14,7\\ \\mathrm{N}' },
+      { box: '14,7\\ \\mathrm{N}' },
+    ]);
+    const NAMES = ['Formula', 'Cosa cambia', 'Numeri', 'Risultato', 'In evidenza'];
+
+    let colors = readColors();
+    const ui = { prev: document.getElementById('prev'), next: document.getElementById('next'), step: document.getElementById('step') };
+    const sync = () => {
+      ui.prev.disabled = sol.i < 0; ui.next.disabled = sol.i >= sol.steps.length - 1;
+      ui.step.textContent = sol.i < 0 ? '—' : `${sol.i + 1}/${sol.steps.length} · ${NAMES[sol.i]}`;
+    };
+    ui.next.onclick = () => { sol.stop(); sol.next(); sync(); };
+    ui.prev.onclick = () => { sol.prev(); sync(); };
+    document.getElementById('restart').onclick = () => { sol.reset(); sol.next(); sync(); };
+    document.getElementById('all').onclick = () => { sol.playAll(); };
+    document.getElementById('theme').onclick = () => {
+      const r = document.documentElement; r.dataset.theme = r.dataset.theme === 'dark' ? 'light' : 'dark'; colors = readColors();
+    };
+    // Tastiera: → / spazio avanti, ← indietro.
+    addEventListener('keydown', e => { if (e.key === 'ArrowRight' || e.key === ' ') ui.next.click(); if (e.key === 'ArrowLeft') ui.prev.click(); });
+
+    function resize() {
+      const dpr = devicePixelRatio || 1, w = innerWidth, h = innerHeight;
+      canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+      canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      cam.setViewport(w, h);
+    }
+    addEventListener('resize', resize); resize();
+
+    function draw() {
+      const w = cam.w, h = cam.h, wide = w > 820;
+      const P = new Painter(ctx, cam, colors), M = P.M;
+      ctx.fillStyle = M.bg; ctx.fillRect(0, 0, w, h);
+      // Scena a sinistra (o sotto, su schermi stretti); formula a destra (o sopra).
+      const a = p.alpha * Math.PI / 180, T = [0, L * Math.sin(a)], B = [L * Math.cos(a), 0];
+      const pad = wide ? { left: 30, right: w * 0.42, top: 40, bottom: 110 } : { left: 20, right: 20, top: h * 0.3, bottom: 100 };
+      Object.assign(cam, cam.target({ xmin: -0.5, xmax: B[0] + 0.5, ymin: -0.6, ymax: T[1] + 0.5 }, pad));
+
+      P.ground(0);
+      P.poly([[0, 0], B, T], { fill: M.text, alpha: M.dark ? 0.05 : 0.06 });
+      P.line([[0, 0], T], { color: 'muted', width: 1.2, alpha: 0.55 });
+      P.line([T, B], { color: M.text, width: 2 });
+      // α si accende insieme al suo simbolo nella formula (passo «Cosa cambia»).
+      const hiA = sol.i === 1 ? rate.thereAndBack(sol.t) : 0;
+      angleMark(P, B[0], 0, 46 * (1 + 0.2 * hiA), Math.PI - a, Math.PI, '\\alpha', { color: M.text });
+      const d = [Math.cos(a), -Math.sin(a)], n = [Math.sin(a), Math.cos(a)], s = 4.2;
+      const C = [T[0] + d[0] * s + n[0] * BH / 2, T[1] + d[1] * s + n[1] * BH / 2];
+      crate(P, C[0], C[1], { w: BW, h: BH, angle: -a, minPx: 0, color: 'blue' });
+      const W = p.m * p.g, eP = [C[0], C[1] - KF * W], ePar = [C[0] + d[0] * KF * W * Math.sin(a), C[1] + d[1] * KF * W * Math.sin(a)];
+      P.arrow(C[0], C[1], ...eP, { color: 'weight', label: 'P' });
+      // P∥ si fa più netta quando compare il risultato.
+      const em = sol.i >= 3 ? (sol.i === 3 ? rate.smooth(sol.t) : 1) : 0;
+      P.arrow(C[0], C[1], ...ePar, { color: 'weight', width: 2 + em, dash: em > 0.5 ? null : [5, 4], alpha: 0.7 + 0.3 * em });
+      const [lx, ly] = P.S(...ePar);
+      tex(P, lx + 8, ly + 18, '\\vec P_{\\parallel}', { size: 17, color: M.vec.weight, align: 'left', halo: M.bg });
+      P.circle(C[0], C[1], 2.5, { fill: M.text });
+
+      // Formula: il segno = resta fermo; corpo e posizione scelti perché la formula più larga stia nel riquadro.
+      const box = wide ? { x0: w - pad.right + 20, x1: w - 30, y: h * 0.42 } : { x0: 20, x1: w - 20, y: h * 0.15 };
+      let size = wide ? 30 : 26, E = sol.extent(P, size);
+      const avail = box.x1 - box.x0;
+      if (E.right - E.left > avail) { size *= avail / (E.right - E.left); E = sol.extent(P, size); }
+      const fx = (box.x0 + box.x1) / 2 - (E.left + E.right) / 2;
+      sol.draw(P, fx, box.y, { size, color: M.text, dark: M.dark });
+    }
+
+    let last = 0;
+    function frame(now) {
+      const dt = last && !window.__pause ? Math.min(0.05, (now - last) / 1000) : 0; last = now;
+      sol.update(dt); if (sol.busy || dt) sync();
+      draw();
+      requestAnimationFrame(frame);
+    }
+    // Per le verifiche: window.__sol per saltare a un passo e a un istante precisi.
+    window.__sol = sol; window.__draw = draw;
+    fontsReady.then(() => { sol.next(); sync(); requestAnimationFrame(frame); });
+  </script>
+</body>
+</html>

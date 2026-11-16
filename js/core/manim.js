@@ -289,33 +289,37 @@ export function tex(P, a, b, src, { size = 16, color = '#fff', align = 'center',
   ctx.globalAlpha = alpha; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.lineJoin = ctx.lineCap = 'round';
   // Prima tutti gli aloni, poi le scritte; le righe (frazioni, radici) per ultime, così nessun alone le copre.
   const ordered = [...L.ops.filter(o => o.k === 'text'), ...L.ops.filter(o => o.k !== 'text')];
-  for (const pass of halo ? ['halo', 'fill'] : ['fill']) {
-    const isHalo = pass === 'halo';
-    for (const o of ordered) {
-      const x = x0 + o.x, y = b + o.y, c = o.col ?? color;
-      ctx.strokeStyle = isHalo ? halo : c; ctx.fillStyle = c;
-      if (o.k === 'text') {
-        ctx.font = o.font;
-        if (isHalo) { ctx.lineWidth = 4; ctx.strokeText(o.s, x, y); }
-        else ctx.fillText(o.s, x, y);
-        if (o.vec) {
-          // Freccetta sopra la lettera, spostata a destra come nel corsivo.
-          const sz = o.size, top = y - sz * 0.62, l = x + o.w * 0.18, r = x + o.w * 1.02;
-          ctx.lineWidth = Math.max(1, sz * 0.07) + (isHalo ? 3 : 0);
-          ctx.beginPath(); ctx.moveTo(l, top); ctx.lineTo(r, top); ctx.moveTo(r - sz * 0.18, top - sz * 0.1); ctx.lineTo(r, top); ctx.lineTo(r - sz * 0.18, top + sz * 0.1); ctx.stroke();
-        }
-      } else if (o.k === 'rule') {
-        ctx.lineWidth = o.lw + (isHalo ? 3 : 0);
-        ctx.beginPath(); ctx.moveTo(x0 + o.x, b + o.y); ctx.lineTo(x0 + o.x2, b + o.y2); ctx.stroke();
-      } else if (o.k === 'path') {
-        ctx.lineWidth = o.lw + (isHalo ? 3 : 0);
-        ctx.beginPath(); o.pts.forEach(([px, py], i) => (i ? ctx.lineTo(x0 + px, b + py) : ctx.moveTo(x0 + px, b + py))); ctx.stroke();
-      }
-    }
-  }
+  for (const pass of halo ? ['halo', 'fill'] : ['fill'])
+    for (const o of ordered) drawTexOp(ctx, o, x0, b, o.col ?? color, pass === 'halo' ? halo : null);
   ctx.restore();
   return L.w;
 }
+
+// Una sola operazione dell'impaginazione (glifo, riga di frazione, radice) con l'origine in (x0, b).
+// halo: colore dell'alone (passata dell'alone) oppure null (passata del colore). Serve anche a morph.js.
+export function drawTexOp(ctx, o, x0, b, c, halo = null) {
+  const isHalo = !!halo, x = x0 + o.x, y = b + o.y;
+  ctx.strokeStyle = isHalo ? halo : c; ctx.fillStyle = c;
+  if (o.k === 'text') {
+    ctx.font = o.font;
+    if (isHalo) { ctx.lineWidth = 4; ctx.strokeText(o.s, x, y); }
+    else ctx.fillText(o.s, x, y);
+    if (o.vec) {
+      // Freccetta sopra la lettera, spostata a destra come nel corsivo.
+      const sz = o.size, top = y - sz * 0.62, l = x + o.w * 0.18, r = x + o.w * 1.02;
+      ctx.lineWidth = Math.max(1, sz * 0.07) + (isHalo ? 3 : 0);
+      ctx.beginPath(); ctx.moveTo(l, top); ctx.lineTo(r, top); ctx.moveTo(r - sz * 0.18, top - sz * 0.1); ctx.lineTo(r, top); ctx.lineTo(r - sz * 0.18, top + sz * 0.1); ctx.stroke();
+    }
+  } else if (o.k === 'rule') {
+    ctx.lineWidth = o.lw + (isHalo ? 3 : 0);
+    ctx.beginPath(); ctx.moveTo(x0 + o.x, b + o.y); ctx.lineTo(x0 + o.x2, b + o.y2); ctx.stroke();
+  } else if (o.k === 'path') {
+    ctx.lineWidth = o.lw + (isHalo ? 3 : 0);
+    ctx.beginPath(); o.pts.forEach(([px, py], i) => (i ? ctx.lineTo(x0 + px, b + py) : ctx.moveTo(x0 + px, b + py))); ctx.stroke();
+  }
+}
+// Impaginazione già calcolata (in cache) di una scritta: { ops, w, top, bot }. Non va modificata.
+export const texLayout = (P, src, size = 16) => layout(P.ctx, src, size);
 
 // Larghezza in px di una scritta tex(); texBox dà anche l'ingombro verticale (top < 0 < bot, rispetto al centro).
 export const texWidth = (P, src, size = 16) => layout(P.ctx, src, size).w;
