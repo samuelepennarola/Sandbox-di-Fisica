@@ -1,4 +1,4 @@
-# Sandbox di Fisica
+# Fisicamente
 
 App interattiva per le ripetizioni di fisica classica, pensata per iPad con Apple Pencil (funziona anche su Mac).
 

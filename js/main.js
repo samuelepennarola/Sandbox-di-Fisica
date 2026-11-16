@@ -389,7 +389,7 @@ function renderTheory() {
 
 function buildDrawer() {
   const dr = $('drawer');
-  dr.innerHTML = '<h1>Sandbox di Fisica</h1>';
+  dr.innerHTML = '<h1>Fisicamente</h1>';
   const theme = document.createElement('button');
   theme.className = 'drawer-theme';
   theme.innerHTML = `${icons.theme}<span>Tema chiaro / scuro</span>`;

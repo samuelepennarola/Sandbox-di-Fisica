@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <clipPath id="round"><rect width="512" height="512" rx="112"/></clipPath>
   <g clip-path="url(#round)">
-  <!-- Icona di Sandbox di Fisica, nello stile della scena (3Blue1Brown / Manim): il punto che gira sulla
+  <!-- Icona di Fisicamente, nello stile della scena (3Blue1Brown / Manim): il punto che gira sulla
        circonferenza e la sua proiezione che disegna la sinusoide. Versione con gli angoli arrotondati (favicon); icon-full.svg è quella a fondo pieno. -->
   <defs>
     <radialGradient id="bg" cx="40%" cy="45%" r="75%">
