@@ -3,6 +3,7 @@ import { crate } from '../core/shapes.js';
 import { tex, texBox } from '../core/manim.js';
 import { uq, un, ut, uf, utn } from '../core/units.js';
 import { Stage, brace, angleMark, rate01, C as Ccol, symVal, degTeX } from '../core/annot.js';
+import { penTrace } from '../core/osc.js';
 
 const stage = new Stage();   // regia: frecce che crescono, graffe, piano che si trasforma, cassa che nasce
 const num = (v, d = 1) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(d).replace('.', ',');
@@ -43,6 +44,19 @@ function geom(p) {
   return { a, c, sn, T: [0, L * sn], B: [L * c, 0], d: [c, -sn], n: [sn, c] };
 }
 
+// Durata prevista della corsa (s), per la scala dei tempi del grafico x(t): una simulazione veloce, rifatta solo
+// quando cambiano i parametri. Se il blocco resta fermo (o non arriva in fondo) bastano pochi secondi.
+let runCache = { key: '', T: 3 };
+function runTime(p) {
+  const key = [p.alpha, p.mus, p.muk, p.v0, p.s0, p.g].join('|');
+  if (runCache.key === key) return runCache.T;
+  const exp = INCLINE, st = exp.init(p), dt = 0.01;
+  let n = 0;
+  while (!st.done && n < 3000 && !(n > 10 && st.v === 0 && st.a === 0)) { exp.step(st, dt, p); n++; }
+  runCache = { key, T: Math.max(2, st.done ? st.t : Math.min(st.t + 1, 30)) };
+  return runCache.T;
+}
+
 // Forze lungo il piano per una data velocità: restituisce accelerazione, attrito e regime.
 function dynamics(v, p, g) {
   const N = p.m * p.g * g.c, Fpar = p.m * p.g * g.sn;
@@ -56,10 +70,11 @@ function dynamics(v, p, g) {
   return { a: (Fpar + f) / p.m, f, N, regime: 'dinamico' };
 }
 
-export default {
+const INCLINE = {
   id: 'incline',
   title: 'Piano inclinato',
   subtitle: 'Forze, attrito statico e dinamico, energia',
+  gridLabels: p => (p.showTrace ? 'x' : true),   // sotto il suolo l'asse verticale del grafico x(t) è il tempo
 
   params: [
     { key: 'alpha', label: 'Inclinazione α', unit: '°', min: 0, max: 85, step: 1, value: 30 },
@@ -72,6 +87,7 @@ export default {
     { key: 'showComp', type: 'toggle', label: 'Scomponi il peso', value: true, live: true },
     { key: 'showVel', type: 'toggle', label: 'Vettore velocità', value: true, live: true },
     { key: 'showAcc', type: 'toggle', label: 'Vettore accelerazione', value: false, live: true },
+    { key: 'showTrace', type: 'toggle', label: 'Grafici x(t) e y(t) sulla scena', value: false, live: true, refit: true },
   ],
 
   presets: [
@@ -83,11 +99,15 @@ export default {
 
   view(p) {
     const g = geom(p);
-    return { xmin: -0.8, xmax: g.B[0] + 0.8, ymin: -0.6, ymax: Math.max(g.T[1], 3) + 1.8 };
+    const ymax = Math.max(g.T[1], 3) + 1.8;
+    // Con i grafici accesi: sotto il suolo x(t) (il tempo scende), a destra y(t) (il tempo va a destra).
+    const w = g.B[0] + 1.6;
+    if (p.showTrace) return { xmin: -0.8, xmax: g.B[0] + 0.8 + 0.6 * w, ymin: -Math.max(ymax, 0.8 * w), ymax };
+    return { xmin: -0.8, xmax: g.B[0] + 0.8, ymin: -0.6, ymax };
   },
 
   init(p) {
-    return { t: 0, s: p.s0, v: p.v0, Q: 0, done: false, ...dynamics(p.v0, p, geom(p)) };
+    return { t: 0, s: p.s0, v: p.v0, Q: 0, done: false, ...dynamics(p.v0, p, geom(p)), tr: [[0, geom(p).d[0] * p.s0]], trY: [[0, geom(p).T[1] + geom(p).d[1] * p.s0]] };
   },
 
   step(st, dt, p) {
@@ -110,6 +130,8 @@ export default {
     Object.assign(st, dyn);
     if (st.s >= L - BW / 2) { st.s = L - BW / 2; st.done = true; }
     if (st.s <= BW / 2 && st.v < 0) { st.s = BW / 2; st.done = true; }
+    // Campioni dei grafici sulla scena: il punto di contatto del blocco con il piano.
+    st.tr?.push([st.t, g.T[0] + g.d[0] * st.s]); st.trY?.push([st.t, g.T[1] + g.d[1] * st.s]);
   },
 
   done: s => s.done,
@@ -223,6 +245,21 @@ export default {
       tag(P, S, 'a', ta, eA, '\\vec a', M.vec.acc);
     }
 
+    // Grafici sulla scena. x(t) sotto il suolo: la posizione orizzontale del blocco, con il pennino sotto di lui e il tempo che
+    // scende (asse per x = 0, la cima del piano). Tutta la corsa prevista sta nella carta.
+    if (p.showTrace) {
+      const [, gy] = P.S(0, 0), pad = P.cam.padFn?.() ?? { bottom: 20 };
+      const top = gy + 40, end = P.cam.h - pad.bottom - 30;   // sopra i numeri dell'asse x
+      const xNow = T[0] + d[0] * sPos, fresh = st.t === 0;
+      const tR = runTime(p), gr = S.grow('trace', 0.9);
+      penTrace(P, fresh || !st.tr ? [] : st.tr, fresh ? 0 : st.t, { top, end, pxs: Math.max(4, (end - top - 24) / tR),
+        color: M.vec.vel, grow: gr, nowX: xNow, link: gy + 3 });
+      // y(t) a destra del piano, con il pennino alla quota del blocco.
+      const [left] = P.S(B[0] + 0.8, 0), endY = P.cam.w - (pad.right ?? 20) - 8, [bxS] = P.S(xNow, 0);
+      penTrace(P, fresh || !st.trY ? [] : st.trY, fresh ? 0 : st.t, { axis: 'y', top: left, end: endY, pxs: Math.max(4, (endY - left - 24) / tR),
+        color: M.vec.weight, grow: gr, nowX: T[1] + d[1] * sPos, link: bxS + 14 });
+    }
+
     P.handle(T[0], T[1], ui.active === 'alpha');
     if (ui.active === 'block') P.handle(C[0], C[1], true);
   },
@@ -302,3 +339,5 @@ $$\\Delta K + \\Delta U = -Q \\qquad Q = \\mu_d\\, m g \\cos\\alpha \\cdot d$$
 <p>$|a| = 9{,}81(\\sin 30^\\circ + 0{,}25\\cos 30^\\circ) \\approx 7{,}03$ m/s²; $\\quad d = v_0^2/(2|a|) \\approx 2{,}56$ m.</p></details>
 `,
 };
+
+export default INCLINE;

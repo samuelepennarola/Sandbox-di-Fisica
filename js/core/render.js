@@ -137,6 +137,7 @@ export class Painter {
 
 // Fondo della scena alla Manim: quasi nero (o carta) con la griglia del NumberPlane.
 // labels: numeri delle linee principali lungo i bordi sinistro e inferiore dell'area libera.
+// labels: true (numeri su entrambi gli assi), false (nessuno) o 'x' (solo l'asse x).
 export function drawGrid(ctx, cam, c, labels = true) {
   const M = palette(c);
   ctx.fillStyle = M.bg;
@@ -153,7 +154,7 @@ export function drawGrid(ctx, cam, c, labels = true) {
     if (a < pad.left + 24 || a > cam.w - pad.right - 24) continue;
     tex(P, a, cam.h - pad.bottom - 10, lab(x), { size: 13, color: M.muted, halo: M.bg, alpha: 0.85 });
   }
-  for (let y = Math.ceil(y0 / step) * step; y <= y1; y += step) {
+  if (labels !== 'x') for (let y = Math.ceil(y0 / step) * step; y <= y1; y += step) {
     const [, b] = cam.toScreen(0, y);
     if (b < pad.top + 16 || b > cam.h - pad.bottom - 30) continue;
     tex(P, pad.left + 8, b - 9, lab(y), { size: 13, color: M.muted, halo: M.bg, align: 'left', alpha: 0.85 });

@@ -1,6 +1,6 @@
 // Strumenti comuni del modulo "Oscillazioni e onde", nello stile di 3Blue1Brown:
 //   penTrace: la traccia x(t) scritta dal vivo sotto l'oscillatore, come un pennino su un rotolo di carta
-//             che scorre verso il basso (il tempo scende);
+//             che scorre verso il basso (il tempo scende); la usano anche gli esperimenti di cinematica;
 //   phasor:   il vettore che ruota su una circonferenza e la cui proiezione orizzontale è il moto armonico;
 //   coilSpring: molla a spire con un numero fisso di spire (si stringe e si allunga davvero).
 import { palette, tex } from './manim.js';
@@ -14,61 +14,76 @@ export function paperSpeed(avail, T, periods = 3) {
   return Math.min(420, Math.max(18, avail / (periods * T)));
 }
 
-// Traccia del pennino. pts: [[t, xMondo], ...] in ordine di tempo; tNow: istante attuale; top: y schermo del pennino.
-// L'asse verticale tratteggiato passa per x = 0 (equilibrio); la scritta t con la freccia indica lo scorrere del tempo.
-// Restituisce i px al secondo usati (per eventuali tacche).
-export function penTrace(P, pts, tNow, { top, pxs, color, grow = 1, label = 'x(t)', alpha = 1, nowX = null } = {}) {
-  const M = P.M ?? palette(P.c), ctx = P.ctx, pad = free(P.cam), bottom = P.cam.h - pad.bottom - 8;
-  if (bottom - top < 30 || grow <= 0.01) return;
-  const [ox] = P.S(0, 0), col = color ?? M.vec.vel, H = (bottom - top) * grow;
+// Traccia del pennino. pts: [[t, valore], ...] in ordine di tempo; tNow: istante attuale.
+// axis 'x' (moto armonico, cinematica): il valore è una x del mondo, il pennino sta alla y schermo `top` e il tempo
+//   scende fino a `end` (di norma il fondo della scena);
+// axis 'y' (proiezioni verticali): il valore è una y del mondo, il pennino sta alla x schermo `top` e il tempo
+//   scorre verso destra fino a `end`.
+// L'asse tratteggiato passa per il valore 0 (equilibrio o origine); shift sposta in blocco valori e asse (in metri,
+// per i disegni traslati come «Da S′»). link: coordinata lungo il tempo da cui parte il richiamo tratteggiato
+// verso il pennino (per esempio il suolo sotto il corpo).
+export function penTrace(P, pts, tNow, { axis = 'x', top, end = null, pxs, color, grow = 1, label, alpha = 1, nowX = null, shift = 0, link = null } = {}) {
+  const M = P.M ?? palette(P.c), ctx = P.ctx, pad = free(P.cam), hor = axis === 'y';
+  const lim = end ?? (hor ? P.cam.w - pad.right - 8 : P.cam.h - pad.bottom - 8);
+  if (lim - top < 30 || grow <= 0.01) return;
+  label = label === undefined ? (hor ? 'y(t)' : 'x(t)') : label;
+  // ac: coordinata schermo trasversale di un valore; pt: punto schermo da (lungo il tempo, trasversale).
+  const ac = v => (hor ? P.S(0, v + shift)[1] : P.S(v + shift, 0)[0]);
+  const pt = (al, c) => (hor ? [al, c] : [c, al]);
+  const mv = (al, c) => ctx.moveTo(...pt(al, c)), ln = (al, c) => ctx.lineTo(...pt(al, c));
+  const o = ac(0), col = color ?? M.vec.vel, H = (lim - top) * grow;
   ctx.save();
   ctx.globalAlpha = alpha;
-  // Asse del tempo (equilibrio) e tacche ogni secondo, sottili.
+  // Asse del tempo (valore zero) e tacche ogni secondo, sottili.
   ctx.strokeStyle = M.muted; ctx.lineWidth = 1; ctx.setLineDash([3, 5]); ctx.globalAlpha = 0.5 * alpha;
-  ctx.beginPath(); ctx.moveTo(ox, top); ctx.lineTo(ox, top + H); ctx.stroke();
+  ctx.beginPath(); mv(top, o); ln(top + H, o); ctx.stroke();
   ctx.setLineDash([]);
   const t0 = Math.ceil(tNow - H / pxs);
   ctx.beginPath();
   for (let k = Math.max(0, t0); k <= tNow; k++) {
     const y = top + (tNow - k) * pxs;
     if (y > top + H) continue;
-    ctx.moveTo(ox - 4, y); ctx.lineTo(ox + 4, y);
+    mv(y, o - 4); ln(y, o + 4);
   }
   ctx.stroke();
-  // La curva: dal pennino (adesso) verso il basso (il passato).
+  // La curva: dal pennino (adesso) verso il passato.
   ctx.globalAlpha = alpha; ctx.strokeStyle = col; ctx.lineWidth = 2.6; ctx.lineJoin = ctx.lineCap = 'round';
   ctx.beginPath();
+  // reach: quanto la curva sporge a sinistra dell'asse (sopra, per y): il nome va oltre, dove non la copre.
   let started = false, prev = null, reach = 0;
-  // Il pennino sta sempre sotto l'oggetto (nowX): la curva parte da lì e prosegue con i campioni registrati.
-  if (nowX != null) { const [a] = P.S(nowX, 0); ctx.moveTo(a, top); started = true; prev = [a, top]; reach = Math.abs(a - ox); }
+  // Il pennino sta sempre all'altezza dell'oggetto (nowX): la curva parte da lì e prosegue con i campioni registrati.
+  if (nowX != null) { const a = ac(nowX); mv(top, a); started = true; prev = [a, top]; reach = Math.max(0, o - a); }
   for (let i = pts.length - 1; i >= 0; i--) {
-    const [t, x] = pts[i], y = top + (tNow - t) * pxs;
-    const [a] = P.S(x, 0);
+    const [t, x] = pts[i], y = top + (tNow - t) * pxs, a = ac(x);
     if (y > top + H) {
-      // Ultimo tratto tagliato esattamente sul fondo della carta.
-      if (prev) { const u = (top + H - prev[1]) / (y - prev[1]); ctx.lineTo(prev[0] + (a - prev[0]) * u, top + H); }
+      // Ultimo tratto tagliato esattamente in fondo alla carta.
+      if (prev) { const u = (top + H - prev[1]) / (y - prev[1]); ln(top + H, prev[0] + (a - prev[0]) * u); }
       break;
     }
-    started ? ctx.lineTo(a, y) : ctx.moveTo(a, y);
-    started = true; prev = [a, y]; reach = Math.max(reach, Math.abs(a - ox));
+    started ? ln(y, a) : mv(y, a);
+    started = true; prev = [a, y]; reach = Math.max(reach, o - a);
   }
   ctx.stroke();
   ctx.restore();
-  if (pts.length || nowX != null) {
-    const [a] = P.S(nowX ?? pts[pts.length - 1][1], 0);
-    P.ctx.save(); P.ctx.globalAlpha = alpha;
-    P.ctx.fillStyle = col; P.ctx.beginPath(); P.ctx.arc(a, top, 4, 0, Math.PI * 2); P.ctx.fill();
-    P.ctx.restore();
+  const pen = pts.length || nowX != null ? ac(nowX ?? pts[pts.length - 1][1]) : null;
+  if (pen != null) {
+    ctx.save(); ctx.globalAlpha = alpha;
+    if (link != null) {
+      ctx.strokeStyle = col; ctx.globalAlpha = 0.35 * alpha; ctx.setLineDash([2, 4]); ctx.lineWidth = 1;
+      ctx.beginPath(); mv(link, pen); ln(top - 5, pen); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = alpha;
+    }
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(...pt(top, pen), 4, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
   }
-  // Nomi: x(t) accanto al pennino, t in fondo all'asse con una freccia verso il basso.
+  // Nomi: x(t) accanto al pennino, t in fondo all'asse con una freccia nel verso del tempo.
   const la = alpha * rate.smooth(Math.min(1, Math.max(0, (grow - 0.6) / 0.4)));
   if (la > 0.01) {
-    tex(P, ox + 26, top + H - 12, 't', { size: 17, color: M.muted, halo: M.bg, alpha: la });
-    ctx.save(); ctx.globalAlpha = la * 0.8; ctx.fillStyle = M.muted;
     const yb = top + H;
-    ctx.beginPath(); ctx.moveTo(ox, yb + 2); ctx.lineTo(ox - 4.5, yb - 7); ctx.lineTo(ox + 4.5, yb - 7); ctx.closePath(); ctx.fill();
+    tex(P, ...(hor ? [yb - 12, o + 22] : [o + 26, yb - 12]), 't', { size: 17, color: M.muted, halo: M.bg, alpha: la });
+    ctx.save(); ctx.globalAlpha = la * 0.8; ctx.fillStyle = M.muted;
+    ctx.beginPath(); mv(yb + 2, o); ln(yb - 7, o - 4.5); ln(yb - 7, o + 4.5); ctx.closePath(); ctx.fill();
     ctx.restore();
-    if (label) tex(P, ox - reach - 32, top + 14, label, { size: 17, color: col, halo: M.bg, alpha: la });
+    if (label) tex(P, ...(hor ? [top + 26, o - reach - 20] : [o - reach - 32, top + 14]), label, { size: 17, color: col, halo: M.bg, alpha: la });
   }
 }
 

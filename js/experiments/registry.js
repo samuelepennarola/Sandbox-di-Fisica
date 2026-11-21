@@ -1,3 +1,4 @@
+import uniform from './uniform.js';
 import projectile from './projectile.js';
 import incline from './incline.js';
 import builder from './builder.js';
@@ -23,7 +24,7 @@ import threebody from './threebody.js';
 // Mappa dei moduli. Le voci senza esperimenti compaiono come "in arrivo".
 export const AREAS = [
   { id: 'lab', title: 'Laboratorio', experiments: [board, builder], soon: [] },
-  { id: 'meccanica', title: 'Meccanica del punto', experiments: [projectile, incline, circular, relative], soon: [] },
+  { id: 'meccanica', title: 'Meccanica del punto', experiments: [uniform, projectile, incline, circular, relative], soon: [] },
   { id: 'sistemi', title: 'Sistemi e urti', experiments: [collision1d, collision2d], soon: ['Centro di massa', 'Carrucole e funi'] },
   { id: 'rigido', title: 'Corpo rigido', experiments: [lever, rolling, inertia, angmom], soon: [] },
   { id: 'oscillazioni', title: 'Oscillazioni e onde', experiments: [spring, pendulum, string, sources], soon: [] },

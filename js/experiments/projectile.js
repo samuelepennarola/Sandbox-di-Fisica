@@ -4,6 +4,7 @@ import { trail } from '../core/look.js';
 import { tex, texBox } from '../core/manim.js';
 import { uq, un, ut, uf, utn } from '../core/units.js';
 import { Stage, createPts, brace, angleMark, dropLines, rate01, C, arrowPx, arrowMag, symVal, degTeX } from '../core/annot.js';
+import { penTrace } from '../core/osc.js';
 
 const stage = new Stage();   // regia: frecce che crescono, parabola che si disegna, graffe, corpi che nascono
 const num = (v, d = 1) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(d).replace('.', ',');
@@ -53,10 +54,14 @@ function ideal(p) {
   return { vx, vy, tv, R: vx * tv, hmax: p.h0 + vy * vy / (2 * p.g), tApex: vy / p.g };
 }
 
+// Bordo destro della scena del lancio (m): con i grafici accesi, oltre comincia la carta di y(t).
+const sceneRight = p => Math.max(ideal(p).R, 10) + 3;
+
 export default {
   id: 'projectile',
   title: 'Moto parabolico',
   subtitle: 'Lancio di un proiettile, con o senza aria',
+  gridLabels: p => (p.showTrace ? 'x' : true),   // sotto il suolo l'asse verticale del grafico x(t) è il tempo
 
   params: [
     { key: 'v0', label: 'Velocità iniziale v₀', unit: 'm/s', min: 1, max: 100, step: 0.5, value: 18 },
@@ -69,6 +74,7 @@ export default {
     { key: 'showAcc', type: 'toggle', label: 'Vettore accelerazione', value: false, live: true },
     { key: 'showIdeal', type: 'toggle', label: 'Parabola ideale', value: true, live: true },
     { key: 'strobe', type: 'toggle', label: 'Posizioni ogni 0,25 s', value: false, live: true },
+    { key: 'showTrace', type: 'toggle', label: 'Grafici x(t) e y(t) sulla scena', value: false, live: true, refit: true },
   ],
 
   presets: [
@@ -79,13 +85,16 @@ export default {
   ],
 
   view(p) {
-    const { R, hmax } = ideal(p);
-    return { xmin: -3, xmax: Math.max(R, 10) + 3, ymin: -2, ymax: Math.max(hmax, p.h0, 5) + 3 };
+    const { hmax } = ideal(p), xr = sceneRight(p), top = Math.max(hmax, p.h0, 5) + 3;
+    // Con i grafici accesi: sotto il suolo x(t) (il tempo scende), a destra y(t) (il tempo va a destra).
+    if (p.showTrace) return { xmin: -3, xmax: xr + 0.75 * (xr + 3), ymin: -Math.max(0.9 * (xr + 3), 1.2 * top), ymax: top };
+    return { xmin: -3, xmax: xr, ymin: -2, ymax: top };
   },
 
   init(p) {
     const th = p.theta * deg;
-    return { t: 0, x: 0, y: p.h0, vx: p.v0 * Math.cos(th), vy: p.v0 * Math.sin(th), trail: [[0, p.h0]], strobe: [[0, p.h0]], landed: false };
+    return { t: 0, x: 0, y: p.h0, vx: p.v0 * Math.cos(th), vy: p.v0 * Math.sin(th), trail: [[0, p.h0]], strobe: [[0, p.h0]], landed: false,
+      tx: [[0, 0]], ty: [[0, p.h0]] };
   },
 
   step(s, dt, p) {
@@ -104,6 +113,7 @@ export default {
     const last = s.trail[s.trail.length - 1];
     if (s.landed || Math.hypot(s.x - last[0], s.y - last[1]) > 0.04) s.trail.push([s.x, s.y]);
     if (Math.floor(s.t / 0.25 + 1e-9) > s.strobe.length - 1) s.strobe.push([s.x, s.y]);
+    s.tx.push([s.t, s.x]); s.ty.push([s.t, s.y]);   // campioni dei grafici x(t) e y(t) sulla scena
   },
 
   done: s => s.landed,
@@ -183,6 +193,18 @@ export default {
         // Sotto il suolo, oltre il tratteggio del terreno.
         brace(P, [0, 0], [id.R, 0], symVal(P, 'R', uq('m', id.R)), { side: -1, gap: 20, grow: gb, alpha: dim, color: M.text });
       }
+    }
+
+    // Grafici x(t) e y(t) sulla scena: x(t) sotto il suolo (il pennino sotto il corpo, il tempo scende), y(t) a
+    // destra della scena (il pennino alla quota del corpo, il tempo va a destra). Tutto il volo sta nella carta.
+    if (p.showTrace) {
+      const fr = s.t === 0, [px, py] = fr ? [0, h0] : [s.x, s.y], tNow = fr ? 0 : s.t, tv = Math.max(id.tv, 0.2);
+      const pad = P.cam.padFn?.() ?? { right: 20, bottom: 20 }, [, gy] = P.S(0, 0), [bx] = P.S(px, py);
+      const g = S.grow('trace', 0.9);
+      const topX = gy + 74, endX = P.cam.h - pad.bottom - 30;   // sotto la graffa di R, sopra i numeri dell'asse x
+      penTrace(P, fr ? [] : s.tx, tNow, { top: topX, end: endX, pxs: Math.max(4, (endX - topX - 24) / tv), color: M.vec.vel, grow: g, nowX: px, link: gy + 3 });
+      const [left] = P.S(sceneRight(q), 0), endY = P.cam.w - pad.right - 8;
+      penTrace(P, fr ? [] : s.ty, tNow, { axis: 'y', top: left, pxs: Math.max(4, (endY - left - 24) / tv), color: M.vec.weight, grow: g, nowX: py, link: bx + 14 });
     }
 
     // Scia e posizioni stroboscopiche (puntini).

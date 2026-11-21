@@ -5,7 +5,7 @@
 // (avvio istantaneo, anche senza connessione). Quando si pubblica una nuova versione, il nuovo service worker
 // scarica i file aggiornati in sottofondo e aspetta che l'utente tocchi «Aggiorna».
 
-const VERSION = '398d7df003';
+const VERSION = 'f41b480680';
 const FILES = [
   "./",
   "css/style.css",
@@ -66,6 +66,7 @@ const FILES = [
   "js/experiments/spring.js",
   "js/experiments/string.js",
   "js/experiments/threebody.js",
+  "js/experiments/uniform.js",
   "js/main.js",
   "manifest.webmanifest",
   "vendor/katex/contrib/auto-render.min.js",

@@ -3,6 +3,7 @@ import { ball, palette } from '../core/shapes.js';
 import { tex, texBox } from '../core/manim.js';
 import { uq, un, ut, uf, utn } from '../core/units.js';
 import { Stage, angleMark, rate01, C, symVal, degTeX } from '../core/annot.js';
+import { penTrace } from '../core/osc.js';
 
 const stage = new Stage();   // regia: frecce che crescono, passaggio morbido tra i punti di vista, corpi che nascono
 
@@ -38,6 +39,21 @@ function stateAt(p, m, t) {
     vpxt = m.vpx - p.A * t; vpyt = m.vpy - p.g * t;
   }
   return { X, VX, xp, yp, vpx: vpxt, vpy: vpyt, x: xp + X, y: yp, vx: vpxt + VX, vy: vpyt };
+}
+
+// Riquadro della scena, senza lo spazio dei grafici sulla scena.
+function sceneBox(p) {
+  const m = model(p), e = stateAt(p, m, m.tEnd);
+  // Con «Da S′» tutto è disegnato spostato di −X: S′ resta fermo, la scia vista da S parte da −X.
+  const sp = p.view === 'Sp';
+  const xs = sp ? [0, e.xp, -e.X] : [0, e.x, e.X];
+  if (p.scene === 'river') {
+    const pad = p.L * 0.2;
+    return { xmin: Math.min(...xs) - pad, xmax: Math.max(...xs) + pad, ymin: -p.L * 0.18, ymax: p.L * 1.18 };
+  }
+  xs.push(-CAR, CAR, CAR + (sp ? 0 : e.X));
+  const top = Y_HAND + (m.vpy > 0 ? m.vpy * m.vpy / (2 * p.g) : 0);
+  return { xmin: Math.min(...xs) - 2, xmax: Math.max(...xs) + 2, ymin: -1.5, ymax: Math.max(top, 3) + 1.5 };
 }
 
 /* ---------------- Ambientazioni essenziali ---------------- */
@@ -167,6 +183,7 @@ export default {
   id: 'relative',
   title: 'Moti relativi',
   subtitle: 'Due sistemi di riferimento e la composizione delle velocità',
+  gridLabels: p => (p.showTrace ? 'x' : true),   // sotto la scena l'asse verticale del grafico x(t) è il tempo
 
   params: [
     { key: 'scene', type: 'select', label: 'Situazione', value: 'river',
@@ -181,6 +198,7 @@ export default {
     { key: 'tMax', label: 'Durata se non attraversa', unit: 's', min: 5, max: 300, step: 5, value: 30 },
     { key: 'g', label: 'Gravità g (treno)', unit: 'm/s²', min: 1, max: 25, step: 0.01, value: 9.81 },
     { key: 'showTri', type: 'toggle', label: 'Triangolo delle velocità', value: true, live: true },
+    { key: 'showTrace', type: 'toggle', label: 'Grafici x(t) e y(t) sulla scena', value: false, live: true, refit: true },
   ],
 
   presets: [
@@ -192,22 +210,16 @@ export default {
   ],
 
   view(p) {
-    const m = model(p), e = stateAt(p, m, m.tEnd);
-    // Con «Da S′» tutto è disegnato spostato di −X: S′ resta fermo, la scia vista da S parte da −X.
-    const sp = p.view === 'Sp';
-    const xs = sp ? [0, e.xp, -e.X] : [0, e.x, e.X];
-    if (p.scene === 'river') {
-      const pad = p.L * 0.2;
-      return { xmin: Math.min(...xs) - pad, xmax: Math.max(...xs) + pad, ymin: -p.L * 0.18, ymax: p.L * 1.18 };
-    }
-    xs.push(-CAR, CAR, CAR + (sp ? 0 : e.X));
-    const top = Y_HAND + (m.vpy > 0 ? m.vpy * m.vpy / (2 * p.g) : 0);
-    return { xmin: Math.min(...xs) - 2, xmax: Math.max(...xs) + 2, ymin: -1.5, ymax: Math.max(top, 3) + 1.5 };
+    // Con i grafici accesi: sotto la scena x(t) (il tempo scende), a destra y(t) (il tempo va a destra).
+    const b = sceneBox(p);
+    if (!p.showTrace) return b;
+    const w = b.xmax - b.xmin, h = b.ymax - b.ymin;
+    return { xmin: b.xmin, xmax: b.xmax + 0.6 * w, ymin: b.ymin - Math.max(1.2 * h, 0.45 * w), ymax: b.ymax };
   },
 
   init(p) {
     const m = model(p), c = stateAt(p, m, 0);
-    return { t: 0, tEnd: m.tEnd, ...c, trailS: [[c.x, c.y]], trailP: [[c.xp, c.yp]] };
+    return { t: 0, tEnd: m.tEnd, ...c, trailS: [[c.x, c.y]], trailP: [[c.xp, c.yp]], trX: [[0, c.x]], trXp: [[0, c.xp]], trY: [[0, c.y]] };
   },
 
   step(s, dt, p) {
@@ -220,6 +232,7 @@ export default {
       s.trailS.push([s.x, s.y]);
       s.trailP.push([s.xp, s.yp]);
     }
+    s.trX.push([s.t, s.x]); s.trXp.push([s.t, s.xp]); s.trY.push([s.t, s.y]);   // campioni dei grafici sulla scena
   },
 
   done: s => s.t >= s.tEnd,
@@ -296,6 +309,21 @@ export default {
     const showS = p.view !== 'Sp', showP = p.view !== 'S';
     P.line(tS, { color: 'vel', width: showS ? 2.5 : 1.5, alpha: showS ? 0.75 : 0.45, dash: showS ? null : [5, 5] });
     P.line(tP, { color: 'applied', width: showP ? 2.5 : 1.5, alpha: showP ? 0.75 : 0.45, dash: showP ? null : [5, 5] });
+
+    // Grafici sulla scena. x(t) sotto, con il pennino sotto il corpo e il tempo che scende: da S la posizione x (asse
+    // per l'origine di S), da S′ la posizione x′ (asse per l'origine di S′, che si muove con lui).
+    if (p.showTrace) {
+      const inSp = p.view === 'Sp', [, gy] = P.S(0, river ? 0 : -0.6), pad = P.cam.padFn?.() ?? { bottom: 20 };
+      const top = gy + (river ? 44 : 34), end = P.cam.h - pad.bottom - 30;   // sopra i numeri dell'asse x
+      const g = S.grow('trace:' + (inSp ? 'Sp' : 'S'), 0.9), [, gl] = P.S(0, 0);
+      penTrace(P, inSp ? s.trXp : s.trX, s.t, { top, end, pxs: Math.max(4, (end - top - 24) / Math.max(s.tEnd, 0.2)),
+        color: inSp ? M.vec.applied : M.vec.vel, grow: g, nowX: inSp ? s.xp : s.x, shift: inSp ? s.X - off : -off,
+        label: inSp ? "x'(t)" : 'x(t)', link: gl + 3 });
+      // y(t) a destra della scena, con il pennino alla quota del corpo (y = y′: è uguale nei due sistemi).
+      const [left] = P.S(sceneBox(p).xmax, 0), endY = P.cam.w - (pad.right ?? 20) - 8, [bxS] = P.S(s.x - off, 0);
+      penTrace(P, s.trY, s.t, { axis: 'y', top: left, end: endY, pxs: Math.max(4, (endY - left - 24) / Math.max(s.tEnd, 0.2)),
+        color: M.vec.weight, grow: g, nowX: s.y, link: bxS + 14 });
+    }
 
     // Corpo sotto i vettori: la barca con la prua orientata come v′ (dove punta), non come v.
     const [bx, by] = inS([s.x, s.y]);

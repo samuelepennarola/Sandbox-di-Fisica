@@ -27,7 +27,9 @@ const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
 const cam = new Camera();
 // Margini dell'inquadratura: barra in alto, ispettore a destra (se occupa spazio), moviola in basso.
-cam.padFn = () => ({ top: 76, right: 24 + (insp?.reserved ?? 0), bottom: document.body.classList.contains('no-sim') ? (document.body.classList.contains('has-quick') ? 96 : 24) : document.body.classList.contains('has-quick') ? 124 : 72, left: 24 + (document.body.classList.contains('has-rail') && !document.body.classList.contains('lesson') ? 76 : 0) });
+// La barra degli interruttori può andare a capo (schermi stretti, molti interruttori): conta la sua altezza vera.
+const quickExtra = () => Math.max(0, (document.getElementById('quickbar')?.offsetHeight ?? 40) - 40);
+cam.padFn = () => ({ top: 76, right: 24 + (insp?.reserved ?? 0), bottom: (document.body.classList.contains('has-quick') ? quickExtra() : 0) + (document.body.classList.contains('no-sim') ? (document.body.classList.contains('has-quick') ? 96 : 24) : document.body.classList.contains('has-quick') ? 124 : 72), left: 24 + (document.body.classList.contains('has-rail') && !document.body.classList.contains('lesson') ? 76 : 0) });
 const ink = new Ink();
 const lasso = new Lasso(ink);
 let colors = readColors();
@@ -734,7 +736,12 @@ const pressureOf = e => (e.pointerType === 'pen' ? (e.pressure > 0 ? e.pressure 
 function render() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (app.exp.drawBackground) app.exp.drawBackground(ctx, cam, colors);
-  else drawGrid(ctx, cam, colors, !app.exp.axes);
+  else {
+    // gridLabels (facoltativo, anche funzione dei parametri): 'x' numera solo l'asse x, per esempio quando sotto
+    // il suolo scorre un grafico x(t) e l'asse verticale è il tempo.
+    const gl = app.exp.gridLabels, lab = typeof gl === 'function' ? gl(app.params) : gl;
+    drawGrid(ctx, cam, colors, lab ?? !app.exp.axes);
+  }
   const P = new Painter(ctx, cam, colors);
   app.exp.draw(P, viewSim(), app.params, { active: app.activeHandle, api, size: sizeOf, sel: app.sizeSel });
   const sel = selectedResizable();
