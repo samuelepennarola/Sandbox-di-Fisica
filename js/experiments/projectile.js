@@ -4,7 +4,7 @@ import { trail } from '../core/look.js';
 import { tex, texBox } from '../core/manim.js';
 import { uq, un, ut, uf, utn } from '../core/units.js';
 import { Stage, createPts, brace, angleMark, dropLines, rate01, C, arrowPx, arrowMag, symVal, degTeX } from '../core/annot.js';
-import { penTrace } from '../core/osc.js';
+import { chartBelow, chartRight } from '../core/osc.js';
 
 const stage = new Stage();   // regia: frecce che crescono, parabola che si disegna, graffe, corpi che nascono
 const num = (v, d = 1) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(d).replace('.', ',');
@@ -195,16 +195,16 @@ export default {
       }
     }
 
-    // Grafici x(t) e y(t) sulla scena: x(t) sotto il suolo (il pennino sotto il corpo, il tempo scende), y(t) a
-    // destra della scena (il pennino alla quota del corpo, il tempo va a destra). Tutto il volo sta nella carta.
+    // Grafici x(t) e y(t) sulla scena, classici (t verso destra): x(t) sotto il suolo, y(t) a destra della scena
+    // alla quota del corpo. Tutto il volo sta nella carta.
     if (p.showTrace) {
       const fr = s.t === 0, [px, py] = fr ? [0, h0] : [s.x, s.y], tNow = fr ? 0 : s.t, tv = Math.max(id.tv, 0.2);
-      const pad = P.cam.padFn?.() ?? { right: 20, bottom: 20 }, [, gy] = P.S(0, 0), [bx] = P.S(px, py);
+      const [, gy] = P.S(0, 0), [bx] = P.S(px, py);
       const g = S.grow('trace', 0.9);
-      const topX = gy + 74, endX = P.cam.h - pad.bottom - 30;   // sotto la graffa di R, sopra i numeri dell'asse x
-      penTrace(P, fr ? [] : s.tx, tNow, { top: topX, end: endX, pxs: Math.max(4, (endX - topX - 24) / tv), color: M.vec.vel, grow: g, nowX: px, link: gy + 3, forward: true });
-      const [left] = P.S(sceneRight(q), 0), endY = P.cam.w - pad.right - 8;
-      penTrace(P, fr ? [] : s.ty, tNow, { axis: 'y', top: left, pxs: Math.max(4, (endY - left - 24) / tv), color: M.vec.weight, grow: g, nowX: py, link: bx + 14, forward: true });
+      // x(t) sotto la graffa di R; y(t) a destra, alla stessa scala verticale della scena.
+      chartBelow(P, fr ? [] : s.tx, tNow, { top: gy + 60, vmin: 0, vmax: Math.max(id.R, 1), tSpan: tv, color: M.vec.vel, grow: g, nowV: px });
+      const [left] = P.S(sceneRight(q), 0), [, byS] = P.S(px, py);
+      chartRight(P, fr ? [] : s.ty, tNow, { left, vmin: 0, vmax: Math.max(id.hmax, h0, 1), tSpan: tv, color: M.vec.weight, grow: g, nowV: py, link: [bx + 14, byS] });
     }
 
     // Scia e posizioni stroboscopiche (puntini).

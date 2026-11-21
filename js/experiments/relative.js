@@ -3,7 +3,7 @@ import { ball, palette } from '../core/shapes.js';
 import { tex, texBox } from '../core/manim.js';
 import { uq, un, ut, uf, utn } from '../core/units.js';
 import { Stage, angleMark, rate01, C, symVal, degTeX } from '../core/annot.js';
-import { penTrace } from '../core/osc.js';
+import { chartBelow, chartRight } from '../core/osc.js';
 
 const stage = new Stage();   // regia: frecce che crescono, passaggio morbido tra i punti di vista, corpi che nascono
 
@@ -39,6 +39,17 @@ function stateAt(p, m, t) {
     vpxt = m.vpx - p.A * t; vpyt = m.vpy - p.g * t;
   }
   return { X, VX, xp, yp, vpx: vpxt, vpy: vpyt, x: xp + X, y: yp, vx: vpxt + VX, vy: vpyt };
+}
+
+// Intervalli di x (in S), x′ (in S′) e y lungo tutta la corsa, origine compresa: le scale dei grafici sulla scena.
+function ranges(p) {
+  const m = model(p), r = { x0: 0, x1: 0, xp0: 0, xp1: 0, y0: 0, y1: 0 };
+  for (let i = 0; i <= 60; i++) {
+    const e = stateAt(p, m, m.tEnd * i / 60);
+    r.x0 = Math.min(r.x0, e.x); r.x1 = Math.max(r.x1, e.x); r.xp0 = Math.min(r.xp0, e.xp); r.xp1 = Math.max(r.xp1, e.xp);
+    r.y0 = Math.min(r.y0, e.y); r.y1 = Math.max(r.y1, e.y);
+  }
+  return r;
 }
 
 // Riquadro della scena, senza lo spazio dei grafici sulla scena.
@@ -310,19 +321,15 @@ export default {
     P.line(tS, { color: 'vel', width: showS ? 2.5 : 1.5, alpha: showS ? 0.75 : 0.45, dash: showS ? null : [5, 5] });
     P.line(tP, { color: 'applied', width: showP ? 2.5 : 1.5, alpha: showP ? 0.75 : 0.45, dash: showP ? null : [5, 5] });
 
-    // Grafici sulla scena. x(t) sotto, con il pennino sotto il corpo e il tempo che scende: da S la posizione x (asse
-    // per l'origine di S), da S′ la posizione x′ (asse per l'origine di S′, che si muove con lui).
+    // Grafici sulla scena, classici (t verso destra). Sotto la scena x(t): da S la posizione x, da S′ la posizione x′.
+    // A destra y(t), alla quota del corpo (y = y′: è uguale nei due sistemi).
     if (p.showTrace) {
-      const inSp = p.view === 'Sp', [, gy] = P.S(0, river ? 0 : -0.6), pad = P.cam.padFn?.() ?? { bottom: 20 };
-      const top = gy + (river ? 44 : 34), end = P.cam.h - pad.bottom - 30;   // sopra i numeri dell'asse x
-      const g = S.grow('trace:' + (inSp ? 'Sp' : 'S'), 0.9), [, gl] = P.S(0, 0);
-      penTrace(P, inSp ? s.trXp : s.trX, s.t, { top, end, pxs: Math.max(4, (end - top - 24) / Math.max(s.tEnd, 0.2)),
-        color: inSp ? M.vec.applied : M.vec.vel, grow: g, nowX: inSp ? s.xp : s.x, shift: inSp ? s.X - off : -off,
-        label: inSp ? "x'(t)" : 'x(t)', link: gl + 3, forward: true });
-      // y(t) a destra della scena, con il pennino alla quota del corpo (y = y′: è uguale nei due sistemi).
-      const [left] = P.S(sceneBox(p).xmax, 0), endY = P.cam.w - (pad.right ?? 20) - 8, [bxS] = P.S(s.x - off, 0);
-      penTrace(P, s.trY, s.t, { axis: 'y', top: left, end: endY, pxs: Math.max(4, (endY - left - 24) / Math.max(s.tEnd, 0.2)),
-        color: M.vec.weight, grow: g, nowX: s.y, link: bxS + 14, forward: true });
+      const inSp = p.view === 'Sp', [, gy] = P.S(0, river ? 0 : -0.6), r = ranges(p);
+      const g = S.grow('trace:' + (inSp ? 'Sp' : 'S'), 0.9), tSpan = Math.max(s.tEnd, 0.2);
+      chartBelow(P, inSp ? s.trXp : s.trX, s.t, { top: gy + (river ? 36 : 26), vmin: inSp ? r.xp0 : r.x0, vmax: inSp ? r.xp1 : r.x1, tSpan,
+        color: inSp ? M.vec.applied : M.vec.vel, grow: g, nowV: inSp ? s.xp : s.x, name: inSp ? "x'" : 'x' });
+      const [left] = P.S(sceneBox(p).xmax, 0), [bxS, byS] = P.S(s.x - off, s.y);
+      chartRight(P, s.trY, s.t, { left, vmin: r.y0, vmax: r.y1, tSpan, color: M.vec.weight, grow: g, nowV: s.y, link: [bxS + 14, byS] });
     }
 
     // Corpo sotto i vettori: la barca con la prua orientata come v′ (dove punta), non come v.

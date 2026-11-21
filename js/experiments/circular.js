@@ -3,7 +3,7 @@ import { ball, palette } from '../core/shapes.js';
 import { tex, texBox } from '../core/manim.js';
 import { uq, un, ut, uf, utn } from '../core/units.js';
 import { Stage, brace, angleMark, rate01, C, symVal, degTeX } from '../core/annot.js';
-import { penTrace } from '../core/osc.js';
+import { chartBelow, chartRight } from '../core/osc.js';
 
 const stage = new Stage();   // regia: frecce che crescono, ambientazione che nasce dal centro, graffa del raggio
 const num = (v, d = 2) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(d).replace('.', ',');
@@ -134,16 +134,14 @@ function arrowTo(P, x, y, dx, dy, cap, opts) {
   return [x + dx * f, y + dy * f];
 }
 
-// Seno e coseno tracciati dal vivo, alla 3Blue1Brown, con lo stesso pennino della traccia x(t) del moto armonico
-// (penTrace, nel verso consueto): a destra della circonferenza y = R sin θ con il tempo verso destra (il pennino
-// avanza alla stessa altezza del punto), sotto x = R cos θ con il tempo che scende (il pennino avanza sotto il punto).
-// Finita la carta, questa scorre e il pennino resta in fondo. Stessa scala della circonferenza: le altezze corrispondono.
+// Seno e coseno tracciati dal vivo, come grafici classici (t verso destra): a destra della circonferenza
+// y(t) = R sin θ, alla stessa scala e alla stessa altezza del punto; sotto x(t) = R cos θ. Finita la carta (circa un
+// giro e mezzo), questa scorre e il pennino resta in fondo.
 function sineCosine(P, S, q, k, t, x, y, M) {
   const R = q.R, g = S.grow('sincos', 0.9);
   if (g <= 0.01) return;
   // Finestra di tempo: circa un giro e mezzo alla velocità attuale (o 4 s se il corpo è fermo).
   const w = Math.abs(at(q, k, t).w), win = w > 1e-6 ? Math.min(30, 1.5 * TWO_PI / w) : 4;
-  const pxs = GW * R * P.cam.scale / win;
   const n = 220, xs = [], ys = [];
   for (let i = n; i >= 0; i--) {
     const tt = t - win * i / n;
@@ -151,16 +149,16 @@ function sineCosine(P, S, q, k, t, x, y, M) {
     const th = at(q, k, tt).th;
     xs.push([tt, R * Math.cos(th)]); ys.push([tt, R * Math.sin(th)]);
   }
-  const [bx, by] = P.S(x, y), [left] = P.S(GX * R, 0), [right] = P.S((GX + GW) * R, 0);
-  const [, top] = P.S(0, -GX * R), [, bottom] = P.S(0, -(GX + GW) * R);
-  penTrace(P, ys, t, { axis: 'y', top: left, end: right, pxs, color: M.vec.weight, grow: g, nowX: y, link: bx, label: 'R\\sin\\theta', forward: true });
-  penTrace(P, xs, t, { top, end: bottom, pxs, color: M.vec.vel, grow: g, nowX: x, link: by, label: 'R\\cos\\theta', forward: true });
+  const [bx, by] = P.S(x, y), [left] = P.S(1.35 * R, 0), [, top] = P.S(0, -1.3 * R);
+  chartRight(P, ys, t, { left, vmin: -R, vmax: R, tSpan: win, color: M.vec.weight, grow: g, nowV: y, link: [bx + 10, by] });
+  chartBelow(P, xs, t, { top: top + 16, vmin: -R, vmax: R, tSpan: win, color: M.vec.vel, grow: g, nowV: x });
 }
 
 export default {
   id: 'circular',
   title: 'Moto circolare',
   subtitle: 'Uniforme e uniformemente accelerato',
+  gridLabels: p => (p.showProj ? 'x' : true),   // con i grafici accesi i numeri dell'asse y della griglia si confonderebbero con i loro
 
   params: [
     { key: 'scene', type: 'select', label: 'Ambientazione', value: 'carousel', live: true,

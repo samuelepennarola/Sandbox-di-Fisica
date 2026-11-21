@@ -5,6 +5,8 @@
 //   coilSpring: molla a spire con un numero fisso di spire (si stringe e si allunga davvero).
 import { palette, tex } from './manim.js';
 import { rate } from './anim.js';
+import { niceStep, decimalsOf, tn } from './math.js';
+import { unitView } from './units.js';
 
 const free = cam => cam.padFn?.() ?? { top: 70, right: 20, bottom: 20, left: 20 };
 
@@ -92,6 +94,93 @@ export function penTrace(P, pts, tNow, { axis = 'x', top, end = null, pxs, color
     ctx.restore();
     if (label) tex(P, ...(hor ? [top + 26, o - reach - 20] : [o - reach - 32, top + 14]), label, { size: 17, color: col, halo: M.bg, alpha: la });
   }
+}
+
+// Grafico classico tracciato dal vivo, come sul libro: t in orizzontale verso destra, il valore in verticale verso
+// l'alto, assi con le frecce, i nomi e le tacche numerate. Il pennino (pallino) avanza con il tempo; se la corsa
+// supera tSpan, la carta scorre e il pennino resta in fondo.
+//   left, right: estremi schermo dell'asse dei tempi; vy: valore (m) → y schermo; vmin, vmax: valori rappresentati;
+//   nowV: valore attuale (il pennino); link: [x, y] schermo da cui parte il richiamo tratteggiato verso il pennino.
+export function chartTrace(P, pts, tNow, { left, right, vy, vmin, vmax, tSpan, color, grow = 1, name = 'x', unit = 'm', nowV = null, link = null, alpha = 1 } = {}) {
+  const M = P.M ?? palette(P.c), ctx = P.ctx, W = right - left;
+  if (W < 80 || grow <= 0.01 || !(tSpan > 0)) return;
+  if (!(vmax - vmin > 1e-9)) { vmin -= 1; vmax += 1; }
+  const col = color ?? M.vec.vel, pxs = W / tSpan, t0w = Math.max(0, tNow - tSpan), tx = t => left + (t - t0w) * pxs;
+  const yTop = vy(vmax), yBot = vy(vmin), y0 = vy(Math.min(vmax, Math.max(vmin, 0)));
+  const g = rate.smooth(Math.min(1, grow / 0.7)), la = alpha * rate.smooth(Math.min(1, Math.max(0, (grow - 0.6) / 0.4)));
+  // Assi: si disegnano (Create), con le frecce in punta.
+  const tEnd = left + (W + 16) * g, vEnd = yBot + 6 - (yBot - yTop + 22) * g;
+  ctx.save();
+  ctx.globalAlpha = 0.85 * alpha; ctx.strokeStyle = M.muted; ctx.fillStyle = M.muted; ctx.lineWidth = 1.3; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(left, y0); ctx.lineTo(tEnd, y0); ctx.moveTo(left, yBot + 6); ctx.lineTo(left, vEnd); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(tEnd + 2, y0); ctx.lineTo(tEnd - 7, y0 - 4.5); ctx.lineTo(tEnd - 7, y0 + 4.5); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(left, vEnd - 2); ctx.lineTo(left - 4.5, vEnd + 7); ctx.lineTo(left + 4.5, vEnd + 7); ctx.closePath(); ctx.fill();
+  // Tacche numerate: secondi sull'asse t, metri (o l'unità scelta) sull'asse del valore.
+  // Passi tondi, ma mai così fitti che i numeri si tocchino.
+  const U = unitView(unit);
+  let ts = niceStep(tSpan / 5), vs = niceStep((vmax - vmin) * U.f / 4) / U.f;
+  while (ts * pxs < 44) ts = niceStep(ts * 1.01);
+  while (Math.abs(vy(vs) - vy(0)) < 22) vs = niceStep(vs * U.f * 1.01) / U.f;
+  const td = decimalsOf(ts), vd = decimalsOf(vs * U.f);
+  ctx.globalAlpha = 0.7 * alpha; ctx.lineWidth = 1; ctx.beginPath();
+  const tTicks = [], vTicks = [];
+  for (let k = Math.ceil(t0w / ts - 1e-9) * ts; k <= t0w + tSpan + 1e-9; k += ts) { const x = tx(k); if (x > left + 2) { ctx.moveTo(x, y0 - 4); ctx.lineTo(x, y0 + 4); tTicks.push([x, k]); } }
+  for (let v = Math.ceil(vmin / vs - 1e-9) * vs; v <= vmax + 1e-9; v += vs) { const y = vy(v); ctx.moveTo(left - 4, y); ctx.lineTo(left + 4, y); vTicks.push([y, v]); }
+  ctx.stroke();
+  ctx.restore();
+  if (la > 0.01) {
+    const o = { size: 13, color: M.muted, halo: M.bg, alpha: 0.9 * la };
+    // I numeri dell'asse t sotto l'asse (sopra, se l'asse è in fondo al grafico e sotto c'è poco spazio non serve).
+    for (const [x, k] of tTicks) tex(P, x, y0 + 15, tn(k, td), o);
+    for (const [y, v] of vTicks) if (Math.abs(y - y0) > 6 || Math.abs(v) > 1e-9) tex(P, left - 9, y + 4.5, tn(v * U.f, vd), { ...o, align: 'right' });
+    if (t0w === 0 && vmin <= 0 && vmax >= 0) tex(P, left - 8, y0 + 15, '0', { ...o, align: 'right' });   // l'origine, una volta sola
+    tex(P, left + 10, vEnd - 2, `${name}\\ (\\mathrm{${U.name}})`, { size: 16, color: col, halo: M.bg, align: 'left', alpha: la });
+    tex(P, tEnd + 12, y0 - 12, 't\\ (\\mathrm{s})', { size: 16, color: M.muted, halo: M.bg, align: 'left', alpha: la });
+  }
+  // La curva, dall'inizio della finestra fino all'adesso.
+  const vis = [];
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const [t, v] = pts[i];
+    if (t > tNow + 1e-9) continue;
+    if (t < t0w) {
+      const nx = vis[vis.length - 1];
+      if (nx) { const u = (t0w - t) / (nx[0] - t || 1); vis.push([t0w, v + (nx[1] - v) * u]); }
+      break;
+    }
+    vis.push([t, v]);
+  }
+  vis.reverse();
+  if (nowV != null) vis.push([tNow, nowV]);
+  ctx.save();
+  ctx.globalAlpha = alpha * g; ctx.strokeStyle = col; ctx.lineWidth = 2.6; ctx.lineJoin = ctx.lineCap = 'round';
+  ctx.beginPath();
+  vis.forEach(([t, v], i) => (i ? ctx.lineTo(tx(t), vy(v)) : ctx.moveTo(tx(t), vy(v))));
+  ctx.stroke();
+  if (vis.length) {
+    const [t, v] = vis[vis.length - 1], px = tx(t), py = vy(v);
+    if (link) {
+      ctx.globalAlpha = 0.35 * alpha * g; ctx.setLineDash([2, 4]); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(link[0], link[1]); ctx.lineTo(px, py); ctx.stroke(); ctx.setLineDash([]);
+    }
+    ctx.globalAlpha = alpha * g; ctx.fillStyle = col; ctx.beginPath(); ctx.arc(px, py, 4, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// Grafico x(t) classico sotto la scena: occupa la fascia da `top` (y schermo) al fondo, alto al più 250 px.
+export function chartBelow(P, pts, tNow, { top, vmin, vmax, ...o }) {
+  const pad = free(P.cam), left = pad.left + 58, right = P.cam.w - pad.right - 64;
+  const bottom = P.cam.h - pad.bottom - 48, y1 = top + 26, H = Math.min(250, bottom - y1);
+  if (H < 50) return;
+  if (!(vmax - vmin > 1e-9)) { vmin -= 1; vmax += 1; }
+  const vy = v => y1 + H - (v - vmin) / (vmax - vmin) * H;
+  chartTrace(P, pts, tNow, { left, right, vy, vmin, vmax, ...o });
+}
+
+// Grafico y(t) classico a destra della scena, allineato in altezza con il corpo (stessa scala verticale della scena).
+export function chartRight(P, pts, tNow, { left, ...o }) {
+  const pad = free(P.cam);
+  chartTrace(P, pts, tNow, { left: left + 44, right: P.cam.w - pad.right - 64, vy: v => P.S(0, v)[1], name: 'y', ...o });
 }
 
 // Fasore: circonferenza di centro (cx, cy) e raggio R (mondo), vettore fino alla punta (tx, ty), proiezione

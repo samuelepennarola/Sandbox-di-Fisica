@@ -3,7 +3,7 @@ import { crate } from '../core/shapes.js';
 import { tex, texBox } from '../core/manim.js';
 import { uq, un, ut, uf, utn } from '../core/units.js';
 import { Stage, brace, angleMark, rate01, C as Ccol, symVal, degTeX } from '../core/annot.js';
-import { penTrace } from '../core/osc.js';
+import { chartBelow, chartRight } from '../core/osc.js';
 
 const stage = new Stage();   // regia: frecce che crescono, graffe, piano che si trasforma, cassa che nasce
 const num = (v, d = 1) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(d).replace('.', ',');
@@ -245,19 +245,16 @@ const INCLINE = {
       tag(P, S, 'a', ta, eA, '\\vec a', M.vec.acc);
     }
 
-    // Grafici sulla scena. x(t) sotto il suolo: la posizione orizzontale del blocco, con il pennino sotto di lui e il tempo che
-    // scende (asse per x = 0, la cima del piano). Tutta la corsa prevista sta nella carta.
+    // Grafici sulla scena, classici (t verso destra): sotto il suolo x(t), la posizione orizzontale del blocco (x = 0
+    // in cima al piano); a destra y(t), la sua quota, alla stessa scala verticale della scena. Tutta la corsa prevista
+    // sta nella carta.
     if (p.showTrace) {
-      const [, gy] = P.S(0, 0), pad = P.cam.padFn?.() ?? { bottom: 20 };
-      const top = gy + 40, end = P.cam.h - pad.bottom - 30;   // sopra i numeri dell'asse x
-      const xNow = T[0] + d[0] * sPos, fresh = st.t === 0;
-      const tR = runTime(p), gr = S.grow('trace', 0.9);
-      penTrace(P, fresh || !st.tr ? [] : st.tr, fresh ? 0 : st.t, { top, end, pxs: Math.max(4, (end - top - 24) / tR),
-        color: M.vec.vel, grow: gr, nowX: xNow, link: gy + 3, forward: true });
-      // y(t) a destra del piano, con il pennino alla quota del blocco.
-      const [left] = P.S(B[0] + 0.8, 0), endY = P.cam.w - (pad.right ?? 20) - 8, [bxS] = P.S(xNow, 0);
-      penTrace(P, fresh || !st.trY ? [] : st.trY, fresh ? 0 : st.t, { axis: 'y', top: left, end: endY, pxs: Math.max(4, (endY - left - 24) / tR),
-        color: M.vec.weight, grow: gr, nowX: T[1] + d[1] * sPos, link: bxS + 14, forward: true });
+      const [, gy] = P.S(0, 0), xNow = T[0] + d[0] * sPos, yNow = T[1] + d[1] * sPos, fresh = st.t === 0;
+      const tR = runTime(p), gr = S.grow('trace', 0.9), tNow = fresh ? 0 : st.t;
+      chartBelow(P, fresh || !st.tr ? [] : st.tr, tNow, { top: gy + 30, vmin: 0, vmax: B[0], tSpan: tR, color: M.vec.vel, grow: gr, nowV: xNow });
+      const [left] = P.S(B[0] + 0.8, 0), [bxS, byS] = P.S(xNow, yNow);
+      chartRight(P, fresh || !st.trY ? [] : st.trY, tNow, { left, vmin: 0, vmax: Math.max(T[1], 0.5), tSpan: tR, color: M.vec.weight, grow: gr,
+        nowV: yNow, link: [bxS + 14, byS] });
     }
 
     P.handle(T[0], T[1], ui.active === 'alpha');

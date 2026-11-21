@@ -2,7 +2,7 @@ import { tn, clamp } from '../core/math.js';
 import { ball } from '../core/shapes.js';
 import { uq, un, uname } from '../core/units.js';
 import { Stage, brace, C, arrowPx, arrowMag, symVal } from '../core/annot.js';
-import { penTrace } from '../core/osc.js';
+import { chartBelow } from '../core/osc.js';
 
 const stage = new Stage();   // regia: freccia v che cresce, graffe che si aprono, traccia x(t) che si scrive
 const RB = 0.5, MINPX = 12;  // raggio del corpo (m) e raggio minimo in px
@@ -120,10 +120,9 @@ export default {
 
     // Grafico x(t) sotto il suolo: il pennino sta sotto il corpo e il tempo scende; tutta la corsa sta nella carta.
     if (p.showTrace) {
-      const [, gy] = P.S(0, 0), top = gy + 40;
-      const pad = P.cam.padFn?.() ?? { bottom: 20 }, bottom = P.cam.h - pad.bottom - 30;   // sopra i numeri dell'asse x
-      const pxs = Math.max(4, (bottom - top - 24) / Math.max(1, p.tMax));
-      penTrace(P, fresh ? [[0, x0]] : s.trace, fresh ? 0 : s.t, { top, end: bottom, pxs, color: M.vec.vel, grow: S.grow('trace', 0.9), nowX: x, link: gy + 3, forward: true });
+      const [, gy] = P.S(0, 0), xe = x0 + v * p.tMax;
+      chartBelow(P, fresh ? [] : s.trace, fresh ? 0 : s.t, { top: gy + 30, vmin: Math.min(0, x0, xe), vmax: Math.max(0, x0, xe),
+        tSpan: p.tMax, color: M.vec.vel, grow: S.grow('trace', 0.9), nowV: x });
     }
 
     if (fresh) P.handle(x0, rW, ui.active === 'x0');
