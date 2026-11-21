@@ -135,9 +135,9 @@ function arrowTo(P, x, y, dx, dy, cap, opts) {
 }
 
 // Seno e coseno tracciati dal vivo, alla 3Blue1Brown, con lo stesso pennino della traccia x(t) del moto armonico
-// (penTrace): a destra della circonferenza y = R sin θ con il tempo che scorre verso destra (l'adesso è sul bordo
-// sinistro, alla stessa altezza del punto), sotto x = R cos θ con il tempo che scende (l'adesso è in alto, sotto il
-// punto). Stessa scala della circonferenza: le altezze corrispondono.
+// (penTrace, nel verso consueto): a destra della circonferenza y = R sin θ con il tempo verso destra (il pennino
+// avanza alla stessa altezza del punto), sotto x = R cos θ con il tempo che scende (il pennino avanza sotto il punto).
+// Finita la carta, questa scorre e il pennino resta in fondo. Stessa scala della circonferenza: le altezze corrispondono.
 function sineCosine(P, S, q, k, t, x, y, M) {
   const R = q.R, g = S.grow('sincos', 0.9);
   if (g <= 0.01) return;
@@ -153,8 +153,8 @@ function sineCosine(P, S, q, k, t, x, y, M) {
   }
   const [bx, by] = P.S(x, y), [left] = P.S(GX * R, 0), [right] = P.S((GX + GW) * R, 0);
   const [, top] = P.S(0, -GX * R), [, bottom] = P.S(0, -(GX + GW) * R);
-  penTrace(P, ys, t, { axis: 'y', top: left, end: right, pxs, color: M.vec.weight, grow: g, nowX: y, link: bx, label: 'R\\sin\\theta' });
-  penTrace(P, xs, t, { top, end: bottom, pxs, color: M.vec.vel, grow: g, nowX: x, link: by, label: 'R\\cos\\theta' });
+  penTrace(P, ys, t, { axis: 'y', top: left, end: right, pxs, color: M.vec.weight, grow: g, nowX: y, link: bx, label: 'R\\sin\\theta', forward: true });
+  penTrace(P, xs, t, { top, end: bottom, pxs, color: M.vec.vel, grow: g, nowX: x, link: by, label: 'R\\cos\\theta', forward: true });
 }
 
 export default {

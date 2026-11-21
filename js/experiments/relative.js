@@ -318,11 +318,11 @@ export default {
       const g = S.grow('trace:' + (inSp ? 'Sp' : 'S'), 0.9), [, gl] = P.S(0, 0);
       penTrace(P, inSp ? s.trXp : s.trX, s.t, { top, end, pxs: Math.max(4, (end - top - 24) / Math.max(s.tEnd, 0.2)),
         color: inSp ? M.vec.applied : M.vec.vel, grow: g, nowX: inSp ? s.xp : s.x, shift: inSp ? s.X - off : -off,
-        label: inSp ? "x'(t)" : 'x(t)', link: gl + 3 });
+        label: inSp ? "x'(t)" : 'x(t)', link: gl + 3, forward: true });
       // y(t) a destra della scena, con il pennino alla quota del corpo (y = y′: è uguale nei due sistemi).
       const [left] = P.S(sceneBox(p).xmax, 0), endY = P.cam.w - (pad.right ?? 20) - 8, [bxS] = P.S(s.x - off, 0);
       penTrace(P, s.trY, s.t, { axis: 'y', top: left, end: endY, pxs: Math.max(4, (endY - left - 24) / Math.max(s.tEnd, 0.2)),
-        color: M.vec.weight, grow: g, nowX: s.y, link: bxS + 14 });
+        color: M.vec.weight, grow: g, nowX: s.y, link: bxS + 14, forward: true });
     }
 
     // Corpo sotto i vettori: la barca con la prua orientata come v′ (dove punta), non come v.

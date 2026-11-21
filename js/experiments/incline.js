@@ -253,11 +253,11 @@ const INCLINE = {
       const xNow = T[0] + d[0] * sPos, fresh = st.t === 0;
       const tR = runTime(p), gr = S.grow('trace', 0.9);
       penTrace(P, fresh || !st.tr ? [] : st.tr, fresh ? 0 : st.t, { top, end, pxs: Math.max(4, (end - top - 24) / tR),
-        color: M.vec.vel, grow: gr, nowX: xNow, link: gy + 3 });
+        color: M.vec.vel, grow: gr, nowX: xNow, link: gy + 3, forward: true });
       // y(t) a destra del piano, con il pennino alla quota del blocco.
       const [left] = P.S(B[0] + 0.8, 0), endY = P.cam.w - (pad.right ?? 20) - 8, [bxS] = P.S(xNow, 0);
       penTrace(P, fresh || !st.trY ? [] : st.trY, fresh ? 0 : st.t, { axis: 'y', top: left, end: endY, pxs: Math.max(4, (endY - left - 24) / tR),
-        color: M.vec.weight, grow: gr, nowX: T[1] + d[1] * sPos, link: bxS + 14 });
+        color: M.vec.weight, grow: gr, nowX: T[1] + d[1] * sPos, link: bxS + 14, forward: true });
     }
 
     P.handle(T[0], T[1], ui.active === 'alpha');

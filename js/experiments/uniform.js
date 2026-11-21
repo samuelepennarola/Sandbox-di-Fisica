@@ -123,7 +123,7 @@ export default {
       const [, gy] = P.S(0, 0), top = gy + 40;
       const pad = P.cam.padFn?.() ?? { bottom: 20 }, bottom = P.cam.h - pad.bottom - 30;   // sopra i numeri dell'asse x
       const pxs = Math.max(4, (bottom - top - 24) / Math.max(1, p.tMax));
-      penTrace(P, fresh ? [[0, x0]] : s.trace, fresh ? 0 : s.t, { top, end: bottom, pxs, color: M.vec.vel, grow: S.grow('trace', 0.9), nowX: x, link: gy + 3 });
+      penTrace(P, fresh ? [[0, x0]] : s.trace, fresh ? 0 : s.t, { top, end: bottom, pxs, color: M.vec.vel, grow: S.grow('trace', 0.9), nowX: x, link: gy + 3, forward: true });
     }
 
     if (fresh) P.handle(x0, rW, ui.active === 'x0');

@@ -202,9 +202,9 @@ export default {
       const pad = P.cam.padFn?.() ?? { right: 20, bottom: 20 }, [, gy] = P.S(0, 0), [bx] = P.S(px, py);
       const g = S.grow('trace', 0.9);
       const topX = gy + 74, endX = P.cam.h - pad.bottom - 30;   // sotto la graffa di R, sopra i numeri dell'asse x
-      penTrace(P, fr ? [] : s.tx, tNow, { top: topX, end: endX, pxs: Math.max(4, (endX - topX - 24) / tv), color: M.vec.vel, grow: g, nowX: px, link: gy + 3 });
+      penTrace(P, fr ? [] : s.tx, tNow, { top: topX, end: endX, pxs: Math.max(4, (endX - topX - 24) / tv), color: M.vec.vel, grow: g, nowX: px, link: gy + 3, forward: true });
       const [left] = P.S(sceneRight(q), 0), endY = P.cam.w - pad.right - 8;
-      penTrace(P, fr ? [] : s.ty, tNow, { axis: 'y', top: left, pxs: Math.max(4, (endY - left - 24) / tv), color: M.vec.weight, grow: g, nowX: py, link: bx + 14 });
+      penTrace(P, fr ? [] : s.ty, tNow, { axis: 'y', top: left, pxs: Math.max(4, (endY - left - 24) / tv), color: M.vec.weight, grow: g, nowX: py, link: bx + 14, forward: true });
     }
 
     // Scia e posizioni stroboscopiche (puntini).
