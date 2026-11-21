@@ -368,16 +368,20 @@ export default {
     const sgn = x => (x < 0 ? '-' : '+');
     // Stessi colori della scena: velocità, centripeta, tangenziale e accelerazione totale.
     const Vv = x => C('vel', x), Ac = C('acc', 'a_c'), At = C('friction', 'a_t');
+    // Argomento di seno e coseno: θ(t) = θ₀ + ω₀ t (+ ½ α t²), in radianti.
+    const th0 = Math.abs(k.th0) > 1e-9 ? tn(k.th0, 3) : '', s0 = th0 ? sgn(k.w0) : k.w0 < 0 ? '-' : '';
+    const thArg = `${th0}${s0}${tn(Math.abs(k.w0), 3)}\\,t` + (uniform ? '' : `${sgn(k.al)}${tn(Math.abs(k.al) / 2, 3)}\\,t^2`);
     return [
       { h: 'Grandezze angolari' },
       { tex: `\\omega_0=\\dfrac{${Vv('v_0')}}{R}=${uq('rad/s', k.w0, 3)}` },
       !uniform && { tex: `\\alpha=\\dfrac{${At}}{R}=${uq('rad/s²', k.al, 3)}` },
       { h: 'Leggi orarie' },
-      { tex: uniform
-        ? `\\theta(t)=${tn(k.th0, 3)}${sgn(k.w0)}${tn(Math.abs(k.w0), 3)}\\,t`
-        : `\\theta(t)=${tn(k.th0, 3)}${sgn(k.w0)}${tn(Math.abs(k.w0), 3)}\\,t${sgn(k.al)}${tn(Math.abs(k.al) / 2, 4)}\\,t^2` },
+      { tex: `\\theta(t)=${thArg}` },
       !uniform && { tex: `\\omega(t)=${tn(k.w0, 3)}${sgn(k.al)}${tn(Math.abs(k.al), 3)}\\,t` },
-      { tex: `x=R\\cos\\theta\\qquad y=R\\sin\\theta` },
+      // Proiezioni sugli assi: x(t) = R cos θ(t), y(t) = R sin θ(t), con la stessa θ(t) di sopra.
+      { key: uniform, tex: `${C('vel', 'x(t)')}=R\\cos\\theta(t)=${un('m', p.R)}\\cos(${thArg})` },
+      { tex: `${C('weight', 'y(t)')}=R\\sin\\theta(t)=${un('m', p.R)}\\sin(${thArg})` },
+      k.tStop != null && { tex: `\\text{valide fino a }t_{\\text{stop}}\\text{: poi }\\theta\\text{ resta costante}` },
       { h: s.stopped ? 'All\'arresto' : 'Istante attuale' },
       { tex: `t=${uq('s', s.t)}\\qquad \\theta=${uq('rad', s.th, 2)}\\ \\ (${tn((s.th - k.th0) / TWO_PI, 2)}\\ \\text{giri})` },
       { key: true, tex: `${Vv('v')}=\\omega R=${uq('m/s', v)}\\qquad \\omega=${uq('rad/s', w, 3)}` },

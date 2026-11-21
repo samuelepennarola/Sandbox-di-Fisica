@@ -170,6 +170,31 @@ export default {
     const X = t => C('vel', t), Fe = C('spring', 'F_{el}');
     const forced = p.F0 > 0, damped = p.b > 0;
     const near = forced && Math.abs(p.ff - f) / f < 0.08;
+    // Legge oraria esatta per il corpo che parte fermo da x₀ (v₀ = 0). γ = b/2m è il tasso di smorzamento.
+    const x0 = un('m', p.x0), g = p.b / (2 * p.m), sg = v => (v < 0 ? '-' : '+');
+    let law;
+    if (!forced && !damped) law = `${X('x(t)')}=x_0\\cos(\\omega t)=${x0}\\cos(${tn(w, 2)}\\,t)`;
+    else if (!forced && g < w * (1 - 1e-6)) {
+      const wd = Math.sqrt(w * w - g * g), r = g / wd;
+      law = [`${X('x(t)')}=x_0\\,e^{-\\gamma t}\\Big(\\cos\\omega_d t+\\dfrac{\\gamma}{\\omega_d}\\sin\\omega_d t\\Big)`,
+        `\\gamma=\\dfrac{b}{2m}=${uq('1/s', g, 3)}\\qquad \\omega_d=\\sqrt{\\omega^2-\\gamma^2}=${uq('rad/s', wd)}`,
+        `${X('x(t)')}=${x0}\\,e^{-${tn(g, 3)}\\,t}\\big(\\cos(${tn(wd, 2)}\\,t)+${tn(r, 3)}\\sin(${tn(wd, 2)}\\,t)\\big)`];
+    } else if (!forced && g <= w * (1 + 1e-6)) {
+      law = [`${X('x(t)')}=x_0\\,(1+\\gamma t)\\,e^{-\\gamma t}\\qquad\\text{(smorzamento critico)}`,
+        `${X('x(t)')}=${x0}\\,(1+${tn(g, 3)}\\,t)\\,e^{-${tn(g, 3)}\\,t}`];
+    } else if (!forced) {
+      const q = Math.sqrt(g * g - w * w), s1 = -g + q, s2 = -g - q;
+      law = [`${X('x(t)')}=x_0\\,\\dfrac{\\lambda_1 e^{\\lambda_2 t}-\\lambda_2 e^{\\lambda_1 t}}{\\lambda_1-\\lambda_2}\\qquad \\lambda_{1,2}=-\\gamma\\pm\\sqrt{\\gamma^2-\\omega^2}`,
+        `\\lambda_1=${uq('1/s', s1, 3)}\\qquad \\lambda_2=${uq('1/s', s2, 3)}\\qquad\\text{(sovrasmorzato: non oscilla)}`];
+    } else {
+      // Oscillazione forzata: dopo il transitorio resta la sola risposta alla frequenza della forzante.
+      const W = TWO_PI * p.ff, AF = (p.F0 / p.m) / Math.hypot(w * w - W * W, 2 * g * W);
+      const d = Math.atan2(2 * g * W, w * w - W * W);
+      law = [`${X('x(t)')}\\to A_F\\cos(\\Omega t-\\delta)\\quad\\text{(a regime)}\\qquad \\Omega=2\\pi f_F`,
+        `A_F=\\dfrac{F_0/m}{\\sqrt{(\\omega^2-\\Omega^2)^2+(2\\gamma\\Omega)^2}}=${isFinite(AF) ? uq('m', AF, 3) : '\\infty'}\\qquad \\delta=${uq('rad', d, 2)}`,
+        `f_F=${uq('Hz', p.ff)}\\qquad f_0=${uq('Hz', f)}`];
+    }
+    law = [law].flat().map((tex, i) => ({ key: i === 0, tex }));
     return [
       { h: 'Legge di Hooke' },
       { tex: `${Fe}=-k\\,x\\qquad a=-\\dfrac{k}{m}\\,x` },
@@ -177,10 +202,8 @@ export default {
       { key: true, tex: `T=2\\pi\\sqrt{\\dfrac{m}{k}}=${uq('s', T)}\\qquad f=\\dfrac1T=${uq('Hz', f)}` },
       { tex: `\\omega=\\sqrt{\\dfrac{k}{m}}=${uq('rad/s', w)}` },
       { h: 'Legge oraria' },
-      !forced && !damped && { key: true, tex: `${X('x(t)')}=A\\cos(\\omega t)=${un('m', p.x0)}\\cos(${tn(w, 2)}\\,t)` },
-      damped && !forced && { key: true, tex: `${X('x(t)')}\\approx A\\,e^{-t/\\tau}\\cos(\\omega t)\\qquad \\tau=\\dfrac{2m}{b}=${uq('s', 2 * p.m / p.b)}` },
-      forced && { key: true, tex: `f_F=${uq('Hz', p.ff)}\\qquad f_0=${uq('Hz', f)}` },
-      { tex: `v_{\\max}=\\omega A\\qquad a_{\\max}=\\omega^2 A` },
+      ...law,
+      !forced && !damped && { tex: `A=|x_0|=${uq('m', Math.abs(p.x0))}\\qquad v_{\\max}=\\omega A\\qquad a_{\\max}=\\omega^2 A` },
       { h: s.hit ? 'Spire a contatto' : 'Istante attuale' },
       { tex: `t=${uq('s', s.t)}\\qquad ${X('x')}=${uq('m', s.x)}\\qquad v=${uq('m/s', s.v)}` },
       { tex: `K=\\tfrac12 m v^2=${uq('J', K)}\\qquad U=\\tfrac12 k x^2=${uq('J', U)}` },
@@ -200,7 +223,7 @@ $$a = -\\frac{k}{m}\\,x = -\\omega^2 x \\qquad \\omega = \\sqrt{\\frac{k}{m}}$$
 
 <h3>Legge oraria</h3>
 $$x(t) = A\\cos(\\omega t + \\varphi) \\qquad v(t) = -\\omega A\\sin(\\omega t + \\varphi) \\qquad a(t) = -\\omega^2 A\\cos(\\omega t + \\varphi)$$
-<p>$A$ è l'<b>ampiezza</b> (lo spostamento massimo) e $\\varphi$ la fase iniziale. Se il corpo parte fermo da $x_0$, allora $A = x_0$ e $\\varphi = 0$.</p>
+<p>$A$ è l'<b>ampiezza</b> (lo spostamento massimo) e $\\varphi$ la fase iniziale. Se il corpo parte fermo da $x_0$, allora $A = |x_0|$ e $\\varphi = 0$ (oppure $\\varphi = \\pi$ se $x_0 &lt; 0$): in ogni caso $x(t) = x_0\\cos(\\omega t)$.</p>
 $$T = 2\\pi\\sqrt{\\frac{m}{k}} \\qquad f = \\frac1T$$
 <div class="box">Il periodo <b>non dipende dall'ampiezza</b>: piccole o grandi, le oscillazioni durano lo stesso tempo (isocronismo).</div>
 
@@ -212,7 +235,7 @@ $$E = \\tfrac12 m v^2 + \\tfrac12 k x^2 = \\tfrac12 k A^2 = \\text{costante}$$
 <p>L'energia passa di continuo dalla forma elastica (massima agli estremi, dove $v = 0$) a quella cinetica (massima in O, dove $x = 0$).</p>
 
 <h3>Smorzamento</h3>
-<p>Con un attrito proporzionale alla velocità, $F = -b\\,v$, l'ampiezza diminuisce nel tempo e l'energia si dissipa. Se lo smorzamento è piccolo il corpo continua a oscillare con quasi lo stesso periodo, dentro un <b>inviluppo</b> che si restringe; se è grande torna in O senza oscillare.</p>
+<p>Con un attrito proporzionale alla velocità, $F = -b\\,v$, l'ampiezza diminuisce nel tempo e l'energia si dissipa. Con $\\gamma = b/2m &lt; \\omega$ e partenza da ferma in $x_0$: $x(t) = x_0\\,e^{-\\gamma t}\\big(\\cos\\omega_d t + \\tfrac{\\gamma}{\\omega_d}\\sin\\omega_d t\\big)$, con $\\omega_d = \\sqrt{\\omega^2 - \\gamma^2}$, un po' minore di $\\omega$. Se lo smorzamento è piccolo il corpo continua a oscillare con quasi lo stesso periodo, dentro un <b>inviluppo</b> che si restringe; se è grande torna in O senza oscillare.</p>
 
 <h3>Oscillazioni forzate e risonanza</h3>
 <p>Se una forza esterna periodica di frequenza $f_F$ spinge il corpo, dopo un transitorio il corpo oscilla alla frequenza $f_F$ della forzante, non alla propria. L'ampiezza è tanto più grande quanto più $f_F$ è vicina alla frequenza propria $f_0$: è la <b>risonanza</b>. Con poco smorzamento l'ampiezza a risonanza può diventare enorme (ponti, bicchieri, altalene spinte al momento giusto).</p>

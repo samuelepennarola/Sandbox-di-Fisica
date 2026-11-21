@@ -8,7 +8,6 @@ import { chartBelow, chartRight } from '../core/osc.js';
 const stage = new Stage();   // regia: frecce che crescono, graffe, piano che si trasforma, cassa che nasce
 const num = (v, d = 1) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(d).replace('.', ',');
 
-const L = 10;            // lunghezza del piano (m)
 const BW = 1.0, BH = 0.6; // dimensioni del blocco (m)
 const KF = 0.08;         // frecce delle forze: metri per newton
 const KV = 0.35;         // frecce di velocità: metri per (m/s)
@@ -41,14 +40,14 @@ function tag(P, S, key, a, b, src, color, { side = null, at = 0.6, alpha = 1, si
 // Geometria: vertice in alto T = (0, L sinα); s misura la distanza lungo il piano da T, positiva verso il basso.
 function geom(p) {
   const a = p.alpha * deg, c = Math.cos(a), sn = Math.sin(a);
-  return { a, c, sn, T: [0, L * sn], B: [L * c, 0], d: [c, -sn], n: [sn, c] };
+  return { a, c, sn, T: [0, p.L * sn], B: [p.L * c, 0], d: [c, -sn], n: [sn, c] };
 }
 
 // Durata prevista della corsa (s), per la scala dei tempi del grafico x(t): una simulazione veloce, rifatta solo
 // quando cambiano i parametri. Se il blocco resta fermo (o non arriva in fondo) bastano pochi secondi.
 let runCache = { key: '', T: 3 };
 function runTime(p) {
-  const key = [p.alpha, p.mus, p.muk, p.v0, p.s0, p.g].join('|');
+  const key = [p.alpha, p.L, p.mus, p.muk, p.v0, p.s0, p.g].join('|');
   if (runCache.key === key) return runCache.T;
   const exp = INCLINE, st = exp.init(p), dt = 0.01;
   let n = 0;
@@ -82,7 +81,8 @@ const INCLINE = {
     { key: 'mus', label: 'Attrito statico μs', unit: '', min: 0, max: 1.2, step: 0.01, value: 0.5 },
     { key: 'muk', label: 'Attrito dinamico μd', unit: '', min: 0, max: 1.2, step: 0.01, value: 0.3 },
     { key: 'v0', label: 'Velocità iniziale v₀ (+ giù)', unit: 'm/s', min: -30, max: 30, step: 0.1, value: 0 },
-    { key: 's0', label: 'Posizione iniziale s₀', unit: 'm', min: BW / 2, max: L - BW / 2, step: 0.1, value: 1.5 },
+    { key: 'L', label: 'Lunghezza del piano L', unit: 'm', min: 2, max: 50, step: 0.5, value: 10, refit: true },
+    { key: 's0', label: 'Posizione iniziale s₀', unit: 'm', min: BW / 2, max: 50 - BW / 2, step: 0.1, value: 1.5 },
     { key: 'g', label: 'Gravità g', unit: 'm/s²', min: 1, max: 25, step: 0.01, value: 9.81 },
     { key: 'showComp', type: 'toggle', label: 'Scomponi il peso', value: true, live: true },
     { key: 'showVel', type: 'toggle', label: 'Vettore velocità', value: true, live: true },
@@ -107,7 +107,9 @@ const INCLINE = {
   },
 
   init(p) {
-    return { t: 0, s: p.s0, v: p.v0, Q: 0, done: false, ...dynamics(p.v0, p, geom(p)), tr: [[0, geom(p).d[0] * p.s0]], trY: [[0, geom(p).T[1] + geom(p).d[1] * p.s0]] };
+    // s₀ resta sul piano anche se il piano si accorcia.
+    const g = geom(p), s0 = clamp(p.s0, BW / 2, p.L - BW / 2);
+    return { t: 0, s: s0, v: p.v0, Q: 0, done: false, ...dynamics(p.v0, p, g), tr: [[0, g.d[0] * s0]], trY: [[0, g.T[1] + g.d[1] * s0]] };
   },
 
   step(st, dt, p) {
@@ -128,7 +130,7 @@ const INCLINE = {
     st.Q += Math.abs(dyn.f * ds) * (dyn.regime === 'dinamico' ? 1 : 0);
     st.t += dt;
     Object.assign(st, dyn);
-    if (st.s >= L - BW / 2) { st.s = L - BW / 2; st.done = true; }
+    if (st.s >= p.L - BW / 2) { st.s = p.L - BW / 2; st.done = true; }
     if (st.s <= BW / 2 && st.v < 0) { st.s = BW / 2; st.done = true; }
     // Campioni dei grafici sulla scena: il punto di contatto del blocco con il piano.
     st.tr?.push([st.t, g.T[0] + g.d[0] * st.s]); st.trY?.push([st.t, g.T[1] + g.d[1] * st.s]);
@@ -138,7 +140,7 @@ const INCLINE = {
 
   sample(s, p) {
     const g = geom(p);
-    const K = 0.5 * p.m * s.v * s.v, U = p.m * p.g * (L - s.s) * g.sn;
+    const K = 0.5 * p.m * s.v * s.v, U = p.m * p.g * (p.L - s.s) * g.sn;
     return { t: s.t, s: s.s, v: s.v, a: s.a, K, U, Q: s.Q, Em: K + U, E: K + U + s.Q };
   },
 
@@ -162,11 +164,11 @@ const INCLINE = {
   },
 
   drag(id, wx, wy, p) {
-    if (id === 'alpha') p.alpha = clamp(Math.round(Math.asin(clamp(wy / L, 0, 1)) / deg), 0, 60);
+    if (id === 'alpha') p.alpha = clamp(Math.round(Math.asin(clamp(wy / p.L, 0, 1)) / deg), 0, 60);
     if (id === 'block') {
       const g = geom(p);
       const s = (wx - g.T[0]) * g.d[0] + (wy - g.T[1]) * g.d[1];
-      p.s0 = clamp(Math.round(s * 10) / 10, BW / 2, L - BW / 2);
+      p.s0 = clamp(Math.round(s * 10) / 10, BW / 2, p.L - BW / 2);
     }
   },
 
@@ -177,8 +179,8 @@ const INCLINE = {
     // Inclinazione e posizione mostrate inseguono quelle vere quando cambiano da ferme (il piano si trasforma);
     // durante la corsa o mentre si trascina seguono subito.
     const live = !!ui.active || !!ui.api?.running;
-    const [alpha] = S.smooth('alpha', [p.alpha], 0.12, live), [sPos] = S.smooth('s', [st.s], 0.12, live);
-    const g = geom({ ...p, alpha }), { T, B, d, n } = g;
+    const [alpha, Lv] = S.smooth('alpha', [p.alpha, p.L], 0.12, live), [sPos] = S.smooth('s', [st.s], 0.12, live);
+    const g = geom({ ...p, alpha, L: Lv }), { T, B, d, n } = g;
     const at = (s, h = 0) => [T[0] + d[0] * s + n[0] * h, T[1] + d[1] * s + n[1] * h];
     const add = (A, v, k) => [A[0] + v[0] * k, A[1] + v[1] * k];
     // Versi sullo schermo (y verso il basso) lungo il piano e verso l'interno del piano.
@@ -194,9 +196,9 @@ const INCLINE = {
     // Quote: l'angolo α alla base e la lunghezza L lungo il piano (dentro il triangolo). La graffa di L si attenua
     // quando il blocco e le sue frecce le passano sopra.
     if (alpha > 0.5) {
-      const gb = S.grow('braces', 0.8), near = Math.abs(sPos - L / 2) < 2.6;
+      const gb = S.grow('braces', 0.8), near = Math.abs(sPos - Lv / 2) < 2.6;
       const dimL = S.smooth('dimL', [near && p.showComp ? 0.2 : 0.55], 0.25)[0];
-      brace(P, T, B, symVal(P, 'L', uq('m', L, 0)), { side: -1, gap: 12, grow: gb, alpha: Math.min(1, dimL * 1.6), color: M.text });
+      brace(P, T, B, symVal(P, 'L', uq('m', Lv, Number.isInteger(p.L) ? 0 : 1)), { side: -1, gap: 12, grow: gb, alpha: Math.min(1, dimL * 1.6), color: M.text });
       angleMark(P, B[0], 0, 46, Math.PI - g.a, Math.PI, symVal(P, '\\alpha', degTeX(g.a)), { color: M.text, grow: S.grow('alpha', 0.7) });
     }
 
@@ -268,7 +270,7 @@ const INCLINE = {
     const Pc = x => Ccol('weight', x), Fc = x => Ccol('friction', x), Nc = Ccol('normal', 'N'), Ac = Ccol('acc', 'a');
     const slides = tan > p.mus;
     const aDown = p.g * (g.sn - p.muk * g.c), aUp = -p.g * (g.sn + p.muk * g.c);
-    const K = 0.5 * p.m * st.v * st.v, U = W * (L - st.s) * g.sn;
+    const K = 0.5 * p.m * st.v * st.v, U = W * (p.L - st.s) * g.sn;
     return [
       { h: 'Scomposizione del peso' },
       { tex: `${Pc('P')}=mg=${uq('N', W)}` },
