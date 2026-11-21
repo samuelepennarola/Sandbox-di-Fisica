@@ -3,7 +3,7 @@ import { ball, palette } from '../core/shapes.js';
 import { tex, texBox } from '../core/manim.js';
 import { uq, un, ut, uf, utn } from '../core/units.js';
 import { Stage, brace, angleMark, rate01, C, symVal, degTeX } from '../core/annot.js';
-import { chartBelow, chartRight } from '../core/osc.js';
+import { chartBelow, chartRight, chartPxs } from '../core/osc.js';
 
 const stage = new Stage();   // regia: frecce che crescono, ambientazione che nasce dal centro, graffa del raggio
 const num = (v, d = 2) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(d).replace('.', ',');
@@ -149,16 +149,18 @@ function sineCosine(P, S, q, k, t, x, y, M) {
     const th = at(q, k, tt).th;
     xs.push([tt, R * Math.cos(th)]); ys.push([tt, R * Math.sin(th)]);
   }
-  const [bx, by] = P.S(x, y), [left] = P.S(1.35 * R, 0), [, top] = P.S(0, -1.3 * R);
-  chartRight(P, ys, t, { left, vmin: -R, vmax: R, tSpan: win, color: M.vec.weight, grow: g, nowV: y, link: [bx + 10, by] });
-  chartBelow(P, xs, t, { top: top + 16, vmin: -R, vmax: R, tSpan: win, color: M.vec.vel, grow: g, nowV: x });
+  // Stesse scale nei due grafici: i metri della scena (seno e coseno alti come la circonferenza) e gli stessi px al secondo.
+  const [bx, by] = P.S(x, y), [left] = P.S(1.35 * R, 0), [, top] = P.S(0, -1.3 * R), pxs = chartPxs(P, win, left, top + 16);
+  chartRight(P, ys, t, { left, vmin: -R, vmax: R, tSpan: win, color: M.vec.weight, grow: g, nowV: y, link: [bx + 10, by], pxs });
+  chartBelow(P, xs, t, { top: top + 16, vmin: -R, vmax: R, tSpan: win, color: M.vec.vel, grow: g, nowV: x, pxs,
+    link: P.S(x, 0)[1] + 6 });   // dal piede della proiezione sull'asse x
 }
 
 export default {
   id: 'circular',
   title: 'Moto circolare',
   subtitle: 'Uniforme e uniformemente accelerato',
-  gridLabels: p => (p.showProj ? 'x' : true),   // con i grafici accesi i numeri dell'asse y della griglia si confonderebbero con i loro
+  gridLabels: p => !p.showProj,   // con il grafico x(t) acceso i numeri li porta il suo asse x, allineato alla scena
 
   params: [
     { key: 'scene', type: 'select', label: 'Ambientazione', value: 'carousel', live: true,

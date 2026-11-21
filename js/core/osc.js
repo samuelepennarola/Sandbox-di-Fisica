@@ -167,20 +167,87 @@ export function chartTrace(P, pts, tNow, { left, right, vy, vmin, vmax, tSpan, c
   ctx.restore();
 }
 
-// Grafico x(t) classico sotto la scena: occupa la fascia da `top` (y schermo) al fondo, alto al più 250 px.
-export function chartBelow(P, pts, tNow, { top, vmin, vmax, ...o }) {
-  const pad = free(P.cam), left = pad.left + 58, right = P.cam.w - pad.right - 64;
-  const bottom = P.cam.h - pad.bottom - 48, y1 = top + 26, H = Math.min(250, bottom - y1);
-  if (H < 50) return;
+// Grafico x(t) sotto la scena, ruotato di 90°: x in orizzontale, alla stessa scala e nella stessa posizione della
+// scena (il pallino sta sempre sotto il corpo), t in verticale verso il basso. Assi con frecce, nomi e tacche
+// numerate, come un grafico classico. top: y schermo dell'asse x (t = 0); shift: metri da aggiungere ai valori per
+// trovarne la posizione sulla scena (disegni traslati, come «Da S′»); pxs: px al secondo (comune con y(t));
+// link: y schermo del piede del corpo, da cui scende il richiamo tratteggiato fino al pallino.
+export function chartBelow(P, pts, tNow, { top, vmin, vmax, tSpan, pxs = null, shift = 0, color, grow = 1, name = 'x', unit = 'm', nowV = null, link = null, alpha = 1 } = {}) {
+  const M = P.M ?? palette(P.c), ctx = P.ctx, pad = free(P.cam), bottom = P.cam.h - pad.bottom - 30;
+  const avail = bottom - top - 28;
+  if (avail < 50 || grow <= 0.01 || !(tSpan > 0)) return;
   if (!(vmax - vmin > 1e-9)) { vmin -= 1; vmax += 1; }
-  const vy = v => y1 + H - (v - vmin) / (vmax - vmin) * H;
-  chartTrace(P, pts, tNow, { left, right, vy, vmin, vmax, ...o });
+  const sp = Math.min(pxs ?? Infinity, avail / tSpan), H = tSpan * sp;
+  const col = color ?? M.vec.vel, t0w = Math.max(0, tNow - tSpan), ty = t => top + (t - t0w) * sp, vx = v => P.S(v + shift, 0)[0];
+  const x0 = vx(Math.min(vmax, Math.max(vmin, 0))), xL = vx(vmin), xR = vx(vmax);
+  const g = rate.smooth(Math.min(1, grow / 0.7)), la = alpha * rate.smooth(Math.min(1, Math.max(0, (grow - 0.6) / 0.4)));
+  // Assi: si disegnano (Create), con le frecce in punta: x verso destra, t verso il basso.
+  const xEnd = xL - 6 + (xR - xL + 24) * g, tEnd = top + (H + 16) * g;
+  ctx.save();
+  ctx.globalAlpha = 0.85 * alpha; ctx.strokeStyle = M.muted; ctx.fillStyle = M.muted; ctx.lineWidth = 1.3; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(xL - 6, top); ctx.lineTo(xEnd, top); ctx.moveTo(x0, top); ctx.lineTo(x0, tEnd); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(xEnd + 2, top); ctx.lineTo(xEnd - 7, top - 4.5); ctx.lineTo(xEnd - 7, top + 4.5); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x0, tEnd + 2); ctx.lineTo(x0 - 4.5, tEnd - 7); ctx.lineTo(x0 + 4.5, tEnd - 7); ctx.closePath(); ctx.fill();
+  // Tacche numerate, mai così fitte che i numeri si tocchino.
+  const U = unitView(unit), sc = P.cam.scale;
+  let ts = niceStep(tSpan / 5), vs = niceStep((vmax - vmin) * U.f / 4) / U.f;
+  while (ts * sp < 34) ts = niceStep(ts * 1.01);
+  while (vs * sc < 44) vs = niceStep(vs * U.f * 1.01) / U.f;
+  const td = decimalsOf(ts), vd = decimalsOf(vs * U.f), tT = [], vT = [];
+  ctx.globalAlpha = 0.7 * alpha; ctx.lineWidth = 1; ctx.beginPath();
+  for (let k = Math.ceil(t0w / ts - 1e-9) * ts; k <= t0w + tSpan + 1e-9; k += ts) { const y = ty(k); if (y > top + 2) { ctx.moveTo(x0 - 4, y); ctx.lineTo(x0 + 4, y); tT.push([y, k]); } }
+  for (let v = Math.ceil(vmin / vs - 1e-9) * vs; v <= vmax + 1e-9; v += vs) { const x = vx(v); ctx.moveTo(x, top - 4); ctx.lineTo(x, top + 4); vT.push([x, v]); }
+  ctx.stroke();
+  ctx.restore();
+  if (la > 0.01) {
+    const o = { size: 13, color: M.muted, halo: M.bg, alpha: 0.9 * la };
+    for (const [y, k] of tT) tex(P, x0 - 9, y + 4.5, tn(k, td), { ...o, align: 'right' });
+    for (const [x, v] of vT) if (Math.abs(x - x0) > 6 || t0w > 0) tex(P, x, top - 9, tn(v * U.f, vd), o);
+    if (t0w === 0 && vmin <= 0 && vmax >= 0) tex(P, x0 - 9, top - 9, '0', { ...o, align: 'right' });   // l'origine, una volta sola
+    tex(P, xEnd + 12, top + 5, `${name}\\ (\\mathrm{${U.name}})`, { size: 16, color: col, halo: M.bg, align: 'left', alpha: la });
+    tex(P, x0 + 12, tEnd - 4, 't\\ (\\mathrm{s})', { size: 16, color: M.muted, halo: M.bg, align: 'left', alpha: la });
+  }
+  // La curva, dall'inizio della finestra fino all'adesso.
+  const vis = [];
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const [t, v] = pts[i];
+    if (t > tNow + 1e-9) continue;
+    if (t < t0w) {
+      const nx = vis[vis.length - 1];
+      if (nx) { const u = (t0w - t) / (nx[0] - t || 1); vis.push([t0w, v + (nx[1] - v) * u]); }
+      break;
+    }
+    vis.push([t, v]);
+  }
+  vis.reverse();
+  if (nowV != null) vis.push([tNow, nowV]);
+  ctx.save();
+  ctx.globalAlpha = alpha * g; ctx.strokeStyle = col; ctx.lineWidth = 2.6; ctx.lineJoin = ctx.lineCap = 'round';
+  ctx.beginPath();
+  vis.forEach(([t, v], i) => (i ? ctx.lineTo(vx(v), ty(t)) : ctx.moveTo(vx(v), ty(t))));
+  ctx.stroke();
+  if (vis.length) {
+    const [t, v] = vis[vis.length - 1], px = vx(v), py = ty(t);
+    if (link != null) {
+      ctx.globalAlpha = 0.4 * alpha * g; ctx.setLineDash([2, 4]); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(px, link); ctx.lineTo(px, py - 5); ctx.stroke(); ctx.setLineDash([]);
+    }
+    ctx.globalAlpha = alpha * g; ctx.fillStyle = col; ctx.beginPath(); ctx.arc(px, py, 4, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
 }
 
 // Grafico y(t) classico a destra della scena, allineato in altezza con il corpo (stessa scala verticale della scena).
-export function chartRight(P, pts, tNow, { left, ...o }) {
-  const pad = free(P.cam);
-  chartTrace(P, pts, tNow, { left: left + 44, right: P.cam.w - pad.right - 64, vy: v => P.S(0, v)[1], name: 'y', ...o });
+export function chartRight(P, pts, tNow, { left, pxs = null, ...o }) {
+  const pad = free(P.cam), maxRight = P.cam.w - pad.right - 64, right = pxs ? Math.min(maxRight, left + 44 + o.tSpan * pxs) : maxRight;
+  chartTrace(P, pts, tNow, { left: left + 44, right, vy: v => P.S(0, v)[1], name: 'y', ...o });
+}
+
+// Scala dei tempi comune (px al secondo) per x(t) sotto la scena (dalla y schermo topX in giù) e y(t) a destra
+// (dalla x schermo leftY): la carta più corta decide, così un secondo è lungo uguale nei due grafici.
+export function chartPxs(P, tSpan, leftY, topX) {
+  const pad = free(P.cam), maxRight = P.cam.w - pad.right - 64, bottom = P.cam.h - pad.bottom - 30;
+  return Math.min(maxRight - (leftY + 44), bottom - topX - 28) / tSpan;
 }
 
 // Fasore: circonferenza di centro (cx, cy) e raggio R (mondo), vettore fino alla punta (tx, ty), proiezione

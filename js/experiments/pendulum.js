@@ -2,7 +2,7 @@ import { rk4, tn, clamp, deg } from '../core/math.js';
 import { ballM } from '../core/manim.js';
 import { uq, un } from '../core/units.js';
 import { Stage, C, arrowPx, symVal, degTeX, angleMark, brace } from '../core/annot.js';
-import { penTrace, paperSpeed, phasor, wallM } from '../core/osc.js';
+import { chartBelow, phasor, wallM } from '../core/osc.js';
 
 const stage = new Stage();
 const TWO_PI = 2 * Math.PI;
@@ -151,12 +151,11 @@ export default {
       phasor(P, 0, cy, R, bx, cy - vx / w, by, { grow: S.grow('phasor', 1.1), color: M.vec.vel });
     }
 
-    // Traccia x(t) sotto la pallina.
+    // Grafico x(t) classico sotto la pallina (t verso destra, x verso l'alto): circa tre periodi, poi la carta scorre.
     if (p.showTrace) {
-      const [, gy] = P.S(0, -p.L - r), top = gy + 30;
-      const pad = P.cam.padFn?.() ?? { bottom: 20 };
-      const pxs = paperSpeed(P.cam.h - pad.bottom - 8 - top, TWO_PI / w, 3);
-      penTrace(P, fresh ? [[0, bx]] : s.trace, fresh ? 0 : s.t, { top, pxs, color: M.vec.vel, grow: S.grow('trace', 0.9), nowX: bx });
+      const [, gy] = P.S(0, -p.L - r), A = Math.max(ampX(p), Math.abs(bx), 0.05 * p.L);
+      chartBelow(P, fresh ? [] : s.trace, fresh ? 0 : s.t, { top: gy + 24, vmin: -A, vmax: A, tSpan: 3 * TWO_PI / w,
+        color: M.vec.vel, grow: S.grow('trace', 0.9), nowV: bx, link: P.S(0, by)[1] + 12 });   // sotto la pallina
     }
 
     if (fresh) P.handle(bx, by, ui.active === 'bob');

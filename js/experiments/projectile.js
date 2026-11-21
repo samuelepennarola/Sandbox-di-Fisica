@@ -4,7 +4,7 @@ import { trail } from '../core/look.js';
 import { tex, texBox } from '../core/manim.js';
 import { uq, un, ut, uf, utn } from '../core/units.js';
 import { Stage, createPts, brace, angleMark, dropLines, rate01, C, arrowPx, arrowMag, symVal, degTeX } from '../core/annot.js';
-import { chartBelow, chartRight } from '../core/osc.js';
+import { chartBelow, chartRight, chartPxs } from '../core/osc.js';
 
 const stage = new Stage();   // regia: frecce che crescono, parabola che si disegna, graffe, corpi che nascono
 const num = (v, d = 1) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(d).replace('.', ',');
@@ -61,7 +61,7 @@ export default {
   id: 'projectile',
   title: 'Moto parabolico',
   subtitle: 'Lancio di un proiettile, con o senza aria',
-  gridLabels: p => (p.showTrace ? 'x' : true),   // sotto il suolo l'asse verticale del grafico x(t) è il tempo
+  gridLabels: p => !p.showTrace,   // con il grafico x(t) acceso i numeri li porta il suo asse x, allineato alla scena
 
   params: [
     { key: 'v0', label: 'Velocità iniziale v₀', unit: 'm/s', min: 1, max: 100, step: 0.5, value: 18 },
@@ -201,10 +201,11 @@ export default {
       const fr = s.t === 0, [px, py] = fr ? [0, h0] : [s.x, s.y], tNow = fr ? 0 : s.t, tv = Math.max(id.tv, 0.2);
       const [, gy] = P.S(0, 0), [bx] = P.S(px, py);
       const g = S.grow('trace', 0.9);
-      // x(t) sotto la graffa di R; y(t) a destra, alla stessa scala verticale della scena.
-      chartBelow(P, fr ? [] : s.tx, tNow, { top: gy + 60, vmin: 0, vmax: Math.max(id.R, 1), tSpan: tv, color: M.vec.vel, grow: g, nowV: px });
-      const [left] = P.S(sceneRight(q), 0), [, byS] = P.S(px, py);
-      chartRight(P, fr ? [] : s.ty, tNow, { left, vmin: 0, vmax: Math.max(id.hmax, h0, 1), tSpan: tv, color: M.vec.weight, grow: g, nowV: py, link: [bx + 14, byS] });
+      // x(t) sotto la graffa di R; y(t) a destra. Stesse scale: i metri della scena e gli stessi px al secondo.
+      const [left] = P.S(sceneRight(q), 0), [, byS] = P.S(px, py), pxs = chartPxs(P, tv, left, gy + 80);
+      chartBelow(P, fr ? [] : s.tx, tNow, { top: gy + 80, vmin: 0, vmax: Math.max(id.R, 1), tSpan: tv, color: M.vec.vel, grow: g, nowV: px, pxs,
+        link: gy + 3 });   // dal piede del corpo sul suolo
+      chartRight(P, fr ? [] : s.ty, tNow, { left, vmin: 0, vmax: Math.max(id.hmax, h0, 1), tSpan: tv, color: M.vec.weight, grow: g, nowV: py, link: [bx + 14, byS], pxs });
     }
 
     // Scia e posizioni stroboscopiche (puntini).

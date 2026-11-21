@@ -18,7 +18,7 @@ export default {
   id: 'uniform',
   title: 'Moto rettilineo uniforme',
   subtitle: 'Velocità costante e legge oraria x(t) = x₀ + v t',
-  gridLabels: p => (p.showTrace ? 'x' : true),   // sotto il suolo l'asse verticale del grafico è il tempo
+  gridLabels: p => !p.showTrace,   // con il grafico x(t) acceso i numeri li porta il suo asse x, allineato alla scena
 
   params: [
     { key: 'x0', label: 'Posizione iniziale x₀', unit: 'm', min: -20, max: 20, step: 0.5, value: -6 },
@@ -121,8 +121,8 @@ export default {
     // Grafico x(t) sotto il suolo: il pennino sta sotto il corpo e il tempo scende; tutta la corsa sta nella carta.
     if (p.showTrace) {
       const [, gy] = P.S(0, 0), xe = x0 + v * p.tMax;
-      chartBelow(P, fresh ? [] : s.trace, fresh ? 0 : s.t, { top: gy + 30, vmin: Math.min(0, x0, xe), vmax: Math.max(0, x0, xe),
-        tSpan: p.tMax, color: M.vec.vel, grow: S.grow('trace', 0.9), nowV: x });
+      chartBelow(P, fresh ? [] : s.trace, fresh ? 0 : s.t, { top: gy + 44, vmin: Math.min(0, x0, xe), vmax: Math.max(0, x0, xe),
+        tSpan: p.tMax, color: M.vec.vel, grow: S.grow('trace', 0.9), nowV: x, link: gy + 3 });   // dal piede del corpo
     }
 
     if (fresh) P.handle(x0, rW, ui.active === 'x0');

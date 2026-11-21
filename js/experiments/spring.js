@@ -2,7 +2,7 @@ import { rk4, tn, clamp } from '../core/math.js';
 import { blockM } from '../core/manim.js';
 import { uq, un } from '../core/units.js';
 import { Stage, brace, C, arrowPx, symVal, degTeX, angleMark } from '../core/annot.js';
-import { penTrace, paperSpeed, phasor, coilSpring, wallM, energyBars } from '../core/osc.js';
+import { chartBelow, phasor, coilSpring, wallM, energyBars } from '../core/osc.js';
 
 const stage = new Stage();
 const TWO_PI = 2 * Math.PI;
@@ -55,6 +55,7 @@ export default {
     const [x, v, t] = rk4([s.x, s.v, s.t], dt, ([x, v, t]) => [v, accel(p, x, v, t), 1]);
     Object.assign(s, { x, v, t });
     if (t - s.trace[s.trace.length - 1][0] >= TRACE_DT - 1e-9) s.trace.push([t, x]);
+    s.amax = Math.max(s.amax ?? 0, Math.abs(x));   // ampiezza raggiunta: la scala del grafico x(t) (cresce con la risonanza)
     // Oltre questo limite le spire si toccherebbero (o la molla si strapperebbe): la simulazione si ferma.
     if (Math.abs(x) > 0.9 * LS) s.hit = true;
   },
@@ -139,16 +140,12 @@ export default {
         angleMark(P, 0, cy, 22, 0, phm, symVal(P, '\\varphi', degTeX(phm)), { color: M.text, alpha: 0.8 });
     }
 
-    // Traccia x(t): parte sotto il suolo e scende; la carta scorre in modo che si vedano circa tre periodi.
-    const [, gy] = P.S(0, 0), top = gy + 34;
+    // Grafico x(t) classico sotto il suolo (t verso destra, x verso l'alto): circa tre periodi, poi la carta scorre.
+    const [, gy] = P.S(0, 0);
     if (p.showTrace) {
-      const pad = P.cam.padFn?.() ?? { bottom: 20 };
-      const pxs = paperSpeed(P.cam.h - pad.bottom - 8 - top, TWO_PI / w, 3);
-      const pts = fresh ? [[0, p.x0]] : s.trace;
-      penTrace(P, pts, fresh ? 0 : s.t, { top, pxs, color: M.vec.vel, grow: S.grow('trace', 0.9), nowX: x });
-      const [bx] = P.S(x, 0);
-      P.ctx.save(); P.ctx.strokeStyle = M.vec.vel; P.ctx.globalAlpha = 0.35; P.ctx.setLineDash([2, 4]); P.ctx.lineWidth = 1;
-      P.ctx.beginPath(); P.ctx.moveTo(bx, gy + 3); P.ctx.lineTo(bx, top - 5); P.ctx.stroke(); P.ctx.restore();
+      const A = Math.max(ampView(p), fresh ? 0 : s.amax ?? 0, Math.abs(x));
+      chartBelow(P, fresh ? [] : s.trace, fresh ? 0 : s.t, { top: gy + 44, vmin: -A, vmax: A, tSpan: 3 * TWO_PI / w,
+        color: M.vec.vel, grow: S.grow('trace', 0.9), nowV: x, link: gy + 3 });   // dal piede del blocco
     }
 
     if (p.showEnergy) {

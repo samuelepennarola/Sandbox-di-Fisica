@@ -3,7 +3,7 @@ import { ball, palette } from '../core/shapes.js';
 import { tex, texBox } from '../core/manim.js';
 import { uq, un, ut, uf, utn } from '../core/units.js';
 import { Stage, angleMark, rate01, C, symVal, degTeX } from '../core/annot.js';
-import { chartBelow, chartRight } from '../core/osc.js';
+import { chartBelow, chartRight, chartPxs } from '../core/osc.js';
 
 const stage = new Stage();   // regia: frecce che crescono, passaggio morbido tra i punti di vista, corpi che nascono
 
@@ -194,7 +194,7 @@ export default {
   id: 'relative',
   title: 'Moti relativi',
   subtitle: 'Due sistemi di riferimento e la composizione delle velocità',
-  gridLabels: p => (p.showTrace ? 'x' : true),   // sotto la scena l'asse verticale del grafico x(t) è il tempo
+  gridLabels: p => !p.showTrace,   // con il grafico x(t) acceso i numeri li porta il suo asse x, allineato alla scena
 
   params: [
     { key: 'scene', type: 'select', label: 'Situazione', value: 'river',
@@ -326,10 +326,12 @@ export default {
     if (p.showTrace) {
       const inSp = p.view === 'Sp', [, gy] = P.S(0, river ? 0 : -0.6), r = ranges(p);
       const g = S.grow('trace:' + (inSp ? 'Sp' : 'S'), 0.9), tSpan = Math.max(s.tEnd, 0.2);
-      chartBelow(P, inSp ? s.trXp : s.trX, s.t, { top: gy + (river ? 36 : 26), vmin: inSp ? r.xp0 : r.x0, vmax: inSp ? r.xp1 : r.x1, tSpan,
-        color: inSp ? M.vec.applied : M.vec.vel, grow: g, nowV: inSp ? s.xp : s.x, name: inSp ? "x'" : 'x' });
-      const [left] = P.S(sceneBox(p).xmax, 0), [bxS, byS] = P.S(s.x - off, s.y);
-      chartRight(P, s.trY, s.t, { left, vmin: r.y0, vmax: r.y1, tSpan, color: M.vec.weight, grow: g, nowV: s.y, link: [bxS + 14, byS] });
+      // Stesse scale nei due grafici: i metri della scena e gli stessi px al secondo.
+      const [left] = P.S(sceneBox(p).xmax, 0), [bxS, byS] = P.S(s.x - off, s.y), pxs = chartPxs(P, tSpan, left, gy + (river ? 44 : 34));
+      chartBelow(P, inSp ? s.trXp : s.trX, s.t, { top: gy + (river ? 44 : 34), vmin: inSp ? r.xp0 : r.x0, vmax: inSp ? r.xp1 : r.x1, tSpan,
+        color: inSp ? M.vec.applied : M.vec.vel, grow: g, nowV: inSp ? s.xp : s.x, name: inSp ? "x'" : 'x', pxs,
+        shift: inSp ? s.X - off : -off, link: P.S(0, 0)[1] + 3 });   // sotto il corpo, come è disegnato in S o in S′
+      chartRight(P, s.trY, s.t, { left, vmin: r.y0, vmax: r.y1, tSpan, color: M.vec.weight, grow: g, nowV: s.y, link: [bxS + 14, byS], pxs });
     }
 
     // Corpo sotto i vettori: la barca con la prua orientata come v′ (dove punta), non come v.

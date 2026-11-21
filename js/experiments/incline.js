@@ -3,7 +3,7 @@ import { crate } from '../core/shapes.js';
 import { tex, texBox } from '../core/manim.js';
 import { uq, un, ut, uf, utn } from '../core/units.js';
 import { Stage, brace, angleMark, rate01, C as Ccol, symVal, degTeX } from '../core/annot.js';
-import { chartBelow, chartRight } from '../core/osc.js';
+import { chartBelow, chartRight, chartPxs } from '../core/osc.js';
 
 const stage = new Stage();   // regia: frecce che crescono, graffe, piano che si trasforma, cassa che nasce
 const num = (v, d = 1) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(d).replace('.', ',');
@@ -73,7 +73,7 @@ const INCLINE = {
   id: 'incline',
   title: 'Piano inclinato',
   subtitle: 'Forze, attrito statico e dinamico, energia',
-  gridLabels: p => (p.showTrace ? 'x' : true),   // sotto il suolo l'asse verticale del grafico x(t) è il tempo
+  gridLabels: p => !p.showTrace,   // con il grafico x(t) acceso i numeri li porta il suo asse x, allineato alla scena
 
   params: [
     { key: 'alpha', label: 'Inclinazione α', unit: '°', min: 0, max: 85, step: 1, value: 30 },
@@ -253,10 +253,12 @@ const INCLINE = {
     if (p.showTrace) {
       const [, gy] = P.S(0, 0), xNow = T[0] + d[0] * sPos, yNow = T[1] + d[1] * sPos, fresh = st.t === 0;
       const tR = runTime(p), gr = S.grow('trace', 0.9), tNow = fresh ? 0 : st.t;
-      chartBelow(P, fresh || !st.tr ? [] : st.tr, tNow, { top: gy + 30, vmin: 0, vmax: B[0], tSpan: tR, color: M.vec.vel, grow: gr, nowV: xNow });
-      const [left] = P.S(B[0] + 0.8, 0), [bxS, byS] = P.S(xNow, yNow);
+      // Stesse scale nei due grafici: i metri della scena e gli stessi px al secondo.
+      const [left] = P.S(B[0] + 0.8, 0), [bxS, byS] = P.S(xNow, yNow), pxs = chartPxs(P, tR, left, gy + 30);
+      chartBelow(P, fresh || !st.tr ? [] : st.tr, tNow, { top: gy + 30, vmin: 0, vmax: B[0], tSpan: tR, color: M.vec.vel, grow: gr, nowV: xNow,
+        pxs, link: gy + 3 });   // dal piede del blocco sul suolo
       chartRight(P, fresh || !st.trY ? [] : st.trY, tNow, { left, vmin: 0, vmax: Math.max(T[1], 0.5), tSpan: tR, color: M.vec.weight, grow: gr,
-        nowV: yNow, link: [bxS + 14, byS] });
+        nowV: yNow, link: [bxS + 14, byS], pxs });
     }
 
     P.handle(T[0], T[1], ui.active === 'alpha');
