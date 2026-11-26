@@ -61,8 +61,16 @@ export default {
     { title: 'Velocità', series: [{ key: 'v', label: 'v (m/s)', color: 'vel' }] },
   ],
 
-  resizables(s, p, { scale, size }) {
-    return [{ key: 'ball', x: s.t === 0 ? p.x0 : s.x, y: RB, rPx: Math.max(RB * scale, MINPX) * size('ball') }];
+  bodies(s, p, { scale, size }) {
+    return [{
+      key: 'ball', title: 'il corpo',
+      x: s.t === 0 ? p.x0 : s.x, y: RB,
+      rPx: Math.max(RB * scale, MINPX) * size('ball'),
+      m: 1, color: 'red',
+      v: [p.v, 0], a: [0, 0],
+      forces: [{ name: 'P', fx: 0, fy: -9.81, color: 'weight' }, { name: 'N', fx: 0, fy: 9.81, color: 'normal' }],
+      note: '\\text{massa di riferimento } 1\\ \\mathrm{kg}: \\sum \\vec F = \\vec 0 \\Rightarrow \\vec v = \\text{cost.}',
+    }];
   },
 
   handles(s, p) {

@@ -1,4 +1,4 @@
-import { tn } from '../core/math.js';
+import { tn, clamp } from '../core/math.js';
 import { tex } from '../core/manim.js';
 import { uq } from '../core/units.js';
 import { Stage, C, angleMark, symVal, degTeX, brace } from '../core/annot.js';
@@ -22,6 +22,10 @@ const M_COL = { blue: 'vel', green: 'normal', red: 'weight', yellow: 'acc' };   
 const acc = (p, b) => G * Math.sin(p.alpha * deg) / (1 + b.k);
 const tFinish = (p, b) => Math.sqrt(2 * p.L / acc(p, b));
 const sAt = (p, b, t) => Math.min(p.L, 0.5 * acc(p, b) * t * t);
+function zBounds(p) {
+  const zLanes = BODIES.filter(b => on(p, b)).map(b => b.lane);
+  return [Math.min(-0.5, ...zLanes) - 0.4, Math.max(0.5, ...zLanes) + 0.4];
+}
 
 export default {
   id: 'rolling',
@@ -86,8 +90,22 @@ export default {
     });
   },
 
+  handles(s, p) {
+    if (!CAM || s.t > 0) return [];
+    const a = p.alpha * deg, w = p.L * Math.cos(a), h = p.L * Math.sin(a), z = zBounds(p)[1] * CAM.tilt();
+    const [ax, ay] = CAM.p(0, h, z), [lx, ly] = CAM.p(w, 0, z);
+    return [{ id: 'alpha', x: ax, y: ay }, { id: 'L', x: lx, y: ly }];
+  },
+
+  drag(id, sx, sy, p) {
+    const [, z1] = zBounds(p);
+    const [wx, wy] = CAM ? CAM.unproject(sx, sy, z1 * CAM.tilt()) : [sx, sy];
+    if (id === 'alpha') p.alpha = clamp(Math.round(Math.asin(clamp(wy / p.L, 0, 1)) / deg), 1, 80);
+    if (id === 'L') p.L = clamp(Math.round(wx / Math.cos(p.alpha * deg) * 2) / 2, 1, 100);
+  },
+
   mount() { stage.reset(); },
-  drawBackground: background3d('rolling'),
+  drawBackground: background3d('rolling', { default3d: true }),
   // In vista 3D un dito sullo spazio vuoto fa girare la camera invece di spostare la scena.
   orbit(dx, dy, p) { return orbit3d('rolling', p.show3d, dx, dy); },
 
@@ -98,8 +116,7 @@ export default {
     const V = camera3d(S, 'rolling', p.show3d, 18 * deg, -32 * deg, { up: 'y' }), tilt = V.tilt();
     if (!ui.snapshot) CAM = V;
     space3d(P, V, { origin: [-1, 0, 0], up: 'y', step: 1 });   // griglia a perdita d'occhio, fissa nel mondo
-    const zLanes = BODIES.filter(b => on(p, b)).map(b => b.lane);
-    const z0 = Math.min(-0.5, ...zLanes) - 0.4, z1 = Math.max(0.5, ...zLanes) + 0.4;
+    const [z0, z1] = zBounds(p);
 
     if (tilt < 0.05) P.ground(0);   // in 3D la linea del suolo taglierebbe la rampa
     // Piano inclinato: un prisma (in vista frontale è il solito triangolo).
@@ -164,6 +181,10 @@ export default {
       tex(P, x0 + 212, y0 + row * 30 + 10, '\\text{rotazione (velata)}', { size: 12, color: M.muted, halo: M.bg, align: 'left', alpha: gT });
     }
     axes3d(P, V, { origin: [-1, 0, 0], lx: 8, ly: 3.4, lz: 1.6 });
+    if (!ui.snapshot && s.t === 0) {
+      P.handle(...V.p(0, h, z1 * tilt), ui.active === 'alpha');
+      P.handle(...V.p(w, 0, z1 * tilt), ui.active === 'L');
+    }
   },
 
   formulas(s, p) {

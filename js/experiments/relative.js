@@ -258,11 +258,41 @@ export default {
     { title: 'Posizione y', series: [{ key: 'y', label: 'y = y′ (m)', color: 'normal' }] },
   ],
 
-  // Il corpo (barca o pallina) si può ingrandire per vederlo meglio: non cambia la fisica.
-  resizables(s, p, { scale, size }) {
-    const k = size('body'), off = p.view === 'Sp' ? s.X : 0;
+  // Il corpo (barca o pallina) per il diagramma di corpo libero e il ridimensionamento estetico.
+  bodies(s, p, { scale, size }) {
+    const k = size('body'), sp = p.view === 'Sp', off = sp ? s.X : 0;
     const rPx = p.scene === 'river' ? boatLen(p, scale) * k / 2 : Math.max(0.13 * scale, 10) * k;
-    return [{ key: 'body', x: s.x - off, y: s.y, rPx }];
+    const v = sp ? [s.vpx, s.vpy] : [s.vx, s.vy];
+    let a, forces, note;
+    if (p.scene === 'river') {
+      if (!sp && Math.abs(p.A) > 1e-9) {
+        a = [p.A, 0];
+        forces = [{ name: 'F_c', fx: p.A, fy: 0, color: 'friction' }];
+        note = '\\text{vista dall’alto (1 kg): trascinata dalla corrente}';
+      } else {
+        a = [0, 0];
+        forces = [];
+        note = sp
+          ? "\\text{vista dall’alto (1 kg): in } S'\\ \\vec a' = \\vec 0"
+          : '\\text{vista dall’alto (1 kg): } \\sum\\vec F = \\vec 0 \\Rightarrow \\vec v = \\text{cost.}';
+      }
+    } else if (sp) {
+      a = [-p.A, -p.g];
+      forces = [{ name: 'P', fx: 0, fy: -p.g, color: 'weight' }];
+      if (Math.abs(p.A) > 1e-9) forces.push({ name: 'F_{\\text{app}}', fx: -p.A, fy: 0, color: 'acc' });
+      note = Math.abs(p.A) > 1e-9
+        ? "\\text{in } S'\\text{ (non inerziale) compare la forza apparente } -m\\vec A"
+        : "\\text{massa di riferimento } 1\\ \\mathrm{kg}: S'\\text{ è inerziale}";
+    } else {
+      a = [0, -p.g];
+      forces = [{ name: 'P', fx: 0, fy: -p.g, color: 'weight' }];
+      note = '\\text{massa di riferimento } 1\\ \\mathrm{kg}: \\text{in volo agisce solo il peso}';
+    }
+    return [{
+      key: 'body', title: p.scene === 'river' ? 'la barca' : 'la pallina',
+      x: s.x - off, y: s.y, rPx,
+      m: 1, color: 'red', v, a, forces, note,
+    }];
   },
 
   handles(s, p) {

@@ -151,7 +151,7 @@ export function touchSlider(zone, range, { inset = 6 } = {}) {
     if (!live) {
       const dx = Math.abs(e.clientX - start[0]), dy = Math.abs(e.clientY - start[1]);
       if (dx < 5 && dy < 5) return;
-      if (dy > dx) { id = null; return; }   // gesto verticale: è uno scorrimento
+      if (dy > dx) { try { zone.releasePointerCapture(e.pointerId); } catch {} id = null; return; }   // gesto verticale: è uno scorrimento
       live = true; range.classList.add('dragging');
     }
     setFrom(e.clientX); e.preventDefault();

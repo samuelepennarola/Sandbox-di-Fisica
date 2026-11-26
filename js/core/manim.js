@@ -276,7 +276,12 @@ function layout(ctx, src, size) {
   let L = cache.get(key);
   if (L) return L;
   L = box(ctx, parse(src), size);
-  if (cache.size > 600) cache.clear();
+  if (cache.size > 600) {
+    for (const k of cache.keys()) {
+      cache.delete(k);
+      if (cache.size <= 450) break;
+    }
+  }
   cache.set(key, L);
   return L;
 }
@@ -566,7 +571,7 @@ export function textToTeX(s) {
 }
 
 // Colori dell'app sostituiti da quelli di Manim (vettori, testo, fondo, maniglie).
-export const manimColors = (c, M) => ({ ...c, bg: M.bg, text: M.text, muted: M.muted, handle: M.sel, axis: M.axis, ideal: M.muted, ...M.vec });
+export const manimColors = (c, M) => ({ ...c, bg: M.bg, text: M.text, muted: M.muted, handle: M.sel, axis: M.axis, ideal: M.muted, field: M.field, ...M.vec });
 
 // Painter che disegna frecce e scritte alla Manim: le chiamate esistenti (P.arrow, P.textS, P.arc) restano uguali.
 // grow(opts) può restituire il fattore di crescita di una freccia (transizioni).

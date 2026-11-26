@@ -58,7 +58,7 @@ function openPicker(api) {
     const insp = document.getElementById('inspector'), iw = insp && document.body.classList.contains('insp-open') && !document.body.classList.contains('insp-overlay') ? insp.offsetWidth : 0;
     const w = Math.min(780, innerWidth - iw - 24);
     B.picker = new api.Panel({ id: 'picker', title: 'Inserisci un esperimento', x: (innerWidth - iw - w) / 2, y: 76, width: w, closable: true });
-    B.picker.el.querySelector('.panel-body').style.maxHeight = '74vh';
+    B.picker.el.querySelector('.panel-body').style.maxHeight = '74dvh';
   }
   const body = B.picker.body;
   body.innerHTML = '<div class="hint">Viene inserita un\'istantanea dell\'esperimento con i parametri che hai impostato l\'ultima volta. Per cambiarla, prepara prima l\'esperimento e poi inseriscilo.</div>';

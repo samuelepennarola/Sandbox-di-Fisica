@@ -116,10 +116,10 @@ function potentialAt(x, y) {
   let V = 0;
   for (const s of B.spec.sources) {
     if (s.type === 'plate') return null;
-    if (s.type === 'point') V += K * s.q * MU / Math.hypot(x - s.x, y - s.y);
+    if (s.type === 'point') V += K * s.q * MU / Math.max(Math.hypot(x - s.x, y - s.y), 1e-4);
     else {
       const [[ax, ay], [bx, by]] = ends(s);
-      for (let i = 0; i < ROD_N; i++) { const t = (i + 0.5) / ROD_N; V += K * s.Q * MU / ROD_N / Math.hypot(x - ax - (bx - ax) * t, y - ay - (by - ay) * t); }
+      for (let i = 0; i < ROD_N; i++) { const t = (i + 0.5) / ROD_N; V += K * s.Q * MU / ROD_N / Math.max(Math.hypot(x - ax - (bx - ax) * t, y - ay - (by - ay) * t), 1e-4); }
     }
   }
   return V;
@@ -558,16 +558,19 @@ export default {
   },
 
   draw(P0, s, p, ui) {
-    const now = performance.now() / 1000;
-    A.dt = Math.min(0.1, now - (A.last || now)); A.last = A.now = now;
-    A.still = !!ui?.snapshot; A.rm = reducedMotion();   // istantanea / "riduci movimento": niente transizioni
+    const still = !!ui?.snapshot;
+    A.still = still; A.rm = reducedMotion();   // istantanea / "riduci movimento": niente transizioni
+    if (!still) {
+      const now = performance.now() / 1000;
+      A.dt = Math.min(0.1, now - (A.last || now)); A.last = A.now = now;
+    }
     const M = A.M = palette(P0.c);
     // Painter con i colori del kit Manim (aloni del colore di fondo, maniglie e guide nel blu di Manim).
     const P = new Painter(P0.ctx, P0.cam, { ...P0.c, bg: M.bg, text: M.text, muted: M.muted, handle: M.sel, acc: M.field });
-    if (A.still) { P.arrow = P0.arrow; P.handle = P0.handle; P.sizeHandle = P0.sizeHandle; }
+    if (still) { P.arrow = P0.arrow; P.handle = P0.handle; P.sizeHandle = P0.sizeHandle; }
     const show = B.spec.show;
-    for (const k of ['F', 'comp', 'probe']) { if (!show[k]) A.on[k] = null; else if (A.on[k] == null) A.on[k] = now; }
-    RL.tick(A.still);
+    if (!still) for (const k of ['F', 'comp', 'probe']) { if (!show[k]) A.on[k] = null; else if (A.on[k] == null) A.on[k] = A.now; }
+    RL.tick(still);
     if (!ui?.snapshot) drawPlaneAxes(P, M, { unit: 'cm', k: 100 });
     if (show.lines) drawLinesM(P, fieldLines());
     if (show.E) drawFieldVectors(P);
@@ -604,8 +607,9 @@ export default {
       for (const f of list) {
         const F = Math.hypot(...f.F);
         if (f.s.type === 'point') {
-          const r = Math.hypot(f.s.x - s.x, f.s.y - s.y);
-          out.push({ tex: `${Fc(`F_{${pIdx(f.s)}}`)} = k\\dfrac{|${qT(s)}\\,${qT(f.s)}|}{r^2} = ${Fc(`${tn(K * Math.abs(s.q * f.s.q) * MU * MU / (r * r), 3)}\\ \\mathrm{N}`)}\\quad (r = ${uq('cm', r * 100, 1)},\\ ${s.q * f.s.q > 0 ? '\\text{repulsiva}' : '\\text{attrattiva}'})` });
+          const r = Math.max(Math.hypot(f.s.x - s.x, f.s.y - s.y), 1e-4);
+          out.push({ tex: `${Fc(`F_{${pIdx(f.s)}}`)} = k\\dfrac{|${qT(s)}\\,${qT(f.s)}|}{r^2} = ${Fc(`${tn(K * Math.abs(s.q * f.s.q) * MU * MU / (r * r), 3)}\\ \\mathrm{N}`)}` });
+          out.push({ tex: `(r = ${uq('cm', r * 100, 1)},\\ ${s.q * f.s.q > 0 ? '\\text{repulsiva}' : '\\text{attrattiva}'})` });
         } else {
           out.push({ tex: `${Fc(`F_{\\text{${nameOf(f.s)}}}`)} = ${qT(s)}\\,${Ec('E')} = ${Fc(`${tn(F, 3)}\\ \\mathrm{N}`)}` });
         }
@@ -636,8 +640,9 @@ export default {
       if (pts.length && pts.length <= 4) {
         out.push({ h: 'Contributi delle cariche' });
         for (const o of pts) {
-          const r = Math.hypot(x - o.x, y - o.y);
-          out.push({ tex: `${Ec(`E_{${pIdx(o)}}`)} = k\\dfrac{|${qT(o)}|}{r^2} = ${Ec(`${sciTex(K * Math.abs(o.q) * MU / (r * r))}\\ \\mathrm{N/C}`)}\\quad (r = ${uq('cm', r * 100, 1)})` });
+          const r = Math.max(Math.hypot(x - o.x, y - o.y), 1e-4);
+          out.push({ tex: `${Ec(`E_{${pIdx(o)}}`)} = k\\dfrac{|${qT(o)}|}{r^2} = ${Ec(`${sciTex(K * Math.abs(o.q) * MU / (r * r))}\\ \\mathrm{N/C}`)}` });
+          out.push({ tex: `(r = ${uq('cm', r * 100, 1)})` });
         }
       }
     }

@@ -119,8 +119,11 @@ export function chartTrace(P, pts, tNow, { left, right, vy, vmin, vmax, tSpan, c
   // Passi tondi, ma mai così fitti che i numeri si tocchino.
   const U = unitView(unit);
   let ts = niceStep(tSpan / 5), vs = niceStep((vmax - vmin) * U.f / 4) / U.f;
-  while (ts * pxs < 44) ts = niceStep(ts * 1.01);
-  while (Math.abs(vy(vs) - vy(0)) < 22) vs = niceStep(vs * U.f * 1.01) / U.f;
+  if (!(pxs > 0)) { ctx.restore(); return; }
+  let gTs = 0;
+  while (ts * pxs < 44 && gTs++ < 40) ts = niceStep(ts * 1.01);
+  let gVs = 0;
+  while (Math.abs(vy(vs) - vy(0)) > 0 && Math.abs(vy(vs) - vy(0)) < 22 && gVs++ < 40) vs = niceStep(vs * U.f * 1.01) / U.f;
   const td = decimalsOf(ts), vd = decimalsOf(vs * U.f);
   ctx.globalAlpha = 0.7 * alpha; ctx.lineWidth = 1; ctx.beginPath();
   const tTicks = [], vTicks = [];
@@ -177,7 +180,8 @@ export function chartBelow(P, pts, tNow, { top, vmin, vmax, tSpan, pxs = null, s
   const avail = bottom - top - 28;
   if (avail < 50 || grow <= 0.01 || !(tSpan > 0)) return;
   if (!(vmax - vmin > 1e-9)) { vmin -= 1; vmax += 1; }
-  const sp = Math.min(pxs ?? Infinity, avail / tSpan), H = tSpan * sp;
+  const sp = Math.min(pxs ?? Infinity, avail / tSpan), H = tSpan * sp, sc = P.cam.scale;
+  if (!(sp > 0) || !(sc > 0)) return;
   const col = color ?? M.vec.vel, t0w = Math.max(0, tNow - tSpan), ty = t => top + (t - t0w) * sp, vx = v => P.S(v + shift, 0)[0];
   const x0 = vx(Math.min(vmax, Math.max(vmin, 0))), xL = vx(vmin), xR = vx(vmax);
   const g = rate.smooth(Math.min(1, grow / 0.7)), la = alpha * rate.smooth(Math.min(1, Math.max(0, (grow - 0.6) / 0.4)));
@@ -189,10 +193,12 @@ export function chartBelow(P, pts, tNow, { top, vmin, vmax, tSpan, pxs = null, s
   ctx.beginPath(); ctx.moveTo(xEnd + 2, top); ctx.lineTo(xEnd - 7, top - 4.5); ctx.lineTo(xEnd - 7, top + 4.5); ctx.closePath(); ctx.fill();
   ctx.beginPath(); ctx.moveTo(x0, tEnd + 2); ctx.lineTo(x0 - 4.5, tEnd - 7); ctx.lineTo(x0 + 4.5, tEnd - 7); ctx.closePath(); ctx.fill();
   // Tacche numerate, mai così fitte che i numeri si tocchino.
-  const U = unitView(unit), sc = P.cam.scale;
+  const U = unitView(unit);
   let ts = niceStep(tSpan / 5), vs = niceStep((vmax - vmin) * U.f / 4) / U.f;
-  while (ts * sp < 34) ts = niceStep(ts * 1.01);
-  while (vs * sc < 44) vs = niceStep(vs * U.f * 1.01) / U.f;
+  let gTs = 0;
+  while (ts * sp < 34 && gTs++ < 40) ts = niceStep(ts * 1.01);
+  let gVs = 0;
+  while (vs * sc < 44 && gVs++ < 40) vs = niceStep(vs * U.f * 1.01) / U.f;
   const td = decimalsOf(ts), vd = decimalsOf(vs * U.f), tT = [], vT = [];
   ctx.globalAlpha = 0.7 * alpha; ctx.lineWidth = 1; ctx.beginPath();
   for (let k = Math.ceil(t0w / ts - 1e-9) * ts; k <= t0w + tSpan + 1e-9; k += ts) { const y = ty(k); if (y > top + 2) { ctx.moveTo(x0 - 4, y); ctx.lineTo(x0 + 4, y); tT.push([y, k]); } }
@@ -246,8 +252,9 @@ export function chartRight(P, pts, tNow, { left, pxs = null, ...o }) {
 // Scala dei tempi comune (px al secondo) per x(t) sotto la scena (dalla y schermo topX in giù) e y(t) a destra
 // (dalla x schermo leftY): la carta più corta decide, così un secondo è lungo uguale nei due grafici.
 export function chartPxs(P, tSpan, leftY, topX) {
+  if (!(tSpan > 0)) return 0;
   const pad = free(P.cam), maxRight = P.cam.w - pad.right - 64, bottom = P.cam.h - pad.bottom - 30;
-  return Math.min(maxRight - (leftY + 44), bottom - topX - 28) / tSpan;
+  return Math.max(0, Math.min(maxRight - (leftY + 44), bottom - topX - 28) / tSpan);
 }
 
 // Fasore: circonferenza di centro (cx, cy) e raggio R (mondo), vettore fino alla punta (tx, ty), proiezione

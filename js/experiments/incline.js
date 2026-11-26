@@ -152,9 +152,25 @@ const INCLINE = {
       { key: 'Q', label: 'calore Q (J)', color: 'weight' }, { key: 'E', label: 'K+U+Q (J)', color: 'friction', dash: [5, 4] }] },
   ],
 
-  resizables(s, p, { scale, size }) {
+  bodies(st, p, { scale, size }) {
     const g = geom(p), k = size('block'), h = BH * k / 2;
-    return [{ key: 'block', x: g.T[0] + g.d[0] * s.s + g.n[0] * h, y: g.T[1] + g.d[1] * s.s + g.n[1] * h, rPx: Math.hypot(BW, BH) * k * scale / 2 }];
+    const forces = [
+      { name: 'P', fx: 0, fy: -p.m * p.g, color: 'weight' },
+      { name: 'N', fx: st.N * g.n[0], fy: st.N * g.n[1], color: 'normal' },
+    ];
+    if (Math.abs(st.f) > 1e-9) {
+      forces.push({ name: st.regime === 'statico' ? 'f_s' : 'f_d', fx: st.f * g.d[0], fy: st.f * g.d[1], color: 'friction' });
+    }
+    return [{
+      key: 'block', title: 'il blocco',
+      x: g.T[0] + g.d[0] * st.s + g.n[0] * h,
+      y: g.T[1] + g.d[1] * st.s + g.n[1] * h,
+      rPx: Math.hypot(BW, BH) * k * scale / 2,
+      m: p.m, color: 'weight',
+      v: [st.v * g.d[0], st.v * g.d[1]],
+      a: [st.a * g.d[0], st.a * g.d[1]],
+      forces,
+    }];
   },
 
   handles(s, p) {
@@ -277,7 +293,8 @@ const INCLINE = {
       { h: 'Scomposizione del peso' },
       { tex: `${Pc('P')}=mg=${uq('N', W)}` },
       { key: true, tex: `${Pc('P_{\\parallel}')}=mg\\sin\\alpha=${uq('N', W * g.sn)}` },
-      { key: true, tex: `${Pc('P_{\\perp}')}=mg\\cos\\alpha=${uq('N', N)}\\quad(=${Nc}\\text{, la normale})` },
+      { key: true, tex: `${Pc('P_{\\perp}')}=mg\\cos\\alpha=${uq('N', N)}` },
+      { tex: `${Nc}=${Pc('P_{\\perp}')}=${uq('N', N)}\\quad\\text{(normale)}` },
       { h: 'Equilibrio statico (da fermo)' },
       { key: true, tex: `\\tan\\alpha=${tn(tan, 3)}\\ ${slides ? '>' : '\\le'}\\ \\mu_s=${tn(p.mus)}`, cls: slides ? 'warn' : 'ok' },
       { tex: slides ? `\\Rightarrow\\ \\text{scivola}` : `\\Rightarrow\\ \\text{resta fermo}`, cls: slides ? 'warn' : 'ok' },
@@ -290,7 +307,7 @@ const INCLINE = {
       { tex: `t=${uq('s', st.t)}\\quad s=${uq('m', st.s)}\\quad ${Ccol('vel', 'v')}=${uq('m/s', st.v)}` },
       { tex: `${Ac}=${uq('m/s²', st.a)}\\quad ${Fc(`f_{${st.regime === 'statico' ? 's' : 'd'}}`)}=${uq('N', st.f)}` },
       { h: 'Energia' },
-      { tex: `K=${tn(K)}\\quad U=${tn(U)}\\quad Q=${uq('J', st.Q)}` },
+      { tex: `K=${uq('J', K)}\\quad U=${uq('J', U)}\\quad Q=${uq('J', st.Q)}` },
       { tex: `K+U+Q=${uq('J', K + U + st.Q)}` },
     ];
   },

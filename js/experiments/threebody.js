@@ -16,16 +16,17 @@ const bodiesOf = p => [0, 1, 2].map(i => ({ i, m: p['m' + (i + 1)], x: p['x' + (
 const vref = p => Math.max(...bodiesOf(p).map(b => Math.hypot(b.vx, b.vy)), 1e-6) * 1.2;
 const rad = (m, M) => 0.03 + 0.07 * Math.cbrt(m / M);
 
-// Accelerazioni di tutti i corpi (stato piatto: x, y, vx, vy per ognuno).
-function deriv(st, ms, G) {
-  const n = ms.length, out = new Array(st.length).fill(0);
+// Accelerazioni di tutti i corpi (stato piatto: x, y, vx, vy per ognuno) in un buffer preallocato.
+const _rk = { tmp: new Float64Array(12), k1: new Float64Array(12), k2: new Float64Array(12), k3: new Float64Array(12), k4: new Float64Array(12) };
+function derivInto(st, ms, G, out) {
+  const n = ms.length;
+  out.fill(0);
   for (let i = 0; i < n; i++) { out[4 * i] = st[4 * i + 2]; out[4 * i + 1] = st[4 * i + 3]; }
   for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
     const dx = st[4 * j] - st[4 * i], dy = st[4 * j + 1] - st[4 * i + 1], r2 = dx * dx + dy * dy + EPS * EPS, r3 = r2 * Math.sqrt(r2);
     out[4 * i + 2] += G * ms[j] * dx / r3; out[4 * i + 3] += G * ms[j] * dy / r3;
     out[4 * j + 2] -= G * ms[i] * dx / r3; out[4 * j + 3] -= G * ms[i] * dy / r3;
   }
-  return out;
 }
 
 const PRESET = (label, scale, b, extra = {}) => ({
@@ -88,9 +89,11 @@ export default {
   resumeFrom(sim, snap) { sim.t = snap.t; sim.st = snap.st.slice(); sim.trails.forEach((t, i) => { t.length = snap.n[i]; }); },
 
   step(s, dt, p) {
-    const ms = bodiesOf(p).map(b => b.m), G = scaleOf(p).G, n = ms.length;
-    let left = dt;
-    while (left > 1e-12) {
+    const ms = [p.m1, p.m2, p.m3], G = scaleOf(p).G, n = ms.length, len = s.st.length;
+    const { tmp, k1, k2, k3, k4 } = _rk;
+    const MAX_SUB = 160;
+    let left = dt, sub = 0;
+    while (left > 1e-12 && sub++ < MAX_SUB) {
       // Passo adattivo: proporzionale al tempo caratteristico dell'incontro più stretto.
       let tmin = Infinity;
       for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
@@ -98,10 +101,16 @@ export default {
         const dx = s.st[4 * j] - s.st[4 * i], dy = s.st[4 * j + 1] - s.st[4 * i + 1], r = Math.hypot(dx, dy) + EPS;
         tmin = Math.min(tmin, Math.sqrt(r * r * r / (G * (ms[i] + ms[j]))));
       }
-      const h = Math.min(left, Math.max(1e-6, 0.01 * tmin));
-      const y = s.st, k1 = deriv(y, ms, G);
-      const k2 = deriv(y.map((q, i) => q + h / 2 * k1[i]), ms, G), k3 = deriv(y.map((q, i) => q + h / 2 * k2[i]), ms, G), k4 = deriv(y.map((q, i) => q + h * k3[i]), ms, G);
-      s.st = y.map((q, i) => q + h / 6 * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i]));
+      const h = Math.min(left, Math.max(1e-6, 0.01 * tmin)), h2 = h / 2, h6 = h / 6;
+      const y = s.st;
+      derivInto(y, ms, G, k1);
+      for (let i = 0; i < len; i++) tmp[i] = y[i] + h2 * k1[i];
+      derivInto(tmp, ms, G, k2);
+      for (let i = 0; i < len; i++) tmp[i] = y[i] + h2 * k2[i];
+      derivInto(tmp, ms, G, k3);
+      for (let i = 0; i < len; i++) tmp[i] = y[i] + h * k3[i];
+      derivInto(tmp, ms, G, k4);
+      for (let i = 0; i < len; i++) y[i] = y[i] + h6 * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i]);
       s.t += h; left -= h;
     }
     for (let i = 0; i < n; i++) {

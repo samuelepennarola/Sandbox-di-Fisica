@@ -63,7 +63,7 @@ formulaBody.innerHTML = '<div class="formulas"></div>';
 theoryBody.innerHTML = '<div class="theory"></div>';
 // Aprendo o chiudendo l'ispettore la scena scorre di metà della sua larghezza: resta centrata nello spazio libero.
 insp.onChange = (before, after) => cam.panBy((before - after) / 2, 0);
-insp.onSection = () => { app.formulasDirty = true; };
+insp.onSection = sec => { app.formulasDirty = true; if (sec === 'formulas') { renderFormulas(); app.formulasDirty = false; } };
 
 /* ---------------- Annulla e ripeti ---------------- */
 // Un'unica cronologia per l'inchiostro e la scena dell'esperimento, nell'ordine in cui sono avvenute le modifiche.
@@ -495,17 +495,21 @@ function expSnapshot(exp, w, h) {
   const cm = new Camera();
   cm.setViewport(w, h);
   if (exp !== app.exp) exp.mount?.(api);
-  const params = { ...defaults(exp), ...store.get('params.' + exp.id, {}) };
-  const sim = exp.init(params);
-  cm.fit(exp.view(params, sim), { top: 16, right: 16, bottom: 16, left: 16 });
-  if (exp.drawBackground) exp.drawBackground(c2, cm, colors);
-  else drawGrid(c2, cm, colors, false);
-  const sizes = store.get('sizes.' + exp.id, {});
-  const P = new Painter(c2, cm, colors);
-  // Nelle istantanee niente maniglie né vettori (frecce con le loro etichette): i vettori li disegnano i ragazzi.
-  P.handle = P.sizeHandle = P.arrow = () => {};
-  exp.draw(P, sim, params, { active: null, api: { ...api, running: false }, size: key => sizes[key] ?? 1, snapshot: true });
-  return cv;
+  try {
+    const params = { ...defaults(exp), ...store.get('params.' + exp.id, {}) };
+    const sim = exp.init(params);
+    cm.fit(exp.view(params, sim), { top: 16, right: 16, bottom: 16, left: 16 });
+    if (exp.drawBackground) exp.drawBackground(c2, cm, colors);
+    else drawGrid(c2, cm, colors, false);
+    const sizes = store.get('sizes.' + exp.id, {});
+    const P = new Painter(c2, cm, colors);
+    // Nelle istantanee niente maniglie né vettori (frecce con le loro etichette): i vettori li disegnano i ragazzi.
+    P.handle = P.sizeHandle = P.arrow = () => {};
+    exp.draw(P, sim, params, { active: null, api: { ...api, running: false }, size: key => sizes[key] ?? 1, snapshot: true });
+    return cv;
+  } finally {
+    if (exp !== app.exp) exp.unmount?.(api);
+  }
 }
 
 // Regia del cambio di scena, come in un video di 3Blue1Brown. Una tela sopra la scena (non riceve tocchi, quindi
@@ -564,8 +568,12 @@ function loadExperiment(id) {
   document.body.classList.toggle('no-sim', !!exp.noSim);
   // Un esperimento senza tempo può comunque tenere alcuni pannelli (exp.keepPanels).
   insp.setTabs([...['formulas', 'graphs'].filter(k => !exp.noSim || exp.keepPanels?.includes(k)), 'theory']);
+  formulaBody.firstChild.innerHTML = '';
+  insp.lastKey = null;
   resetSim();
   buildParams(); buildGraphTabs(); buildDrawer(); renderTheory();
+  renderFormulas();
+  app.formulasDirty = false;
   fitView();
 }
 
@@ -626,6 +634,7 @@ function commitView() {
   if (app.view < app.history.length - 1) {
     resumeFrom(app.history[app.view]);
     app.samples.length = app.history.length = app.view + 1;
+    for (const k in app.trails) app.trails[k] = app.trails[k].filter(([i]) => i <= app.view);
     app.lastSampleT = app.sim.t;
   }
   app.view = null; app.viewCache = null;
@@ -744,7 +753,7 @@ function render() {
   }
   const P = new Painter(ctx, cam, colors);
   app.exp.draw(P, viewSim(), app.params, { active: app.activeHandle, api, size: sizeOf, sel: app.sizeSel });
-  const sel = selectedResizable();
+  const sel = app.mode === 'lesson' ? null : selectedResizable();
   if (sel) {
     const [a, b] = cam.toScreen(sel.x, sel.y);
     P.ringS(a, b, sel.rPx + 7);
@@ -1038,11 +1047,12 @@ function onPointerDown(e) {
   if (e.pointerType === 'touch') {
     // Primo dito sullo schermo: non ci sono altri contatti, quindi quelli rimasti in memoria sono fantasmi
     // (rilasci persi) e non devono bloccare i gesti. Lo stesso per una Pencil "appoggiata" ma muta da tempo.
-    if (palm.penDown && performance.now() - palm.lastPen > PEN_STALE_MS) palm.penDown = false;
+    const staleMs = gesture?.pen ? 4000 : PEN_STALE_MS;
+    if (palm.penDown && performance.now() - palm.lastPen > staleMs) palm.penDown = false;
     if (e.isPrimary) {
       touches.clear(); palm.ignored.clear();
       // Un gesto rimasto aperto (dito o Pencil ormai sollevati) va chiuso: altrimenti blocca il dito per sempre.
-      if (gesture && (gesture.touch || !palm.penDown)) {
+      if (gesture && !(gesture.pen && palm.penDown) && (gesture.touch || !palm.penDown)) {
         if (gesture.type === 'ink') { ink.end(); recordInk(); }
         gesture.custom?.up?.({ ...(() => { const [sx, sy] = pos(e), [wx, wy] = cam.toWorld(sx, sy); return { sx, sy, wx, wy }; })(), cancelled: true });
         app.activeHandle = null;
@@ -1281,9 +1291,10 @@ document.addEventListener('pointerup', e => {
 document.addEventListener('pointercancel', () => { tapStart = null; }, true);
 document.addEventListener('click', e => {
   if (!e.isTrusted || !tapFired) return;
+  if (e.target.closest?.('summary, input, textarea, select')) { tapFired = 0; return; }
   // Il click nativo che segue un tocco già gestito va scartato ovunque cada: se il tocco ha aperto il menu,
   // quel click finirebbe sullo scrim appena comparso e lo richiuderebbe subito.
-  if (performance.now() - tapFired < 800) { e.preventDefault(); e.stopPropagation(); }
+  if (performance.now() - tapFired < 450) { e.preventDefault(); e.stopPropagation(); }
   tapFired = 0;
 }, true);
 
@@ -1462,21 +1473,23 @@ document.querySelectorAll('#swatches button').forEach(b => b.onclick = () => set
 addEventListener('keydown', e => {
   // Dopo aver usato la moviola il fuoco resta sul cursore: lo spazio deve comunque avviare e fermare.
   if (e.target.closest?.('input')) { if (e.key === ' ' && e.target.type === 'range') e.target.blur(); else return; }
-  if (e.key === 'Escape') { toggleDrawer(false); togglePenPop(false); }
-  else if (e.key === ' ') { e.preventDefault(); togglePlay(); }
-  else if (e.key === 'r') { stopSweep(); resetSim(); }
-  else if (e.key === 'h') setTool('hand');
-  else if (e.key === 'p') setTool('pen');
-  else if (e.key === 'e') setTool('eraser');
-  else if (e.key === 'l') setTool('lasso');
-  else if ((e.key === 'Backspace' || e.key === 'Delete') && lasso.active) { lasso.remove(app.exp); recordInk(); }
-  else if (e.key === 'ArrowLeft') scrubTo((app.view ?? app.history.length - 1) - 1);
-  else if (e.key === 'ArrowRight') stepFrame();
-  else if (e.key.toLowerCase() === 'z' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.shiftKey ? redo() : undo(); }
-  else if (e.key === 'y' && e.ctrlKey) { e.preventDefault(); redo(); }
-  else if (e.key === '+' || e.key === '=') cam.zoomAt(cam.w / 2, cam.h / 2, 1.25);
-  else if (e.key === '-') cam.zoomAt(cam.w / 2, cam.h / 2, 0.8);
-  else if (e.key === '0') fitView();
+  const mod = e.metaKey || e.ctrlKey || e.altKey;
+  const k = e.key.toLowerCase();
+  if (e.key === 'Escape') { toggleDrawer(false); togglePenPop(false); if (lasso.active) lasso.clear(); app.sizeSel = null; }
+  else if (k === 'z' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+  else if (k === 'y' && e.ctrlKey) { e.preventDefault(); redo(); }
+  else if (!mod && e.key === ' ') { if (!app.exp.noSim) { e.preventDefault(); togglePlay(); } }
+  else if (!mod && k === 'r') { if (!app.exp.noSim) { stopSweep(); resetSim(); } }
+  else if (!mod && k === 'h') setTool('hand');
+  else if (!mod && k === 'p') setTool('pen');
+  else if (!mod && k === 'e') setTool('eraser');
+  else if (!mod && k === 'l') setTool('lasso');
+  else if (!mod && (e.key === 'Backspace' || e.key === 'Delete') && lasso.active) { lasso.remove(app.exp); recordInk(); }
+  else if (!mod && e.key === 'ArrowLeft') { if (!app.exp.noSim) scrubTo((app.view ?? app.history.length - 1) - 1); }
+  else if (!mod && e.key === 'ArrowRight') { if (!app.exp.noSim) stepFrame(); }
+  else if (!mod && (e.key === '+' || e.key === '=')) cam.zoomAt(cam.w / 2, cam.h / 2, 1.25);
+  else if (!mod && e.key === '-') cam.zoomAt(cam.w / 2, cam.h / 2, 0.8);
+  else if (!mod && e.key === '0') fitView();
   else app.exp.onKey?.(e, api);
 });
 
@@ -1487,7 +1500,7 @@ function wakeChrome(ms = 3500) {
   clearTimeout(chromeTimer);
   chromeTimer = setTimeout(() => document.body.classList.add('chrome-idle'), ms);
 }
-for (const el of [document.querySelector('.topbar'), $('timeline'), $('rail'), $('penPop'), $('pins')]) {
+for (const el of [document.querySelector('.topbar'), $('timeline'), $('rail'), $('penPop'), $('pins'), $('quickbar')].filter(Boolean)) {
   el.addEventListener('pointerdown', () => wakeChrome(), { passive: true, capture: true });
   el.addEventListener('pointermove', () => wakeChrome(), { passive: true });
 }

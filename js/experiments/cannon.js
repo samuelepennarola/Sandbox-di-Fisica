@@ -1,15 +1,15 @@
 import { tn, clamp } from '../core/math.js';
 import { tex, mixHex } from '../core/manim.js';
 import { uq } from '../core/units.js';
-import { Stage, arrowPx, symVal } from '../core/annot.js';
+import { Stage, arrowPx, arrowMag, symVal } from '../core/annot.js';
 import { elements, conicPts } from '../core/grav.js';
 
 // Il cannone di Newton (Principia, libro III): dalla cima di una montagna altissima si spara in orizzontale.
 // Dati veri della Terra; distanze in km, tempi in minuti, velocità in km/s.
 const stage = new Stage();
 const RE = 6371, GM = 398600 * 3600;     // raggio terrestre (km) e G·M in km³/min²
-const VA = { min: 36, max: 110 };
-let shots = [], lastSim = null;          // colpi precedenti (scelta «Colpi precedenti»)
+const VA = { min: 36, max: 110 }, VREF = 30;
+let shots = [], lastSim = null, SC = 0.4; // colpi precedenti (scelta «Colpi precedenti») e scala ultima scena
 
 const r0 = p => RE + p.h;
 const near = p => Math.max(1600, 4 * p.h);   // larghezza (km) dell'inquadratura di partenza
@@ -111,11 +111,23 @@ export default {
       note: `\\text{per 1 kg: } g = ${tn(g, 2)}\\ \\mathrm{m/s^2}\\ \\text{a quota } ${tn(r - RE, 0)}\\ \\mathrm{km}` }];
   },
 
+  handles(s, p) {
+    if (s.t > 0) return [];
+    const arrowLen = arrowPx(p.v, VREF, VA) / SC;
+    return [{ id: 'h', x: 0, y: r0(p) }, { id: 'v', x: arrowLen, y: r0(p) }];
+  },
+
+  drag(id, wx, wy, p) {
+    if (id === 'h') p.h = clamp(Math.round((wy - RE) / 10) * 10, 10, 20000);
+    if (id === 'v') p.v = clamp(Math.round(arrowMag(Math.max(0, wx) * SC, VREF, VA) * 20) / 20, 0.5, 30);
+  },
+
   mount() { stage.reset(); },
   unmount() { shots = []; lastSim = null; },
 
   draw(P, s, p, ui) {
     const S = stage.begin(P, ui), M = S.M, ctx = P.ctx, sc = P.cam.scale;
+    if (!ui.snapshot) SC = sc;
     const [ox, oy] = P.S(0, 0), Rpx = RE * sc;
 
     // La Terra: disco pieno con l'atmosfera appena accennata e qualche meridiano tenue.
@@ -154,13 +166,19 @@ export default {
     ctx.save(); ctx.fillStyle = M.text; ctx.beginPath(); ctx.arc(bx, by, 5, 0, 7); ctx.fill(); ctx.restore();
     const v = Math.hypot(s.vx, s.vy) / 60;
     if (v > 1e-6 && !s.landed) {
-      const L = arrowPx(v, 12, VA) / sc;
+      const L = arrowPx(v, VREF, VA) / sc;
       P.arrow(s.x, s.y, s.x + s.vx / 60 / v * L, s.y + s.vy / 60 / v * L, { color: 'vel', key: 'v', width: 3, label: 'v' });
     }
     // Il cannone, sulla vetta.
     const [cx, cy] = P.S(0, r0(p));
     ctx.save(); ctx.translate(cx, cy); ctx.fillStyle = M.text; ctx.fillRect(-4, -9, 22, 7); ctx.beginPath(); ctx.arc(0, -4, 5, 0, 7); ctx.fill(); ctx.restore();
-    if (s.t === 0) tex(P, cx, cy - 30, symVal(P, 'h', uq('km', p.h, 0)), { size: 15, color: M.text, halo: M.bg });
+    if (s.t === 0) {
+      tex(P, cx, cy - 30, symVal(P, 'h', uq('km', p.h, 0)), { size: 15, color: M.text, halo: M.bg });
+      if (!ui.snapshot) {
+        P.handle(0, r0(p), ui.active === 'h');
+        P.handle(arrowPx(p.v, VREF, VA) / sc, r0(p), ui.active === 'v');
+      }
+    }
   },
 
   formulas(s, p) {

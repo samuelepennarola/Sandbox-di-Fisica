@@ -220,9 +220,22 @@ export default {
     { title: 'Accelerazioni', series: [{ key: 'ac', label: 'a꜀ centripeta (m/s²)', color: 'acc' }, { key: 'at', label: 'aₜ tangenziale (m/s²)', color: 'friction' }] },
   ],
 
-  resizables(s, p, { scale, size }) {
-    const b = bodyLook(p, size('body'));
-    return [{ key: 'body', x: p.R * Math.cos(s.th), y: p.R * Math.sin(s.th), rPx: Math.max(b.size * scale, b.minPx) / 2 }];
+  bodies(s, p, { scale, size }) {
+    const b = bodyLook(p, size('body')), m = p.m ?? 1;
+    const ux = Math.cos(s.th), uy = Math.sin(s.th), tx = -uy, ty = ux;
+    const ac = s.v * s.v / p.R, aT = s.stopped ? 0 : p.at;
+    const forces = [{ name: 'F_c', fx: -m * ac * ux, fy: -m * ac * uy, color: 'normal' }];
+    if (Math.abs(aT) > 1e-9) forces.push({ name: 'F_t', fx: m * aT * tx, fy: m * aT * ty, color: 'friction' });
+    return [{
+      key: 'body', title: 'il corpo',
+      x: p.R * ux, y: p.R * uy,
+      rPx: Math.max(b.size * scale, b.minPx) / 2,
+      m, color: 'vel',
+      v: [s.v * tx, s.v * ty],
+      a: [-ac * ux + aT * tx, -ac * uy + aT * ty],
+      forces,
+      note: p.m != null ? undefined : '\\text{massa di riferimento } 1\\ \\mathrm{kg}',
+    }];
   },
 
   handles(s, p) {

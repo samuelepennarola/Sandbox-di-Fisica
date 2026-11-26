@@ -4,6 +4,7 @@ import incline from './incline.js';
 import builder from './builder.js';
 import board from './board.js';
 import charges from './charges.js';
+import lorentz from './lorentz.js';
 import circular from './circular.js';
 import relative from './relative.js';
 import spring from './spring.js';
@@ -31,7 +32,7 @@ export const AREAS = [
   { id: 'gravitazione', title: 'Gravitazione', experiments: [orbits, cannon, gfield, threebody], soon: [] },
   { id: 'fluidi', title: 'Fluidi', experiments: [], soon: ['Archimede', 'Bernoulli'] },
   { id: 'termo', title: 'Termodinamica', experiments: [], soon: ['Gas ideale', 'Cicli termici'] },
-  { id: 'em', title: 'Elettromagnetismo', experiments: [charges], soon: ['Potenziale ed equipotenziali', 'Cariche in campi E e B'] },
+  { id: 'em', title: 'Elettromagnetismo', experiments: [charges, lorentz], soon: ['Potenziale ed equipotenziali'] },
   { id: 'ottica', title: 'Ottica geometrica', experiments: [], soon: ['Riflessione e rifrazione', 'Lenti'] },
 ];
 

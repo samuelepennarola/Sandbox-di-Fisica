@@ -11,6 +11,7 @@ const G = 1, EPS = 0.05;                       // costante e "ammorbidimento" vi
 const deg = Math.PI / 180;
 const VA = { min: 34, max: 110 };
 let SC = 50;
+let equipCache = { key: '', segs: null };
 
 const masses = p => [1, 2, 3].map(i => ({ i, m: p['m' + i], x: p['x' + i], y: p['y' + i] })).filter(q => q.m > 0);
 const rad = m => 0.12 + 0.1 * Math.cbrt(m);
@@ -121,7 +122,7 @@ export default {
       forces, a: [g.gx, g.gy], v: [s.vx, s.vy] }];
   },
 
-  mount() { stage.reset(); },
+  mount() { stage.reset(); equipCache = { key: '', segs: null }; },
 
   draw(P, s, p, ui) {
     const S = stage.begin(P, ui), M = S.M, cam = P.cam, ctx = P.ctx;
@@ -131,21 +132,28 @@ export default {
 
     // Equipotenziali: marching squares su una griglia di celle di 14 px, livelli in progressione geometrica.
     if (p.showEquip && ms.length) {
-      const cell = 14, nx = Math.ceil(cam.w / cell) + 1, ny = Math.ceil(cam.h / cell) + 1, V = new Float64Array(nx * ny);
-      for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { const [x, y] = cam.toWorld(i * cell, j * cell); V[j * nx + i] = gAt(p, x, y).phi; }
-      const levels = []; for (let k = 0; k < 14; k++) levels.push(-G * mTot / (0.6 * 1.35 ** k));
+      const key = ms.map(q => `${q.m.toFixed(4)},${q.x.toFixed(4)},${q.y.toFixed(4)}`).join('|') + `|${Math.round(cam.cx * 100)},${Math.round(cam.cy * 100)},${Math.round(cam.scale * 100)},${cam.w},${cam.h}`;
+      if (equipCache.key !== key) {
+        const cell = 14, nx = Math.ceil(cam.w / cell) + 1, ny = Math.ceil(cam.h / cell) + 1, V = new Float64Array(nx * ny);
+        for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { const [x, y] = cam.toWorld(i * cell, j * cell); V[j * nx + i] = gAt(p, x, y).phi; }
+        const levels = []; for (let k = 0; k < 14; k++) levels.push(-G * mTot / (0.6 * 1.35 ** k));
+        const segs = [];
+        for (const L of levels) for (let j = 0; j < ny - 1; j++) for (let i = 0; i < nx - 1; i++) {
+          const a = V[j * nx + i], b = V[j * nx + i + 1], c = V[(j + 1) * nx + i + 1], d = V[(j + 1) * nx + i];
+          const pts = [];
+          const edge = (v1, v2, x1, y1, x2, y2) => { if ((v1 - L) * (v2 - L) < 0) { const t = (L - v1) / (v2 - v1); pts.push([x1 + (x2 - x1) * t, y1 + (y2 - y1) * t]); } };
+          const X = i * cell, Y = j * cell;
+          edge(a, b, X, Y, X + cell, Y); edge(b, c, X + cell, Y, X + cell, Y + cell);
+          edge(c, d, X + cell, Y + cell, X, Y + cell); edge(d, a, X, Y + cell, X, Y);
+          if (pts.length >= 2) segs.push(pts[0][0], pts[0][1], pts[1][0], pts[1][1]);
+          if (pts.length === 4) segs.push(pts[2][0], pts[2][1], pts[3][0], pts[3][1]);
+        }
+        equipCache = { key, segs };
+      }
       ctx.save(); ctx.strokeStyle = M.vec.acc; ctx.lineWidth = 1.1; ctx.globalAlpha = 0.5 * S.grow('equip', 0.8);
       ctx.beginPath();
-      for (const L of levels) for (let j = 0; j < ny - 1; j++) for (let i = 0; i < nx - 1; i++) {
-        const a = V[j * nx + i], b = V[j * nx + i + 1], c = V[(j + 1) * nx + i + 1], d = V[(j + 1) * nx + i];
-        const pts = [];
-        const edge = (v1, v2, x1, y1, x2, y2) => { if ((v1 - L) * (v2 - L) < 0) { const t = (L - v1) / (v2 - v1); pts.push([x1 + (x2 - x1) * t, y1 + (y2 - y1) * t]); } };
-        const X = i * cell, Y = j * cell;
-        edge(a, b, X, Y, X + cell, Y); edge(b, c, X + cell, Y, X + cell, Y + cell);
-        edge(c, d, X + cell, Y + cell, X, Y + cell); edge(d, a, X, Y + cell, X, Y);
-        if (pts.length >= 2) { ctx.moveTo(...pts[0]); ctx.lineTo(...pts[1]); }
-        if (pts.length === 4) { ctx.moveTo(...pts[2]); ctx.lineTo(...pts[3]); }
-      }
+      const segs = equipCache.segs;
+      for (let k = 0; k < segs.length; k += 4) { ctx.moveTo(segs[k], segs[k + 1]); ctx.lineTo(segs[k + 2], segs[k + 3]); }
       ctx.stroke(); ctx.restore();
     }
 

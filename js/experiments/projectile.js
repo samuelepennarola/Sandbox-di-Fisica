@@ -129,11 +129,18 @@ export default {
     { title: 'Energia', series: [{ key: 'K', label: 'K cinetica (J)', color: 'vel' }, { key: 'U', label: 'U potenziale (J)', color: 'normal' }, { key: 'E', label: 'E meccanica (J)', color: 'friction' }] },
   ],
 
-  // Oggetti che si possono ingrandire per vederli meglio (non cambia la fisica).
-  resizables(s, p, { scale, size }) {
-    return [
-      { key: 'ball', x: s.x, y: s.y, rPx: Math.max(0.18 * scale, 10) * size('ball') },
-    ];
+  // Il proiettile per il diagramma di corpo libero (e per il ridimensionamento estetico).
+  bodies(s, p, { scale, size }) {
+    const v = Math.hypot(s.vx, s.vy), ax = -p.k * v * s.vx, ay = -p.g - p.k * v * s.vy;
+    const forces = [{ name: 'P', fx: 0, fy: -p.m * p.g, color: 'weight' }];
+    if (p.k > 0 && v > 1e-9) {
+      forces.push({ name: 'F_a', fx: -p.m * p.k * v * s.vx, fy: -p.m * p.k * v * s.vy, color: 'friction' });
+    }
+    return [{
+      key: 'ball', title: 'il proiettile', x: s.x, y: s.y,
+      rPx: Math.max(0.18 * scale, 10) * size('ball'),
+      m: p.m, color: 'weight', v: [s.vx, s.vy], a: [ax, ay], forces,
+    }];
   },
 
   handles(s, p) {

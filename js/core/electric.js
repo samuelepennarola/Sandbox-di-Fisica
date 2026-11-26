@@ -107,6 +107,6 @@ export function drawFieldGrid(P, fieldAt, isNear, sp = 54) {
   const mags = pts.map(p => p[4]).sort((a, b) => a - b), ref = mags[Math.floor(mags.length * 0.8)] || 1;
   for (const [x, y, ux, uy, m] of pts) {
     const k = Math.min(1, (m / ref) ** 0.5), len = sp * 0.75 * Math.max(0.25, k) / P.cam.scale;
-    P.arrow(x - ux * len / 2, y - uy * len / 2, x + ux * len / 2, y + uy * len / 2, { color: 'acc', width: 2, head: 7, alpha: 0.3 + 0.7 * k });
+    P.arrow(x - ux * len / 2, y - uy * len / 2, x + ux * len / 2, y + uy * len / 2, { color: 'field', width: 2, head: 7, alpha: 0.3 + 0.7 * k });
   }
 }

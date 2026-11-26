@@ -46,7 +46,7 @@ export class Inspector {
 
   get narrow() { return innerWidth < NARROW; }
   // Spazio che l'ispettore toglie all'inquadratura della scena, in px (0 se chiuso o su schermi stretti).
-  get reserved() { return this.open && !this.narrow ? INSPECTOR_W + MARGIN : 0; }
+  get reserved() { return this.open && !this.narrow && !this.lesson ? INSPECTOR_W + MARGIN : 0; }
   get shown() { return this.open; }
 
   setTitle(t) { this.titleEl.textContent = t; }
@@ -70,7 +70,7 @@ export class Inspector {
 
   setOpen(v) { this.change(() => { this.open = v; }); }
   toggle() { this.setOpen(!this.open); }
-  setLesson(v) { this.lesson = v; this.sync(); }
+  setLesson(v) { this.change(() => { this.lesson = v; }); }
 
   change(fn) {
     const before = this.reserved;

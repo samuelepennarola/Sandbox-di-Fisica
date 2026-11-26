@@ -171,6 +171,20 @@ function snapBody(spec, o) {
   }
 }
 
+// Id dei corpi dinamici attualmente appoggiati sulla faccia superiore di un piano inclinato o di una superficie.
+function restingOn(spec, o) {
+  if (o.type !== 'incline' && o.type !== 'surface') return [];
+  const f = faces({ objects: [o] })[1];
+  const ids = [];
+  for (const b of spec.objects) {
+    if (!DYNAMIC.has(b.type)) continue;
+    const half = b.type === 'block' ? b.h / 2 : b.r, rx = b.x - f.p[0], ry = b.y - f.p[1];
+    const t = rx * f.u[0] + ry * f.u[1], d = rx * f.n[0] + ry * f.n[1];
+    if (t >= 0 && t <= f.len && Math.abs(d - half) < 0.05) ids.push(b.id);
+  }
+  return ids;
+}
+
 /* ---------------- Mondo fisico ---------------- */
 
 // Punto di tangenza della fune sulla carrucola, dalla parte del corpo (la fune passa sopra la ruota).
@@ -485,8 +499,14 @@ function electricEnergy(st) {
 // Le linee si ricalcolano solo se cambiano le cariche, il campo uniforme o l'inquadratura (non a ogni fotogramma).
 const LC = { key: null, lines: [] };
 function cachedFieldLines(st, box, list) {
-  const key = JSON.stringify([list.map(c => [c.id, c.x, c.y, c.q]), st.spec.E ?? 0, st.spec.Eangle ?? 0, box.map(v => Math.round(v * 20))]);
-  if (key !== LC.key) { LC.key = key; LC.lines = fieldLines(st, box); }
+  const qbox = [
+    Math.floor(box[0] * 2) / 2 - 0.5,
+    Math.floor(box[1] * 2) / 2 - 0.5,
+    Math.ceil(box[2] * 2) / 2 + 0.5,
+    Math.ceil(box[3] * 2) / 2 + 0.5,
+  ];
+  const key = JSON.stringify([list.map(c => [c.id, c.x, c.y, c.q]), st.spec.E ?? 0, st.spec.Eangle ?? 0, qbox]);
+  if (key !== LC.key) { LC.key = key; LC.lines = fieldLines(st, qbox); }
   return LC.lines;
 }
 
@@ -757,6 +777,7 @@ function pickEndpoint(st, wx, wy, tol) {
 function moveGesture(o, wx0, wy0) {
   const ox = o.x, oy = o.y;
   let moved = false;
+  const resting = restingOn(B.spec, o);
   // Punti a cui allinearsi: centri degli altri oggetti (e l'origine degli assi).
   const others = [[0, 0], ...B.spec.objects.filter(p => p !== o && 'x' in p && p.type !== 'incline').map(p => [p.x, p.y])];
   return {
@@ -771,6 +792,7 @@ function moveGesture(o, wx0, wy0) {
       o.x = al.vx ?? gs(al.x); o.y = al.hy ?? gs(al.y);
       if (o.type === 'incline') o.y = Math.max(0, o.y);
       if (DYNAMIC.has(o.type)) snapBody(B.spec, o);
+      for (const id of resting) { const b = objOf(B.spec, id); if (b) snapBody(B.spec, b); }
       B.drag = { o, vx: al.vx, hy: o.y === al.hy ? al.hy : null };
       B.api.reset();
     },
@@ -873,16 +895,7 @@ function resizeGesture(st, h) {
   const foot = o.type === 'incline' ? (o.dir === -1 ? [o.x + o.L * Math.cos(o.alpha * deg), o.y] : [o.x, o.y]) : null;
   const other = o.type === 'surface' ? toW(T, (h.id === 'endA' ? 1 : -1) * o.L / 2, 0) : null;
   // Corpi che all'inizio del gesto sono appoggiati sulla faccia di questo oggetto.
-  const resting = [];
-  if (o.type === 'incline' || o.type === 'surface') {
-    const f = faces({ objects: [o] })[1];
-    for (const b of B.spec.objects) {
-      if (!DYNAMIC.has(b.type)) continue;
-      const half = b.type === 'block' ? b.h / 2 : b.r, rx = b.x - f.p[0], ry = b.y - f.p[1];
-      const t = rx * f.u[0] + ry * f.u[1], d = rx * f.n[0] + ry * f.n[1];
-      if (t >= 0 && t <= f.len && Math.abs(d - half) < 0.05) resting.push(b.id);
-    }
-  }
+  const resting = restingOn(B.spec, o);
   B.resizing = h.id;
   return {
     move: ({ wx, wy }) => {
@@ -909,7 +922,7 @@ function resizeGesture(st, h) {
         o.x = r2(other[0] + dx / 2); o.y = r2(other[1] + dy / 2);
       }
       // I corpi appoggiati su un piano o su una superficie ne seguono la nuova forma.
-      if (o.type === 'incline' || o.type === 'surface') for (const id of resting) snapBody(B.spec, objOf(B.spec, id));
+      for (const id of resting) { const b = objOf(B.spec, id); if (b) snapBody(B.spec, b); }
       B.api.reset();
     },
     up: () => { B.resizing = null; save(); B.api.refresh(); },
@@ -1199,13 +1212,17 @@ function buildPanel(body, api) {
   api.setRail(TOOL_GROUPS.map(([title, items]) => ({ title, items })), B.tool, (t, force) => setTool(!force && B.tool === t && t !== 'select' ? 'select' : t));
   if (B.tool !== 'select') body.appendChild(el('div', 'hint', hint()));
 
-  const spec = B.spec, item = selected(spec);
+  const spec = B.spec, item = selected(spec), hasEMNow = () => !!(spec.E || spec.objects.some(o => o.q));
   if (item) {
     body.appendChild(el('div', 'sel-title', `<span class="dot"></span>${nameOf(spec, item)}`));
     const ctl = (parent, def) => parent.appendChild(api.control({ ...def, pinLabel: `${nameOf(spec, item)} · ${def.label}` }, () => item[def.key] ?? 0, v => {
+      const hadEM = hasEMNow();
+      const resting = (item.type === 'incline' || item.type === 'surface') && (def.key === 'alpha' || def.key === 'L' || def.key === 'dir' || def.key === 'angle') ? restingOn(spec, item) : [];
       item[def.key] = v;
       if (DYNAMIC.has(item.type) && (def.key === 'h' || def.key === 'r')) snapBody(spec, item);
+      for (const id of resting) { const b = objOf(spec, id); if (b) snapBody(spec, b); }
       save(); api.reset();
+      if (hasEMNow() !== hadEM) api.rebuildPanel();
     }, `${item.id}.${def.key}`));
     const prim = PRIMARY[item.type], defs = PROPS[item.type];
     for (const def of defs) if (!prim || prim.includes(def.key)) ctl(body, def);
@@ -1213,7 +1230,12 @@ function buildPanel(body, api) {
       const pos = api.section(body, 'Posizione', 'b.pos', true);
       for (const k of ['x', 'y']) {
         pos.appendChild(api.control({ key: k, label: `Posizione ${k}`, pinLabel: `${nameOf(spec, item)} · ${k}`, unit: 'm', min: k === 'x' ? -20 : 0, max: 20, step: 0.01, hardMin: -1e3, hardMax: 1e3 },
-          () => item[k], v => { item[k] = v; save(); api.reset(); }, `${item.id}.${k}`));
+          () => item[k], v => {
+            const resting = restingOn(spec, item);
+            item[k] = v;
+            for (const id of resting) { const b = objOf(spec, id); if (b) snapBody(spec, b); }
+            save(); api.reset();
+          }, `${item.id}.${k}`));
       }
     }
     if (prim) {
@@ -1244,9 +1266,13 @@ function buildPanel(body, api) {
   scene.appendChild(api.control({ key: 'g', label: 'Gravità g', unit: 'm/s²', min: 0, max: 25, step: 0.01 }, () => spec.g, v => { spec.g = v; save(); api.reset(); }, 'scene.g'));
   scene.appendChild(api.control({ key: 'muFloor', label: 'Attrito μ del suolo', unit: '', min: 0, max: 1.5, step: 0.01 }, () => spec.muFloor, v => { spec.muFloor = v; save(); api.reset(); }, 'scene.mu'));
   // Gli interruttori di «Mostra» e quelli elettrici stanno nella barra sulla scena (toggles), gli esempi nel cassetto.
-  const hasEM = spec.E || spec.objects.some(o => o.q);
-  const em = api.section(body, 'Elettromagnetismo', 'b.em', !!hasEM);
-  em.appendChild(api.control({ key: 'E', label: 'Campo elettrico uniforme E', unit: 'kN/C', min: 0, max: 2000, step: 5 }, () => spec.E ?? 0, v => { spec.E = v; save(); api.reset(); }, 'scene.E'));
+  const hasEM = hasEMNow();
+  const em = api.section(body, 'Elettromagnetismo', 'b.em', hasEM);
+  em.appendChild(api.control({ key: 'E', label: 'Campo elettrico uniforme E', unit: 'kN/C', min: 0, max: 2000, step: 5 }, () => spec.E ?? 0, v => {
+    const hadEM = hasEMNow();
+    spec.E = v; save(); api.reset();
+    if (hasEMNow() !== hadEM) api.rebuildPanel();
+  }, 'scene.E'));
   em.appendChild(api.control({ key: 'Eangle', label: 'Direzione del campo', unit: '°', min: -180, max: 180, step: 1 }, () => spec.Eangle ?? 0, v => { spec.Eangle = v; save(); api.reset(); }, 'scene.Ea'));
   em.appendChild(el('div', 'hint', 'Per caricare un blocco o una sfera, selezionalo e cambia la sua carica q.'));
 }
@@ -1655,7 +1681,7 @@ $$\\sum \\vec F = m\\,\\vec a$$
   <li>Selezionando un blocco o una sfera puoi dargli una <b>carica</b> $q$ (in µC). Con <i>Carica +</i> e <i>Carica −</i> aggiungi cariche fisse.</li>
   <li>Due cariche si attraggono o si respingono con la <b>legge di Coulomb</b>: $F = k\\,\\dfrac{|q_1 q_2|}{r^2}$.</li>
   <li>Nella sezione Elettromagnetismo della scena puoi accendere un <b>campo elettrico uniforme</b> $\\vec E$ (come tra le armature di un condensatore): su ogni corpo carico agisce $\\vec F = q\\,\\vec E$.</li>
-  <li>Nel diagramma di corpo libero la forza elettrica compare in viola come $F_e$.</li>
+  <li>Nel diagramma di corpo libero la forza elettrica compare in giallo come $F_e$.</li>
   <li>Nella sezione Elettromagnetismo puoi mostrare le <b>forze elettriche</b> su tutte le cariche (anche quelle fisse), i <b>vettori del campo</b> e le <b>distanze</b> tra le cariche. Selezionando una carica, il pannello Formule riporta ogni forza di Coulomb con distanza, angolo e componenti.</li>
   <li>Ogni oggetto selezionato ha la sua <b>posizione x, y</b>, che puoi scrivere esattamente; trascinando, gli oggetti scattano su una griglia di 5 cm.</li>
 </ul>

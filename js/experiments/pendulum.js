@@ -178,7 +178,8 @@ export default {
       { h: 'Istante attuale' },
       { tex: `t=${uq('s', s.t)}\\qquad \\theta=${tn(s.th / deg, 1)}°` },
       { tex: `${C('weight', 'P_t')}=-m g\\sin\\theta=${uq('N', -p.m * p.g * Math.sin(s.th))}` },
-      { tex: `K=${uq('J', K)}\\qquad U=m g L(1-\\cos\\theta)=${uq('J', U)}` },
+      { tex: `K=${uq('J', K)}` },
+      { tex: `U=m g L(1-\\cos\\theta)=${uq('J', U)}` },
       big && { tex: `\\theta_0=${Math.abs(p.th0)}°:\\ \\sin\\theta\\not\\approx\\theta,\\ \\text{il moto non è armonico}`, cls: 'warn' },
     ].filter(Boolean);
   },
