@@ -247,6 +247,8 @@ export default {
   },
 
   done: s => s.t >= s.tEnd,
+  // Rallentamento dolce automatico per lanci/traversate brevi (~6,5 s reali).
+  timeScale: s => Math.max(0.28, Math.min(1, (s?.tEnd ?? 6.5) / 6.5)),
 
   sample(s) {
     return { t: s.t, x: s.x, xp: s.xp, y: s.y, vx: s.vx, vpx: s.vpx, VX: s.VX, vy: s.vy };

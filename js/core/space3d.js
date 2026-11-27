@@ -5,14 +5,19 @@
 // Le linee si spezzano in tratti; ogni tratto prende l'opacità della sua distanza dall'origine e i tratti si
 // raggruppano per opacità, così un fotogramma costa pochi stroke anche con migliaia di segmenti.
 import { palette } from './manim.js';
+import { floor as floor3d, is3dActive } from './manim3d.js';
 
 const LEVELS = 10;   // gradini di opacità
 
 // V: la camera (View3D) con p(x, y, z) → [X, Y] mondo 2D. up: l'asse verticale della scena ('y' o 'z').
 // step: lato del quadretto principale (m, UA...); n: quadretti per lato (l'estensione è n·step).
-export function space3d(P, V, { origin = [0, 0, 0], up = 'y', step = 1, n = 30, alpha = 1 } = {}) {
+export function space3d(P, V, { origin = [0, 0, 0], up = 'y', step = 1, n = 36, alpha = 1 } = {}) {
   const k = V.tilt(0.1) * alpha;
   if (k <= 0.001) return;
+  if (is3dActive()) {
+    floor3d({ origin, up, step, n, alpha });
+    return;
+  }
   const M = P.M ?? palette(P.c), ctx = P.ctx, R = n * step, [ox, oy, oz] = origin;
   const fade = d => { const u = Math.max(0, 1 - d / R); return u * u; };   // svanisce dolcemente verso l'orizzonte
   // Piani: quello perpendicolare all'asse verticale è il pavimento (più marcato), gli altri due fanno da pareti.

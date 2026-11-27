@@ -69,11 +69,28 @@ const pick = (pal, c) => pal[c] ?? c;
 
 /* ---------------- Corpi semplici ---------------- */
 
-// Palla alla Manim: disco pieno con bordo acceso; `spin` (rad) ruota un raggio per mostrare la rotazione.
+// Palla 2.5D alla Manim (doppio registro scuro/chiaro): luce dall'alto-sinistra + rim-light nel tema scuro,
+// sfumatura morbida senza bagliore nel tema chiaro. `spin` (rad) ruota un raggio per mostrare la rotazione.
 export function ball(P, x, y, { r = 0.15, minPx = 11, color = 'red', spin = null } = {}) {
+  const dark = document.documentElement.dataset.theme === 'dark';
   local(P, x, y, 0, unitFor(P, r, minPx), (ctx, pal, lw) => {
-    const edge = pal[color + 'Edge'] ?? pal.outline;
-    disc(ctx, 0, 0, r); paint(ctx, pick(pal, color), edge, 2 * lw);
+    const base = pick(pal, color), edge = pal[color + 'Edge'] ?? pal.outline;
+    const isHex = /^#[0-9a-f]{6}$/i.test(base);
+    if (dark && isHex) {
+      const g = ctx.createRadialGradient(0, 0, r * 0.5, 0, 0, r * 2.1);
+      g.addColorStop(0, base + '3c'); g.addColorStop(1, base + '00');
+      disc(ctx, 0, 0, r * 2.1); paint(ctx, g);
+    }
+    let fill = base;
+    if (isHex) {
+      // In coordinate locali y va verso l'alto, quindi la luce in alto-sinistra è (-0.32r, +0.34r).
+      const g = ctx.createRadialGradient(-r * 0.32, r * 0.34, r * 0.08, 0, 0, r * 1.05);
+      g.addColorStop(0, mixHex(base, '#ffffff', dark ? 0.42 : 0.32));
+      g.addColorStop(0.55, base);
+      g.addColorStop(1, mixHex(base, dark ? '#08090c' : '#1c1914', dark ? 0.46 : 0.25));
+      fill = g;
+    }
+    disc(ctx, 0, 0, r); paint(ctx, fill, edge, 1.8 * lw);
     if (spin != null) {
       ctx.strokeStyle = edge; ctx.lineWidth = 1.6 * lw;
       ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(spin) * r, Math.sin(spin) * r); ctx.stroke();
@@ -91,10 +108,20 @@ export function groundShadow(P, x, yGround, height, { w = 0.5, minPx = 10 } = {}
   });
 }
 
-// Corpo rigido (cassa) centrato in (x, y), lati w × h, ruotato di angle: rettangolo pieno con bordo acceso.
+// Corpo rigido (cassa) 2.5D centrato in (x, y), lati w × h, ruotato di angle: sfumatura verticale morbida e bordo nitido.
 export function crate(P, x, y, { w = 1, h = 0.7, angle = 0, minPx = 26, color = 'blue' } = {}) {
+  const dark = document.documentElement.dataset.theme === 'dark';
   local(P, x, y, angle, unitFor(P, Math.max(w, h), minPx), (ctx, pal, lw) => {
-    rr(ctx, -w / 2, -h / 2, w, h, Math.min(w, h) * 0.08); paint(ctx, pick(pal, color), pal[color + 'Edge'] ?? pal.outline, 2 * lw);
+    const base = pick(pal, color), isHex = /^#[0-9a-f]{6}$/i.test(base);
+    let fill = base;
+    if (isHex) {
+      const g = ctx.createLinearGradient(0, h / 2, 0, -h / 2);
+      g.addColorStop(0, mixHex(base, '#ffffff', dark ? 0.22 : 0.18));
+      g.addColorStop(0.55, base);
+      g.addColorStop(1, mixHex(base, dark ? '#08090c' : '#1c1914', dark ? 0.38 : 0.18));
+      fill = g;
+    }
+    rr(ctx, -w / 2, -h / 2, w, h, Math.min(w, h) * 0.09); paint(ctx, fill, pal[color + 'Edge'] ?? pal.outline, 1.9 * lw);
   });
 }
 

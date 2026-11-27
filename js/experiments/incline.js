@@ -76,12 +76,12 @@ const INCLINE = {
   gridLabels: p => !p.showTrace,   // con il grafico x(t) acceso i numeri li porta il suo asse x, allineato alla scena
 
   params: [
-    { key: 'alpha', label: 'Inclinazione α', unit: '°', min: 0, max: 85, step: 1, value: 30 },
+    { key: 'alpha', label: 'Inclinazione α', unit: '°', min: 0, max: 85, step: 1, value: 30, quick: true },
+    { key: 'L', label: 'Lunghezza del piano L', unit: 'm', min: 2, max: 50, step: 0.5, value: 10, refit: true, quick: true },
     { key: 'm', label: 'Massa m', unit: 'kg', min: 0.1, max: 100, step: 0.1, value: 2 },
-    { key: 'mus', label: 'Attrito statico μs', unit: '', min: 0, max: 1.2, step: 0.01, value: 0.5 },
+    { key: 'mus', label: 'Attrito statico μs', unit: '', min: 0, max: 1.2, step: 0.01, value: 0.5, quick: true },
     { key: 'muk', label: 'Attrito dinamico μd', unit: '', min: 0, max: 1.2, step: 0.01, value: 0.3 },
     { key: 'v0', label: 'Velocità iniziale v₀ (+ giù)', unit: 'm/s', min: -30, max: 30, step: 0.1, value: 0 },
-    { key: 'L', label: 'Lunghezza del piano L', unit: 'm', min: 2, max: 50, step: 0.5, value: 10, refit: true },
     { key: 's0', label: 'Posizione iniziale s₀', unit: 'm', min: BW / 2, max: 50 - BW / 2, step: 0.1, value: 1.5 },
     { key: 'g', label: 'Gravità g', unit: 'm/s²', min: 1, max: 25, step: 0.01, value: 9.81 },
     { key: 'showComp', type: 'toggle', label: 'Scomponi il peso', value: true, live: true },
@@ -138,6 +138,16 @@ const INCLINE = {
 
   done: s => s.done,
 
+  // Rallentamento dolce automatico quando la discesa dura pochi secondi, così il moto resta ben leggibile (~6,5 s reali).
+  timeScale(s, p) {
+    const g = geom(p), a = dynamics(s.v || 1e-6, p, g).a;
+    if (a <= 1e-4) return 1;
+    const dist = Math.max(0.5, p.L - BW / 2 - clamp(p.s0, BW / 2, p.L - BW / 2));
+    const v0 = Math.max(0, p.v0);
+    const tEst = (-v0 + Math.sqrt(v0 * v0 + 2 * a * dist)) / a;
+    return clamp(tEst / 6.5, 0.3, 1);
+  },
+
   sample(s, p) {
     const g = geom(p);
     const K = 0.5 * p.m * s.v * s.v, U = p.m * p.g * (p.L - s.s) * g.sn;
@@ -161,26 +171,48 @@ const INCLINE = {
     if (Math.abs(st.f) > 1e-9) {
       forces.push({ name: st.regime === 'statico' ? 'f_s' : 'f_d', fx: st.f * g.d[0], fy: st.f * g.d[1], color: 'friction' });
     }
-    return [{
-      key: 'block', title: 'il blocco',
-      x: g.T[0] + g.d[0] * st.s + g.n[0] * h,
-      y: g.T[1] + g.d[1] * st.s + g.n[1] * h,
-      rPx: Math.hypot(BW, BH) * k * scale / 2,
-      m: p.m, color: 'weight',
-      v: [st.v * g.d[0], st.v * g.d[1]],
-      a: [st.a * g.d[0], st.a * g.d[1]],
-      forces,
-    }];
+    return [
+      {
+        key: 'block', title: 'il blocco',
+        x: g.T[0] + g.d[0] * st.s + g.n[0] * h,
+        y: g.T[1] + g.d[1] * st.s + g.n[1] * h,
+        rPx: Math.hypot(BW, BH) * k * scale / 2,
+        m: p.m, color: 'weight',
+        v: [st.v * g.d[0], st.v * g.d[1]],
+        a: [st.a * g.d[0], st.a * g.d[1]],
+        forces,
+        params: ['m', 'v0', 's0'],
+      },
+      {
+        key: 'plane', title: 'il piano inclinato',
+        x: g.B[0] * 0.45, y: g.T[1] * 0.45,
+        rPx: 22, noResize: true, noKinematics: true, noRing: true,
+        params: ['alpha', 'L', 'mus', 'muk'],
+        hit: (wx, wy) => {
+          if (wx < -0.25 || wx > g.B[0] + 0.25 || wy < -0.25 || wy > g.T[1] + 0.25) return false;
+          const yTop = g.T[1] * (1 - wx / Math.max(0.05, g.B[0]));
+          return wy <= yTop + 0.35;
+        },
+      },
+    ];
   },
 
   handles(s, p) {
     const g = geom(p);
     const C = [g.T[0] + g.d[0] * s.s + g.n[0] * BH / 2, g.T[1] + g.d[1] * s.s + g.n[1] * BH / 2];
-    return [{ id: 'block', x: C[0], y: C[1], r: 30 }, { id: 'alpha', x: g.T[0], y: g.T[1] }];
+    return [
+      { id: 'block', x: C[0], y: C[1], r: 30 },
+      { id: 'alpha', x: g.T[0], y: g.T[1] },
+      { id: 'L', x: g.B[0], y: g.B[1] },
+    ];
   },
 
   drag(id, wx, wy, p) {
     if (id === 'alpha') p.alpha = clamp(Math.round(Math.asin(clamp(wy / p.L, 0, 1)) / deg), 0, 60);
+    if (id === 'L') {
+      const c = Math.max(0.2, Math.cos(p.alpha * deg));
+      p.L = clamp(Math.round((wx / c) * 2) / 2, 2, 50);
+    }
     if (id === 'block') {
       const g = geom(p);
       const s = (wx - g.T[0]) * g.d[0] + (wy - g.T[1]) * g.d[1];
@@ -278,6 +310,7 @@ const INCLINE = {
     }
 
     P.handle(T[0], T[1], ui.active === 'alpha');
+    P.handle(B[0], B[1], ui.active === 'L');
     if (ui.active === 'block') P.handle(C[0], C[1], true);
   },
 
@@ -310,6 +343,20 @@ const INCLINE = {
       { tex: `K=${uq('J', K)}\\quad U=${uq('J', U)}\\quad Q=${uq('J', st.Q)}` },
       { tex: `K+U+Q=${uq('J', K + U + st.Q)}` },
     ];
+  },
+
+  derivation() {
+    return {
+      title: 'Accelerazione lungo il piano inclinato',
+      steps: [
+        { tex: 'P_\\parallel - f_d = m a', note: 'Seconda legge di Newton lungo il piano' },
+        { tex: 'm g \\sin\\alpha - \\mu_d N = m a', note: 'Sostituiamo la componente del peso e l’attrito dinamico' },
+        { tex: 'm g \\sin\\alpha - \\mu_d m g \\cos\\alpha = m a', note: 'Sul piano la reazione normale vale N = mg cos α' },
+        { indicate: 'm', note: 'La massa m compare in tutti i termini e si semplifica' },
+        { tex: 'a = g(\\sin\\alpha - \\mu_d \\cos\\alpha)', note: 'L’accelerazione non dipende dalla massa!' },
+        { box: 'a = g(\\sin\\alpha - \\mu_d \\cos\\alpha)', note: 'Legge del moto lungo il piano inclinato' },
+      ],
+    };
   },
 
   theory: `

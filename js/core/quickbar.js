@@ -64,22 +64,82 @@ const BY_KEY = {
 export function quickLabel(def) { return def.short ?? BY_KEY[def.key]?.[0] ?? def.label.split(/[:(]/)[0].trim(); }
 export function quickIcon(def) { return ICONS[def.icon ?? BY_KEY[def.key]?.[1]] ?? ICONS.eye; }
 
-// Costruisce la barra: un pulsante per ogni interruttore. get/set leggono e scrivono il parametro; restituisce le
-// funzioni di sincronizzazione (per aggiornare lo stato quando cambiano i parametri da fuori, per esempio un preset).
+const MORE_ICON = SVG('<circle cx="4.5" cy="10" r="1.5" fill="currentColor"/><circle cx="10" cy="10" r="1.5" fill="currentColor"/><circle cx="15.5" cy="10" r="1.5" fill="currentColor"/>');
+const MAX_INLINE = 5;   // oltre 5 interruttori, i meno usati vanno nel menu "⋯"
+
+// Chiude l'eventuale menu "⋯" aperto al tocco fuori dalla quickbar.
+let closeMore = null;
+document.addEventListener('pointerdown', e => {
+  if (closeMore && !e.target.closest('.quickbar')) closeMore();
+}, true);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && closeMore) closeMore();
+});
+
+// Costruisce la barra compatta su una sola riga: pastiglie solo icona (etichetta al passaggio/pressione)
+// e, se gli interruttori sono più di MAX_INLINE, un pulsante "⋯" con menu per i restanti.
 export function buildQuickbar(el, defs, get, set) {
   el.innerHTML = '';
+  closeMore = null;
   const syncs = [];
-  for (const def of defs) {
+  const inline = defs.length > MAX_INLINE ? defs.slice(0, MAX_INLINE - 1) : defs;
+  const extra = defs.length > MAX_INLINE ? defs.slice(MAX_INLINE - 1) : [];
+
+  for (const def of inline) {
     const b = document.createElement('button');
     b.type = 'button';
+    const lab = quickLabel(def);
     b.title = def.label;
-    b.innerHTML = `${quickIcon(def)}<span>${quickLabel(def)}</span>`;
+    b.setAttribute('aria-label', def.label);
+    b.dataset.tip = lab;
+    b.innerHTML = `${quickIcon(def)}<span class="qb-tip">${lab}</span>`;
     const sync = () => { const on = !!get(def); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); };
     b.onclick = () => { set(def, !get(def)); sync(); };
     sync();
     syncs.push(sync);
     el.appendChild(b);
   }
+
+  if (extra.length) {
+    const wrap = document.createElement('div');
+    wrap.className = 'qb-more-wrap';
+    const moreBtn = document.createElement('button');
+    moreBtn.type = 'button';
+    moreBtn.className = 'qb-more';
+    moreBtn.title = 'Altre opzioni della scena';
+    moreBtn.setAttribute('aria-label', 'Altre opzioni della scena');
+    moreBtn.innerHTML = `${MORE_ICON}<span class="qb-tip">Altro</span>`;
+
+    const pop = document.createElement('div');
+    pop.className = 'qb-more-pop hidden';
+    const syncMore = () => moreBtn.classList.toggle('on', extra.some(d => !!get(d)));
+    for (const def of extra) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.innerHTML = `${quickIcon(def)}<span>${quickLabel(def)}</span>`;
+      item.title = def.label;
+      const sync = () => {
+        const on = !!get(def);
+        item.classList.toggle('on', on);
+        item.setAttribute('aria-pressed', on);
+        syncMore();
+      };
+      item.onclick = () => { set(def, !get(def)); sync(); };
+      sync();
+      syncs.push(sync);
+      pop.appendChild(item);
+    }
+    syncMore();
+    moreBtn.onclick = () => {
+      const open = pop.classList.contains('hidden');
+      pop.classList.toggle('hidden', !open);
+      moreBtn.setAttribute('aria-expanded', open);
+    };
+    closeMore = () => { pop.classList.add('hidden'); moreBtn.setAttribute('aria-expanded', 'false'); };
+    wrap.append(moreBtn, pop);
+    el.appendChild(wrap);
+  }
+
   el.classList.toggle('hidden', !defs.length);
   return syncs;
 }

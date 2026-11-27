@@ -2,7 +2,7 @@
 // più le animazioni leggere (polvere, scie). Stesso stile piatto con contorno e stessa palette di shapes.js,
 // che resta il kit delle sagome degli oggetti (casse, palle, ruote, persone, veicoli).
 import { palette } from './shapes.js';
-import { slabM, palette as manimPalette } from './manim.js';
+import { slabM, palette as manimPalette, glowStroke } from './manim.js';
 
 export const look = { t: 0, live: false, particles: [] };
 
@@ -42,12 +42,17 @@ export function drawParticles(P) {
   for (const p of look.particles) P.circle(p.x, p.y, p.r * (1.4 - p.life / p.max * 0.4), { fill: 'dust', alpha: 0.55 * p.life / p.max });
 }
 
-// Scia che sfuma verso il passato.
+// Scia morbida (Catmull-Rom) che sfuma verso il passato, con doppio registro scuro/chiaro.
 export function trail(P, pts, color = 'vel', width = 3) {
   const n = pts.length;
   if (n < 2) return;
-  const chunk = Math.max(2, Math.ceil(n / 36));
-  for (let i = 0; i < n - 1; i += chunk) P.line(pts.slice(i, i + chunk + 1), { color, width, alpha: 0.12 + 0.55 * (i / n) });
+  const col = P.col(color), dark = document.documentElement.dataset.theme === 'dark';
+  const screen = pts.map(([x, y]) => P.S(x, y));
+  const chunk = Math.max(2, Math.ceil(n / 28));
+  for (let i = 0; i < n - 1; i += chunk) {
+    const seg = screen.slice(i, Math.min(n, i + chunk + 1));
+    glowStroke(P.ctx, seg, col, { width, alpha: 0.14 + 0.62 * (i / n), dark });
+  }
 }
 
 /* ---------------- Utilità ---------------- */

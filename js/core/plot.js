@@ -1,6 +1,6 @@
 import { niceStep } from './math.js';
 import { unitLabel } from './units.js';
-import { palette, tex, mixHex } from './manim.js';
+import { palette, tex, mixHex, smoothPath } from './manim.js';
 
 // Grafici della scheda "Grafici" alla 3Blue1Brown: piano con la griglia tenue del NumberPlane, assi con le punte,
 // numeri e titoli in LaTeX classico, curve nel colore della grandezza sulla scena e un punto luminoso che scorre
@@ -150,29 +150,30 @@ export function drawPlot(canvas, samples, graph, colors, cursor = null, tUnit = 
   const tipPts = [];
   for (const ser of series) {
     const col = seriesColor(M, colors, ser.color);
-    const path = () => {
-      ctx.beginPath();
-      let pen = false, last = null;
-      const pt = s => {
-        const v = ser.get(s);
-        if (!Number.isFinite(v)) { pen = false; return; }
-        pen ? ctx.lineTo(X(s.t), Y(v)) : ctx.moveTo(X(s.t), Y(v));
-        pen = true; last = s;
-      };
-      for (let i = 0; i < samples.length; i += stride) { if (samples[i].t > tCut) break; pt(samples[i]); }
-      // Punto finale esatto del tracciamento (interpolato), così il Create scorre senza scatti.
-      if (create < 1 && last) {
-        const j = samples.findIndex(s => s.t > tCut);
-        if (j > 0) {
-          const a = samples[j - 1], b = samples[j], va = ser.get(a), vb = ser.get(b);
-          if (Number.isFinite(va) && Number.isFinite(vb)) { const f = (tCut - a.t) / ((b.t - a.t) || 1); ctx.lineTo(X(tCut), Y(va + (vb - va) * f)); }
-        }
-      } else if (samples.length) pt(samples[samples.length - 1]);
+    // Raccoglie segmenti continui (spezzati su NaN/null) e li traccia con Catmull-Rom morbido.
+    const segs = [];
+    let seg = [], last = null;
+    const pushPt = s => {
+      const v = ser.get(s);
+      if (!Number.isFinite(v)) { if (seg.length > 1) segs.push(seg); seg = []; return; }
+      seg.push([X(s.t), Y(v)]); last = s;
     };
+    for (let i = 0; i < samples.length; i += stride) { if (samples[i].t > tCut) break; pushPt(samples[i]); }
+    if (create < 1 && last) {
+      const j = samples.findIndex(s => s.t > tCut);
+      if (j > 0) {
+        const a = samples[j - 1], b = samples[j], va = ser.get(a), vb = ser.get(b);
+        if (Number.isFinite(va) && Number.isFinite(vb)) { const f = (tCut - a.t) / ((b.t - a.t) || 1); seg.push([X(tCut), Y(va + (vb - va) * f)]); }
+      }
+    } else if (samples.length) pushPt(samples[samples.length - 1]);
+    if (seg.length > 1) segs.push(seg);
+
+    const drawSegs = () => { for (const g of segs) { smoothPath(ctx, g); ctx.stroke(); } };
     if (ser.dash) ctx.setLineDash(ser.dash);
-    // Alone del colore di fondo sotto la curva: la stacca dalla griglia e dalle altre serie.
-    path(); ctx.strokeStyle = M.bg; ctx.globalAlpha = 0.8; ctx.lineWidth = 5.5; ctx.stroke();
-    path(); ctx.strokeStyle = col; ctx.globalAlpha = 1; ctx.lineWidth = 2.6; ctx.stroke();
+    // Alone del colore di fondo sotto la curva (stacca dalla griglia) + bagliore calibrato solo nel tema scuro.
+    ctx.strokeStyle = M.bg; ctx.globalAlpha = 0.8; ctx.lineWidth = 5.2; drawSegs();
+    if (M.dark) { ctx.strokeStyle = col; ctx.globalAlpha = 0.2; ctx.lineWidth = 7.2; drawSegs(); }
+    ctx.strokeStyle = col; ctx.globalAlpha = 1; ctx.lineWidth = 2.6; drawSegs();
     ctx.setLineDash([]);
     const v = cur && ser.get(cur);
     if (Number.isFinite(v) && create >= 1) tipPts.push([X(cur.t), Y(v), col]);

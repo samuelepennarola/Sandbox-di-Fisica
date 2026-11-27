@@ -149,39 +149,59 @@ function plan(P, LA, LB, size, map) {
 
 /* ---------------- Disegno ---------------- */
 
-// Un simbolo con centro in (cx, cy), scala k, opacità a e colore c.
-function drawTok(ctx, k, cx, cy, s, a, c) {
+// Un simbolo con centro in (cx, cy), scala s, opacità a e colore c. outline: solo contorno (Write di Manim).
+function drawTok(ctx, k, cx, cy, s, a, c, outline = false, halo = null) {
   if (a <= 0.003 || s <= 0.01) return;
   ctx.save();
   ctx.globalAlpha *= Math.min(1, a);
   ctx.translate(cx, cy); ctx.scale(s, s);
-  for (const o of k.ops) drawTexOp(ctx, o, -k.cx, -k.cy, o.col ?? c);
+  if (halo && !outline) for (const o of k.ops) drawTexOp(ctx, o, -k.cx, -k.cy, o.col ?? c, halo, false);
+  for (const o of k.ops) drawTexOp(ctx, o, -k.cx, -k.cy, o.col ?? c, null, outline);
   ctx.restore();
 }
 const prep = ctx => { ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.lineJoin = ctx.lineCap = 'round'; };
 const mixC = (a, b, t) => (a === b || t <= 0 ? a : t >= 1 ? b : /^#[0-9a-f]{6}$/i.test(a) && /^#[0-9a-f]{6}$/i.test(b) ? mixHex(a, b, t) : t < 0.5 ? a : b);
 
+// Animazione Write di Manim (DrawBorderThenFill): ogni simbolo nasce prima dal contorno e poi si riempie.
+export function writeTeX(P, src, t, { x, y, size = 24, color = '#fff', align = 'eq', alpha = 1, halo = null } = {}) {
+  if (t >= 1) return drawTeX(P, src, { x, y, size, color, align, alpha, halo });
+  if (t <= 0) return;
+  const L = texLayout(P, src, size), T = tokens(L), ox = originX(L, x, align), ctx = P.ctx;
+  const n = T.length, lag = 0.5 / Math.max(1, n - 1);
+  ctx.save(); prep(ctx); ctx.globalAlpha = alpha;
+  T.forEach((k, i) => {
+    const u = clamp01((t - i * lag) / 0.5);
+    if (u <= 0) return;
+    const strokeA = u < 0.55 ? rate.smooth(u / 0.55) : 1 - rate.smooth((u - 0.55) / 0.45);
+    const fillA = u > 0.42 ? rate.smooth((u - 0.42) / 0.58) : 0;
+    const cx = ox + k.cx, cy = y + k.cy;
+    if (fillA > 0.005) drawTok(ctx, k, cx, cy, 1, fillA, k.col ?? color, false, halo);
+    if (strokeA > 0.005) drawTok(ctx, k, cx, cy, 1, strokeA * 0.9, k.col ?? color, true, null);
+  });
+  ctx.restore();
+}
+
 // Formula ferma (con l'allineamento di morphTeX): utile come primo e ultimo fotogramma.
-export function drawTeX(P, src, { x, y, size = 24, color = '#fff', align = 'eq', alpha = 1 } = {}) {
+export function drawTeX(P, src, { x, y, size = 24, color = '#fff', align = 'eq', alpha = 1, halo = null } = {}) {
   const L = texLayout(P, src, size), ox = originX(L, x, align), ctx = P.ctx;
   ctx.save(); prep(ctx); ctx.globalAlpha = alpha;
-  for (const k of tokens(L)) drawTok(ctx, k, ox + k.cx, y + k.cy, 1, 1, k.col ?? color);
+  for (const k of tokens(L)) drawTok(ctx, k, ox + k.cx, y + k.cy, 1, 1, k.col ?? color, false, halo);
   ctx.restore();
 }
 
 // Trasformazione di `from` in `to` all'istante t ∈ [0, 1] (lineare: la curva smooth di Manim è applicata qui).
-// opts: x, y (punto d'appoggio), size, color, align ('eq' | 'left' | 'center' | 'right'), map, ease.
-export function morphTeX(P, from, to, t, { x, y, size = 24, color = '#fff', align = 'eq', map = null, ease = rate.smooth, alpha = 1 } = {}) {
+// opts: x, y (punto d'appoggio), size, color, align ('eq' | 'left' | 'center' | 'right'), map, ease, halo.
+export function morphTeX(P, from, to, t, { x, y, size = 24, color = '#fff', align = 'eq', map = null, ease = rate.smooth, alpha = 1, halo = null } = {}) {
   const LA = texLayout(P, from, size), LB = texLayout(P, to, size), ctx = P.ctx;
-  if (t <= 0) return drawTeX(P, from, { x, y, size, color, align, alpha });
-  if (t >= 1) return drawTeX(P, to, { x, y, size, color, align, alpha });
+  if (t <= 0) return drawTeX(P, from, { x, y, size, color, align, alpha, halo });
+  if (t >= 1) return drawTeX(P, to, { x, y, size, color, align, alpha, halo });
   const pl = plan(P, LA, LB, size, map), oa = originX(LA, x, align), ob = originX(LB, x, align);
   const e = ease(t);
   // Uscite e ingressi un po' sfalsati: chi se ne va lascia il posto prima che arrivi il nuovo, così non si sovrappongono.
   const out = rate.smooth(clamp01(t / 0.6)), inn = rate.smooth(clamp01((t - 0.4) / 0.6));
   ctx.save(); prep(ctx); ctx.globalAlpha = alpha;
 
-  for (const i of pl.fadeOut) { const k = pl.A[i]; drawTok(ctx, k, oa + k.cx, y + k.cy, 1, 1 - out, k.col ?? color); }
+  for (const i of pl.fadeOut) { const k = pl.A[i]; drawTok(ctx, k, oa + k.cx, y + k.cy, 1, 1 - out, k.col ?? color, false, halo); }
   for (const { ga, gb, BA, BB } of pl.groups) {
     // Il gruppo vecchio va verso il posto del nuovo adattandosi alla sua altezza e sfuma; il nuovo arriva da lì e cresce.
     // Ciascuno si adatta alla scatola dell'altro (FadeTransform), così non invade mai i simboli vicini.
@@ -191,17 +211,17 @@ export function morphTeX(P, from, to, t, { x, y, size = 24, color = '#fff', alig
     const sA = lerp(1, fit(BA, BB), e), sB = lerp(fit(BB, BA), 1, e);
     // Dissolvenza incrociata un po' sfalsata: il vecchio cede il posto, il nuovo lo prende; mai un istante vuoto.
     const fo = 1 - clamp01(e / 0.75), fi = clamp01((e - 0.25) / 0.75);
-    for (const i of ga) { const k = pl.A[i]; drawTok(ctx, k, gx + (k.cx - BA.cx) * sA, gy + (k.cy - BA.cy) * sA, sA, fo, k.col ?? color); }
-    for (const j of gb) { const k = pl.B[j]; drawTok(ctx, k, gx + (k.cx - BB.cx) * sB, gy + (k.cy - BB.cy) * sB, sB, fi, k.col ?? color); }
+    for (const i of ga) { const k = pl.A[i]; drawTok(ctx, k, gx + (k.cx - BA.cx) * sA, gy + (k.cy - BA.cy) * sA, sA, fo, k.col ?? color, false, halo); }
+    for (const j of gb) { const k = pl.B[j]; drawTok(ctx, k, gx + (k.cx - BB.cx) * sB, gy + (k.cy - BB.cy) * sB, sB, fi, k.col ?? color, false, halo); }
   }
   for (const [i, j] of pl.slides) {
     const a = pl.A[i], b = pl.B[j], s = lerp(1, b.size / a.size, e);
     const ca = a.col ?? color, cb = b.col ?? color;
     // Stesso simbolo: scivola (e cambia corpo o colore se serve). Si disegna con le operazioni di partenza.
     const c = mixC(ca, cb, e);
-    drawTok(ctx, a.plain, lerp(oa + a.cx, ob + b.cx, e), lerp(y + a.cy, y + b.cy, e), s, 1, c);
+    drawTok(ctx, a.plain, lerp(oa + a.cx, ob + b.cx, e), lerp(y + a.cy, y + b.cy, e), s, 1, c, false, halo);
   }
-  for (const j of pl.fadeIn) { const k = pl.B[j]; drawTok(ctx, k, ob + k.cx, y + k.cy, lerp(0.5, 1, inn), inn, k.col ?? color); }
+  for (const j of pl.fadeIn) { const k = pl.B[j]; drawTok(ctx, k, ob + k.cx, y + k.cy, lerp(0.5, 1, inn), inn, k.col ?? color, false, halo); }
   ctx.restore();
 }
 
@@ -227,7 +247,7 @@ function rectPart(ctx, b, lo, hi) {
 //   kind 'indicate'     il termine si gonfia del 20 % e diventa giallo, poi torna com'era (Indicate)
 //   kind 'circumscribe' un rettangolo giallo gli corre attorno e si cancella (Circumscribe)
 //   kind 'box'          il rettangolo si traccia e resta (SurroundingRectangle con Create); boxAlpha lo attenua
-export function emphasize(P, src, t, { x, y, size = 24, color = '#fff', align = 'eq', term, kind = 'indicate', hl, dark = true, alpha = 1, boxAlpha = 1 } = {}) {
+export function emphasize(P, src, t, { x, y, size = 24, color = '#fff', align = 'eq', term, kind = 'indicate', hl, dark = true, alpha = 1, boxAlpha = 1, halo = null } = {}) {
   const L = texLayout(P, src, size), T = tokens(L), ox = originX(L, x, align), ctx = P.ctx;
   hl ??= dark ? HL.dark : HL.light;
   const terms = (Array.isArray(term) ? term : [term]).map(s => findTerm(P, L, s, size)).filter(Boolean);
@@ -243,9 +263,9 @@ export function emphasize(P, src, t, { x, y, size = 24, color = '#fff', align = 
   ctx.save(); prep(ctx); ctx.globalAlpha = alpha;
   if (alpha > 0) T.forEach((k, i) => {
     const b = pick.get(i);
-    if (!b || !w) return drawTok(ctx, k, ox + k.cx, y + k.cy, 1, 1, k.col ?? color);
+    if (!b || !w) return drawTok(ctx, k, ox + k.cx, y + k.cy, 1, 1, k.col ?? color, false, halo);
     const s = 1 + b.grow * w;
-    drawTok(ctx, k, ox + b.cx + (k.cx - b.cx) * s, y + b.cy + (k.cy - b.cy) * s, s, 1, mixC(k.col ?? color, hl, w));
+    drawTok(ctx, k, ox + b.cx + (k.cx - b.cx) * s, y + b.cy + (k.cy - b.cy) * s, s, 1, mixC(k.col ?? color, hl, w), false, halo);
   });
   if (kind !== 'indicate') {
     ctx.strokeStyle = hl; ctx.lineWidth = Math.max(2, size * 0.1); ctx.lineJoin = 'miter'; ctx.lineCap = 'butt';
@@ -331,14 +351,8 @@ export class TexSteps {
     }
     return { left, right };
   }
-  // Prima comparsa: simboli da sinistra a destra, ciascuno sfuma salendo di poco (LaggedStart di FadeIn shift=UP).
+  // Prima comparsa: Write di Manim (DrawBorderThenFill) su ogni simbolo da sinistra a destra.
   #appear(P, src, t, { x, y, size, color, align }) {
-    const L = texLayout(P, src, size), T = tokens(L), ox = originX(L, x, align), ctx = P.ctx, n = T.length, lag = 0.5 / Math.max(1, n - 1);
-    ctx.save(); prep(ctx);
-    T.forEach((k, i) => {
-      const u = rate.smooth(clamp01((t - i * lag) / 0.5));
-      drawTok(ctx, k, ox + k.cx, y + k.cy + (1 - u) * size * 0.35, 1, u, k.col ?? color);
-    });
-    ctx.restore();
+    writeTeX(P, src, t, { x, y, size, color, align });
   }
 }

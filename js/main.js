@@ -15,6 +15,11 @@ import './core/pwa.js';
 import { Lasso } from './core/lasso.js';
 import { drawFBD, drawVel, drawTrail, fbdFormulas } from './core/fbd.js';
 import { buildQuickbar } from './core/quickbar.js';
+import { KeyFormulas, extractKeyLines } from './core/keyformulas.js';
+import { DerivationOverlay } from './core/derive.js';
+import { pickKeyParams, buildKeyParams, openParamPopover, closeParamPopover, shortParamName } from './core/keyparams.js';
+import { QuickNav, appendPresetPill } from './core/navpop.js';
+import { resize3d, begin3dFrame, end3dFrame, hide3d } from './core/manim3d.js';
 import { AREAS, findExperiment } from './experiments/registry.js';
 
 const H = 1 / 480;            // passo di integrazione predefinito (s); un esperimento può dichiarare il suo (exp.dt)
@@ -61,9 +66,12 @@ graphBody.innerHTML = '<div class="tabs"></div><canvas class="plot"></canvas><di
 const plotCanvas = graphBody.querySelector('.plot');
 formulaBody.innerHTML = '<div class="formulas"></div>';
 theoryBody.innerHTML = '<div class="theory"></div>';
-// Aprendo o chiudendo l'ispettore la scena scorre di metà della sua larghezza: resta centrata nello spazio libero.
-insp.onChange = (before, after) => cam.panBy((before - after) / 2, 0);
+// Aprendo o chiudendo l'ispettore la scena scorre morbida di metà della sua larghezza: resta centrata nello spazio libero.
+insp.onChange = (before, after) => cam.flyTo({ scale: cam.scale, cx: cam.cx - ((before - after) / 2) / cam.scale, cy: cam.cy }, 0.35);
 insp.onSection = sec => { app.formulasDirty = true; if (sec === 'formulas') { renderFormulas(); app.formulasDirty = false; } };
+const keyFormulas = new KeyFormulas();
+const derive = new DerivationOverlay();
+const quickNav = new QuickNav({ areas: AREAS, onPickExp: id => loadExperiment(id), onPickPreset: pr => applyPreset(pr) });
 
 /* ---------------- Annulla e ripeti ---------------- */
 // Un'unica cronologia per l'inchiostro e la scena dell'esperimento, nell'ordine in cui sono avvenute le modifiche.
@@ -131,7 +139,7 @@ function showRail(v) {
   const was = !rail.classList.contains('hidden');
   rail.classList.toggle('hidden', !v);
   document.body.classList.toggle('has-rail', v);
-  if (was !== v) cam.panBy((v ? 1 : -1) * RAIL_W / 2, 0);
+  if (was !== v) cam.flyTo({ scale: cam.scale, cx: cam.cx - ((v ? 1 : -1) * RAIL_W / 2) / cam.scale, cy: cam.cy }, 0.35);
 }
 const RAIL_W = 76;
 
@@ -269,6 +277,11 @@ function buildParams() {
   const toggles = exp.toggles ? exp.toggles(api) : exp.buildPanel ? [] : (exp.params ?? []).filter(d => d.type === 'toggle' && !d.hidden);
   app.syncs.push(...buildQuickbar($('quickbar'), toggles, d => (d.get ? d.get() : app.params[d.key]), (d, v) => (d.set ? d.set(v) : setParam(d, v))));
   document.body.classList.toggle('has-quick', toggles.length > 0);
+  // Parametri più importanti subito a prima vista in alto a sinistra (trascinabili o toccabili per lo slider) + Casi notevoli.
+  const kps = exp.buildPanel ? [] : pickKeyParams(exp);
+  app.syncs.push(...buildKeyParams($('keyParams'), kps, d => app.params[d.key], (d, v) => { setParam(d, v); syncParams(); }));
+  appendPresetPill($('keyParams'), exp, pr => applyPreset(pr));
+  document.body.classList.toggle('has-kp', kps.length > 0 || !!exp.presets?.length);
   if (exp.buildPanel) {
     rail.dataset.used = '';
     exp.buildPanel(body, api);
@@ -311,6 +324,7 @@ function setParam(def, value) {
   if (!def.live) resetSim();
   // Le scelte (select) e i parametri marcati "refit" cambiano la scena: va reinquadrata.
   if (def.refit || def.type === 'select') fitView();
+  keyFormulas.indicate(def.key);
   app.formulasDirty = true;
 }
 
@@ -339,8 +353,8 @@ function buildGraphTabs() {
     : '';
 }
 
-// Formule chiave (in cima all'ispettore, sempre visibili) e, se la tendina è aperta, tutte le formule.
-// Un esperimento sceglie le chiave con { key: true }; altrimenti valgono le prime due.
+// Formule chiave (disegnate sul canvas via morph.js con Write, TransformMatchingTex e Indicate)
+// e, se la tendina "Tutte le formule" è aperta, elenco completo in KaTeX.
 function renderFormulas() {
   let out = app.exp.formulas?.(viewSim(), app.params) ?? [];
   // Corpo selezionato: in coda le sue forze e la verifica ΣF = m·a.
@@ -349,25 +363,13 @@ function renderFormulas() {
   const k = window.katex;
   const tex = f => (k ? k.renderToString(f.tex, { throwOnError: false }) : f.tex);
   const list = typeof out === 'string' ? [] : out.filter(Boolean);
-  let keys = list.filter(f => f.key && f.tex);
-  if (!keys.length) keys = list.filter(f => f.tex).slice(0, 2);
-  // Sopra la scena ogni uguaglianza separata da \qquad va su una riga sua; una riga troppo lunga si rimpicciolisce.
-  const keyHtml = keys.flatMap(f => f.tex.split('\\qquad').map(t => `<div class="f ${f.cls || ''}" data-tex="${t.replace(/"/g, '&quot;')}">${tex({ tex: t })}</div>`)).join('');
-  if (insp.lastKey !== keyHtml) {
-    insp.lastKey = keyHtml;
-    insp.keyBody.innerHTML = keyHtml;
-    insp.el.classList.toggle('no-key', !keyHtml);
-    if (!insp.keyBody.clientWidth) { insp.lastKey = null; return; }  // ispettore chiuso: si misura alla riapertura
-    const fit = d => { const over = d.scrollWidth / d.clientWidth; if (over > 1) d.style.fontSize = (100 / over).toFixed(1) + '%'; };
-    for (const d of [...insp.keyBody.children]) {
-      // Troppo lunga anche dopo il primo taglio: si divide ancora sui \quad, poi si rimpicciolisce.
-      if (d.scrollWidth > d.clientWidth * 1.3 && d.dataset.tex.includes('\\quad')) {
-        const parts = d.dataset.tex.split('\\quad').filter(t => t.trim());
-        d.replaceWith(...parts.map(t => { const e = document.createElement('div'); e.className = d.className; e.innerHTML = tex({ tex: t }); return e; }));
-      }
-    }
-    for (const d of insp.keyBody.children) fit(d);
-  }
+  const keyLines = extractKeyLines(list);
+  keyFormulas.set(keyLines, { fresh: !!app._freshKey, playing: app.running });
+  app._freshKey = false;
+  insp.keyBody.innerHTML = '';
+  insp.keyBody.dataset.hasKey = keyLines.length ? '1' : '0';
+  insp.el.classList.toggle('no-key', !keyLines.length);
+  if (!keyLines.length) { lastKeyH = 0; insp.keyBody.style.minHeight = '0px'; }
   if (!insp.showing('formulas')) return;
   const box = formulaBody.firstChild;
   if (typeof out === 'string') { box.innerHTML = out; return; }
@@ -547,6 +549,7 @@ function inspectorSwap() {
 
 function loadExperiment(id) {
   if (app.exp) { sceneFade(); inspectorSwap(); }
+  hide3d();
   ink.end();
   stopSweep();
   app.exp?.unmount?.(api);
@@ -559,6 +562,7 @@ function loadExperiment(id) {
   store.set('lastExp', exp.id);
   $('crumbArea').textContent = area.title;
   $('crumbExp').textContent = exp.title;
+  quickNav.setCurrent(area, exp);
   ink.load(exp.id);
   lasso.clear();
   exp.mount?.(api);
@@ -570,10 +574,16 @@ function loadExperiment(id) {
   insp.setTabs([...['formulas', 'graphs'].filter(k => !exp.noSim || exp.keepPanels?.includes(k)), 'theory']);
   formulaBody.firstChild.innerHTML = '';
   insp.lastKey = null;
+  keyFormulas.clear();
+  derive.close();
+  closeParamPopover();
+  $('deriveBtn')?.classList.toggle('hidden', !exp.derivation);
+  app._freshKey = true;
   resetSim();
   buildParams(); buildGraphTabs(); buildDrawer(); renderTheory();
   renderFormulas();
   app.formulasDirty = false;
+  cam.fitted = false;
   fitView();
 }
 
@@ -729,8 +739,10 @@ function resize() {
   canvas.width = Math.round(w * dpr);
   canvas.height = Math.round(h * dpr);
   cam.setViewport(w, h);
+  resize3d(w, h, dpr);
   insp.sync();
   Panel.clampAll();
+  if (app.exp && !app.camUser) { cam.fitted = false; fitView(); }
 }
 
 // Coordinate del puntatore rispetto al canvas (non alla finestra).
@@ -742,7 +754,21 @@ function pos(e) {
 // Safari a volte segnala pressione 0 al primo contatto della Pencil: un tocco diventerebbe invisibile.
 const pressureOf = e => (e.pointerType === 'pen' ? (e.pressure > 0 ? e.pressure : 0.5) : 0.5);
 
+// Visibilità intelligente delle maniglie: in pausa accennate (0.38) così si vedono, piene vicino al cursore, al tocco o in trascinamento; spente in Play/Spiega.
+let hoverPt = null, lastTouchAt = -Infinity, lastKeyH = 0;
+function handleVisibility(wx, wy, active) {
+  if (active || app.activeHandle) return 1;
+  if (app.running || app.mode === 'lesson') return 0;
+  if (performance.now() - lastTouchAt < 3500) return 0.95;
+  if (hoverPt) {
+    const [sx, sy] = cam.toScreen(wx, wy), d = Math.hypot(sx - hoverPt[0], sy - hoverPt[1]);
+    if (d < 140) return Math.max(0.38, Math.min(1, 1 - (d - 48) / 92));
+  }
+  return 0.38;
+}
+
 function render() {
+  begin3dFrame();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (app.exp.drawBackground) app.exp.drawBackground(ctx, cam, colors);
   else {
@@ -752,11 +778,13 @@ function render() {
     drawGrid(ctx, cam, colors, lab ?? !app.exp.axes);
   }
   const P = new Painter(ctx, cam, colors);
+  P.handleAlpha = handleVisibility;
   app.exp.draw(P, viewSim(), app.params, { active: app.activeHandle, api, size: sizeOf, sel: app.sizeSel });
+  end3dFrame();
   const sel = app.mode === 'lesson' ? null : selectedResizable();
   if (sel) {
     const [a, b] = cam.toScreen(sel.x, sel.y);
-    P.ringS(a, b, sel.rPx + 7);
+    if (!sel.noRing) P.ringS(a, b, sel.rPx + 7);
     if (!sel.noResize) P.sizeHandleS(...sizeHandlePos(sel), app.activeHandle === 'size');
   }
   // Corpi: scie e velocità a richiesta, diagramma di corpo libero di quello selezionato.
@@ -773,6 +801,14 @@ function render() {
     if (fb?.forces) drawFBD(P, fb);
   }
   drawParticles(P);
+  // Formule chiave su canvas (in alto a destra dentro l'area dell'ispettore, con Write / TransformMatchingTex / Indicate).
+  if ((insp.open || app.mode === 'lesson') && keyFormulas.lines.length) {
+    const r = insp.keyBody.getBoundingClientRect();
+    const box = r.width > 40 ? { left: r.left, top: r.top, width: r.width } : { left: cam.w - 316, top: 72, width: 288 };
+    const h = keyFormulas.draw(P, box, P.M);
+    if (h && Math.abs(h - lastKeyH) > 1) { lastKeyH = h; insp.keyBody.style.minHeight = h + 'px'; }
+  }
+  derive.draw(P, P.M);
   ink.draw(ctx, cam, colors);
   lasso.draw(P, app.exp, app.activeHandle === 'lassoScale');
   updateSelbar();
@@ -795,7 +831,8 @@ function updateCtxbar() {
       const b = document.createElement('button');
       b.textContent = a.label;
       if (a.danger) b.className = 'danger';
-      b.onclick = () => { a.run(); ctxKey = ''; };
+      if (a.param) b.className = 'ctx-param';
+      b.onclick = () => { a.run(b); if (!a.keepOpen) ctxKey = ''; };
       ctxbar.appendChild(b);
     }
   }
@@ -804,19 +841,35 @@ function updateCtxbar() {
   ctxbar.style.top = Math.max(64, sy - 54) + 'px';
 }
 
-// Barretta del corpo selezionato negli esperimenti pronti: velocità e scia a richiesta (come nel costruttore).
+// Barretta dell'oggetto selezionato negli esperimenti pronti: parametri diretti dell'oggetto + velocità e scia.
 function bodyBar() {
   if (!app.exp.bodies || !app.sizeSel) return null;
   const b = bodies(viewSim()).find(o => o.key === app.sizeSel);
   if (!b) return null;
   const tog = (set, k) => () => { set.has(k) ? set.delete(k) : set.add(k); if (set === app.bodyTrail) delete app.trails[k]; };
-  return {
-    // Sopra le frecce del corpo libero (lunghe al più 110 px più l'etichetta), così non le copre.
-    key: 'body:' + b.key, x: b.x, y: b.y + (b.rPx * 1.2 + 150) / cam.scale,
-    actions: [
+  const allParams = app.exp.params ?? [];
+  const pDefs = b.params
+    ? b.params.map(k => allParams.find(d => d.key === k)).filter(Boolean)
+    : pickKeyParams(app.exp);
+  const actions = pDefs.map(def => {
+    const d = Math.max(0, -Math.floor(Math.log10(def.step || 1) + 1e-9));
+    return {
+      label: `${shortParamName(def)} ${ut(def.unit, app.params[def.key], d)}`,
+      param: true,
+      keepOpen: true,
+      run: btn => openParamPopover(btn, def, () => app.params[def.key], v => { setParam(def, v); syncParams(); ctxKey = ''; }),
+    };
+  });
+  if (!b.noKinematics) {
+    actions.push(
       { label: (app.bodyVel.has(b.key) ? '✓ ' : '') + 'Velocità', run: tog(app.bodyVel, b.key) },
       { label: (app.bodyTrail.has(b.key) ? '✓ ' : '') + 'Scia', run: tog(app.bodyTrail, b.key) },
-    ],
+    );
+  }
+  const dy = b.noKinematics ? 28 : (b.rPx * 1.2 + 150);
+  return {
+    key: 'body:' + b.key, x: b.x, y: b.y + dy / cam.scale,
+    actions,
   };
 }
 
@@ -868,6 +921,8 @@ function drawFrame(ts) {
   else if (app.running) advance(dt * app.speed * (app.exp.timeScale?.(app.sim, app.params) ?? 1));
   // exp.follow: la camera insegue il soggetto mentre la simulazione scorre, finché l'utente non sposta la vista.
   if (app.running && app.exp.follow && !app.camUser) cam.follow(app.exp.follow(app.sim, app.params), dt);
+  cam.tick();
+  derive.update(dt);
   // Le animazioni decorative (polvere) nascono solo mentre la simulazione scorre dal vivo.
   look.live = app.running && app.view == null;
   updateLook(dt * (app.running ? app.speed : 1));
@@ -921,14 +976,19 @@ function sizeHandlePos(r) {
   return best;
 }
 
-// Selezione al tocco: se sotto il dito ci sono più oggetti sovrapposti (per esempio sfera, cilindro e anello che
-// partono dallo stesso punto), un nuovo tocco su quello già selezionato passa al successivo.
+// Selezione al tocco: controlla prima i corpi puntuali (raggio), poi eventuali superfici estese (r.hit, es. piano inclinato).
 function pickResizable(sx, sy) {
-  const hits = resizables().map(r => { const [a, b] = cam.toScreen(r.x, r.y); return { r, d: Math.hypot(a - sx, b - sy) }; })
-    .filter(h => h.d < h.r.rPx + 10).sort((u, v) => u.d - v.d);
+  const [wx, wy] = cam.toWorld(sx, sy);
+  const hits = resizables().map(r => {
+    const [a, b] = cam.toScreen(r.x, r.y);
+    const d = Math.hypot(a - sx, b - sy);
+    if (!r.hit && d < r.rPx + 10) return { r, d, prio: 0 };
+    if (r.hit && r.hit(wx, wy)) return { r, d: 1000 + d, prio: 1 };
+    return null;
+  }).filter(Boolean).sort((u, v) => u.prio - v.prio || u.d - v.d);
   if (!hits.length) return null;
   const i = hits.findIndex(h => h.r.key === app.sizeSel);
-  return i >= 0 && hits.length > 1 ? hits[(i + 1) % hits.length].r : hits[0].r;
+  return i >= 0 && hits.length > 1 && hits[0].prio === hits[1].prio ? hits[(i + 1) % hits.length].r : hits[0].r;
 }
 
 function hitResizable(sx, sy) {
@@ -1015,6 +1075,7 @@ function selectionGesture(x, y, wx, wy, id) {
 }
 
 canvas.addEventListener('pointerdown', e => {
+  if (e.pointerType !== 'mouse') lastTouchAt = performance.now();
   const before = gesture;
   onPointerDown(e);
   // Ricorda come era la vista quando è iniziato un gesto col dito, per poterlo annullare se era il polso.
@@ -1169,6 +1230,7 @@ canvas.addEventListener('pointermove', e => {
 
   if (!gesture) {
     if (e.pointerType === 'mouse') {
+      hoverPt = [x, y];
       const [wx, wy] = cam.toWorld(x, y);
       app.exp.pointerHover?.({ wx, wy, sx: x, sy: y, api });
       canvas.style.cursor = app.tool !== 'hand' ? 'crosshair'
@@ -1256,6 +1318,7 @@ function endPointer(e) {
 }
 canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', endPointer);
+canvas.addEventListener('pointerleave', () => { hoverPt = null; });
 
 // Rotella del mouse e trackpad (Mac e PC), come in GeoGebra o nelle mappe:
 // rotella o scorrimento a due dita = zoom attorno al puntatore; pinch del trackpad = zoom (arriva con ctrlKey);
@@ -1334,7 +1397,8 @@ function syncPenPop() {
   drawPenPreview();
   const pb = document.querySelector('#toolSeg [data-tool=pen]');
   pb.innerHTML = icons[type === 'brush' ? 'brush' : 'pen'];
-  pb.title = `${cfg.label} (P; tocca di nuovo per tipo e spessore)`;
+  pb.title = `${cfg.label} (P; tocca di nuovo per colore, spessore e gomma)`;
+  penPop.querySelectorAll('#eraserModeSeg button').forEach(b => b.classList.toggle('on', b.dataset.eraser === app.eraserMode));
 }
 
 // Anteprima: una S scritta con pressione crescente e poi calante, con il tipo, lo spessore e il colore scelti.
@@ -1361,20 +1425,28 @@ function setPenSize(v) {
   syncPenPop();
 }
 
-function togglePenPop(open = penPop.classList.contains('hidden')) {
+function togglePenPop(open = penPop.classList.contains('hidden'), anchor = null) {
   penPop.classList.toggle('hidden', !open);
   if (!open) return;
-  const r = document.querySelector('#toolSeg [data-tool=pen]').getBoundingClientRect(), pw = penPop.offsetWidth || 270;
+  const ref = anchor ?? document.querySelector('#toolSeg [data-tool=pen]');
+  const r = ref.getBoundingClientRect(), pw = penPop.offsetWidth || 270;
   penPop.style.left = Math.max(8, Math.min(innerWidth - pw - 8, r.left + r.width / 2 - pw / 2)) + 'px';
   penPop.style.top = r.bottom + 10 + 'px';
   syncPenPop();
 }
 
 penPop.querySelectorAll('[data-type]').forEach(b => b.onclick = () => { app.penType = b.dataset.type; store.set('penType', app.penType); syncPenPop(); });
+penPop.querySelectorAll('#eraserModeSeg button').forEach(b => b.onclick = () => {
+  app.eraserMode = b.dataset.eraser; store.set('eraserMode', app.eraserMode);
+  const eb = document.querySelector('#toolSeg [data-tool=eraser]');
+  eb.innerHTML = icons[app.eraserMode === 'part' ? 'eraserPart' : 'eraser'];
+  syncPenPop();
+});
 penRange.oninput = () => setPenSize(parseFloat(penRange.value));
-// Un tocco fuori dal pannello (e fuori dal pulsante della penna) lo chiude.
+$('inkDotBtn').onclick = () => togglePenPop(undefined, $('inkDotBtn'));
+// Un tocco fuori dal pannello (e fuori dal pulsante della penna / pallino colore) lo chiude.
 document.addEventListener('pointerdown', e => {
-  if (!penPop.classList.contains('hidden') && !e.target.closest('#penPop, #toolSeg [data-tool=pen]')) togglePenPop(false);
+  if (!penPop.classList.contains('hidden') && !e.target.closest('#penPop, #toolSeg [data-tool=pen], #inkDotBtn')) togglePenPop(false);
 }, true);
 
 function setTool(t, startup = false) {
@@ -1396,6 +1468,7 @@ function setTool(t, startup = false) {
 function setInkColor(c) {
   app.inkColor = c; store.set('inkColor', c);
   document.querySelectorAll('#swatches button').forEach(b => b.classList.toggle('on', b.dataset.color === c));
+  $('inkDotBtn')?.setAttribute('data-color', c);
   if (!penPop.classList.contains('hidden')) drawPenPreview();
   if (app.tool === 'eraser') setTool('pen');
 }
@@ -1447,14 +1520,20 @@ function stepFrame() {
   if (!isDone()) advance(1 / 30 * (app.exp.timeScale?.(app.sim, app.params) ?? 1));
 }
 
-$('menuBtn').onclick = () => toggleDrawer(true);
-$('crumbBtn').onclick = () => toggleDrawer(true);
+$('menuBtn').onclick = () => { quickNav.close(); toggleDrawer(true); };
+$('crumbBtn').onclick = () => { toggleDrawer(false); quickNav.toggle($('crumbBtn')); };
 $('scrim').onclick = () => toggleDrawer(false);
 $('playBtn').onclick = togglePlay;
 $('resetBtn').onclick = () => { stopSweep(); resetSim(); };
 $('stepBtn').onclick = stepFrame;
 $('fitBtn').onclick = fitView;
 $('inspBtn').onclick = () => { insp.toggle(); app.formulasDirty = true; };
+$('deriveBtn').onclick = () => {
+  if (derive.active) { derive.close(); return; }
+  if (!app.exp?.derivation) return;
+  if (app.running) { app.running = false; updatePlayBtn(); }
+  derive.open(app.exp.derivation(app.params, viewSim()));
+};
 document.querySelectorAll('#modeSeg button').forEach(b => b.onclick = () => setMode(b.dataset.mode));
 $('speedBtn').onclick = () => setSpeed(SPEEDS[(SPEEDS.indexOf(app.speed) + 1) % SPEEDS.length]);
 $('undoBtn').onclick = undo;
@@ -1473,6 +1552,7 @@ document.querySelectorAll('#swatches button').forEach(b => b.onclick = () => set
 addEventListener('keydown', e => {
   // Dopo aver usato la moviola il fuoco resta sul cursore: lo spazio deve comunque avviare e fermare.
   if (e.target.closest?.('input')) { if (e.key === ' ' && e.target.type === 'range') e.target.blur(); else return; }
+  if (derive.onKey(e)) return;
   const mod = e.metaKey || e.ctrlKey || e.altKey;
   const k = e.key.toLowerCase();
   if (e.key === 'Escape') { toggleDrawer(false); togglePenPop(false); if (lasso.active) lasso.clear(); app.sizeSel = null; }
@@ -1500,7 +1580,7 @@ function wakeChrome(ms = 3500) {
   clearTimeout(chromeTimer);
   chromeTimer = setTimeout(() => document.body.classList.add('chrome-idle'), ms);
 }
-for (const el of [document.querySelector('.topbar'), $('timeline'), $('rail'), $('penPop'), $('pins'), $('quickbar')].filter(Boolean)) {
+for (const el of [document.querySelector('.topbar'), $('timeline'), $('rail'), $('penPop'), $('pins'), $('keyParams'), $('quickbar')].filter(Boolean)) {
   el.addEventListener('pointerdown', () => wakeChrome(), { passive: true, capture: true });
   el.addEventListener('pointermove', () => wakeChrome(), { passive: true });
 }

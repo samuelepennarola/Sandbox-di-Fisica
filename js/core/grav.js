@@ -3,7 +3,7 @@
 //           G = 4π² (così la Terra fa un giro in un anno a 1 UA). «Unità semplici»: G = 1, numeri piccoli.
 //   elements: elementi dell'orbita di un corpo attorno a una massa (μ = G M) da posizione e velocità;
 //   conicPts: i punti della conica prevista; star / planet: corpi celesti in stile Manim.
-import { palette, mixHex } from './manim.js';
+import { palette, mixHex, shadedDisc } from './manim.js';
 
 export const SCALES = {
   solar: { G: 4 * Math.PI * Math.PI, L: 'UA', T: 'anni', M: 'M_\\odot', Mtxt: 'M☉', name: 'Sistema solare' },
@@ -44,23 +44,24 @@ export function conicPts(el, rmax, n = 240) {
   return segs.filter(s => s.length > 1);
 }
 
-// Stella: disco luminoso con un alone (raggio in px).
+// Stella: disco luminoso (alone nel tema scuro, disco nitido con corona delicata nel tema chiaro).
 export function star(P, x, y, rPx, { color, alpha = 1 } = {}) {
   const M = P.M ?? palette(P.c), ctx = P.ctx, [a, b] = P.S(x, y), col = color ?? (M.dark ? '#FFD84A' : '#d4a514');
   ctx.save();
-  const g = ctx.createRadialGradient(a, b, 0, a, b, rPx * 3);
-  g.addColorStop(0, col + 'aa'); g.addColorStop(1, col + '00');
-  ctx.globalAlpha = alpha; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(a, b, rPx * 3, 0, 7); ctx.fill();
-  ctx.fillStyle = col; ctx.beginPath(); ctx.arc(a, b, rPx, 0, 7); ctx.fill();
+  if (M.dark) {
+    const g = ctx.createRadialGradient(a, b, 0, a, b, rPx * 3.2);
+    g.addColorStop(0, col + 'bb'); g.addColorStop(0.45, col + '33'); g.addColorStop(1, col + '00');
+    ctx.globalAlpha = alpha; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(a, b, rPx * 3.2, 0, Math.PI * 2); ctx.fill();
+  }
+  shadedDisc(ctx, a, b, rPx, col, M.dark, { alpha, glow: false });
   ctx.restore();
 }
 
-// Pianeta: disco pieno con il bordo più chiaro (come i corpi della meccanica).
+// Pianeta: sfera 2.5D con doppio registro scuro/chiaro.
 export function planet(P, x, y, rPx, color, { alpha = 1 } = {}) {
   const M = P.M ?? palette(P.c), ctx = P.ctx, [a, b] = P.S(x, y), col = M.body[color] ?? color;
   ctx.save();
-  ctx.globalAlpha = alpha * (M.dark ? 0.85 : 0.9); ctx.fillStyle = col; ctx.beginPath(); ctx.arc(a, b, rPx, 0, 7); ctx.fill();
-  ctx.globalAlpha = alpha; ctx.strokeStyle = mixHex(col, M.dark ? '#ffffff' : '#000000', 0.3); ctx.lineWidth = 1.6; ctx.stroke();
+  shadedDisc(ctx, a, b, rPx, col, M.dark, { alpha, glow: M.dark && rPx >= 5 });
   ctx.restore();
 }
 

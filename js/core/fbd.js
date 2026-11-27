@@ -5,7 +5,7 @@
 // (x, y) è il centro disegnato (in 3D già proiettato), rPx il raggio d'ingombro per il tocco. proj, se c'è,
 // proietta le direzioni delle forze (vista 3D): le componenti restano nel piano dell'esperimento.
 // Toccando un corpo, main.js lo seleziona e qui si disegnano le sue forze, la velocità e la scia a richiesta.
-import { palette, tex, arrowS } from './manim.js';
+import { palette, tex, arrowS, glowStroke } from './manim.js';
 import { arrowPx } from './annot.js';
 import { tn } from './math.js';
 import { uq } from './units.js';
@@ -51,11 +51,15 @@ export function drawVel(P, b, vref = 5) {
   tex(P, ex + (ex - a) / L * 14, ey + (ey - c) / L * 14, '\\vec v', { size: 16, color: M.vec.vel, halo: M.bg });
 }
 
-// Scia: le posizioni passate (in coordinate disegnate), che sfumano verso il passato.
+// Scia morbida: le posizioni passate (in coordinate disegnate), che sfumano verso il passato.
 export function drawTrail(P, pts, color) {
   if (pts.length < 2) return;
-  const n = pts.length, chunk = Math.max(2, Math.ceil(n / 30));
-  for (let i = 0; i < n - 1; i += chunk) P.line(pts.slice(i, i + chunk + 1), { color, width: 2, alpha: 0.12 + 0.55 * (i / n) });
+  const col = P.col(color), dark = document.documentElement.dataset.theme === 'dark';
+  const screen = pts.map(([x, y]) => P.S(x, y));
+  const n = screen.length, chunk = Math.max(2, Math.ceil(n / 26));
+  for (let i = 0; i < n - 1; i += chunk) {
+    glowStroke(P.ctx, screen.slice(i, Math.min(n, i + chunk + 1)), col, { width: 2.1, alpha: 0.14 + 0.58 * (i / n), dark });
+  }
 }
 
 // Righe per le formule: forze in componenti, risultante e confronto con m·a.

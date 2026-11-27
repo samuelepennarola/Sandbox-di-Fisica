@@ -6,9 +6,34 @@
 import { palette, tex } from './manim.js';
 import { niceStep } from './math.js';
 import { drawGrid } from './render.js';
+import * as m3 from './manim3d.js';
+
+const DEG = Math.PI / 180;
+export const FOV_DEG = 38;
+const TAN_HALF_FOV = Math.tan(FOV_DEG * DEG / 2);
 
 export class View3D {
-  constructor() { this.up = 'y'; this.k = null; this.set(0, 0); }
+  constructor() { this.up = 'y'; this.k = null; this.fov = FOV_DEG * DEG; this.cam = null; this.set(0, 0); }
+
+  bindCam(cam) { this.cam = cam ?? null; return this; }
+
+  // Distanza focale (metri/unità scena) dal piano z = 0 per far coincidere il piano z = 0 di fronte con Camera 2D.
+  dist0() {
+    const cam = this.cam;
+    if (!cam || !cam.h || !cam.scale) return 100;
+    return cam.h / (2 * cam.scale * TAN_HALF_FOV);
+  }
+
+  // Centro ottico sull'area libera (escludendo barra, ispettore e moviola): evita distorsioni prospettiche laterali.
+  focusPt() {
+    const cam = this.cam;
+    if (!cam) return [0, 0, 50, 50];
+    const pad = cam.padFn?.() ?? { top: 76, right: 24, bottom: 72, left: 24 };
+    const sx0 = pad.left + Math.max(100, cam.w - pad.left - pad.right) / 2;
+    const sy0 = pad.top + Math.max(100, cam.h - pad.top - pad.bottom) / 2;
+    const [px0, py0] = cam.toWorld(sx0, sy0);
+    return [px0, py0, sx0, sy0];
+  }
 
   // Camera "a giradischi" (turntable, come phi e theta di Manim): yaw gira la scena attorno al SUO asse verticale
   // (up: 'y' per le scene nel piano verticale, 'z' per quelle viste dall'alto), poi pitch alza o abbassa la camera
@@ -34,7 +59,16 @@ export class View3D {
   }
 
   p(x, y, z = 0) {
-    const r = this.r, u = this.u;
+    const r = this.r, u = this.u, cam = this.cam;
+    if (cam && this.tilt(0.001) > 0) {
+      const f = this.f, [px0, py0] = this.focusPt();
+      const dx = x - px0, dy = y - py0, dz = z;
+      const vx = dx * r[0] + dy * r[1] + dz * r[2];
+      const vy = dx * u[0] + dy * u[1] + dz * u[2];
+      const vz = dx * f[0] + dy * f[1] + dz * f[2];
+      const D = this.dist0(), d = Math.max(D * 0.06, D - vz), persp = D / d;
+      return [px0 + vx * persp, py0 + vy * persp];
+    }
     return [x * r[0] + y * r[1] + z * r[2], x * u[0] + y * u[1] + z * u[2]];
   }
   // Profondità verso chi guarda (più grande = più vicino): per disegnare prima ciò che sta dietro.
@@ -46,15 +80,54 @@ export class View3D {
   // scena, per trascinare gli oggetti anche a camera girata. Se il piano è visto quasi di taglio non c'è un punto
   // solo: si restituisce [X, Y] così com'è.
   unproject(X, Y, z = 0) {
-    const r = this.r, u = this.u, det = r[0] * u[1] - r[1] * u[0];
+    const r = this.r, u = this.u, f = this.f, cam = this.cam;
+    if (cam && this.tilt(0.001) > 0) {
+      const [px0, py0] = this.focusPt(), D = this.dist0();
+      const ox = px0 + f[0] * D, oy = py0 + f[1] * D, oz = f[2] * D;
+      const sx = X - px0, sy = Y - py0;
+      const dx = r[0] * sx + u[0] * sy - f[0] * D;
+      const dy = r[1] * sx + u[1] * sy - f[1] * D;
+      const dz = r[2] * sx + u[2] * sy - f[2] * D;
+      if (Math.abs(dz) < 1e-4) return [X, Y];
+      const t = (z - oz) / dz;
+      return [ox + t * dx, oy + t * dy];
+    }
+    const det = r[0] * u[1] - r[1] * u[0];
     if (Math.abs(det) < 0.12) return [X, Y];
     const a = X - r[2] * z, b = Y - u[2] * z;
     return [(a * u[1] - b * r[1]) / det, (b * r[0] - a * u[0]) / det];
   }
 
-  line(P, pts, opts) { P.line(pts.map(q => this.p(q[0], q[1], q[2] ?? 0)), opts); }
-  poly(P, pts, opts) { P.poly(pts.map(q => this.p(q[0], q[1], q[2] ?? 0)), opts); }
-  arrow(P, a, b, opts) { const [x0, y0] = this.p(...a), [x1, y1] = this.p(...b); P.arrow(x0, y0, x1, y1, opts); }
+  line(P, pts, opts = {}) {
+    if (m3.is3dActive()) {
+      m3.line(pts, { color: opts.color ?? 'text', alpha: opts.alpha ?? 1, dashed: !!opts.dash });
+      return;
+    }
+    P.line(pts.map(q => this.p(q[0], q[1], q[2] ?? 0)), opts);
+  }
+  poly(P, pts, opts = {}) {
+    if (m3.is3dActive()) {
+      m3.plane(pts, { color: opts.fill ?? 'muted', alpha: opts.alpha ?? 1, borderColor: opts.stroke, borderAlpha: opts.stroke ? (opts.alpha ?? 1) : 0 });
+      return;
+    }
+    P.poly(pts.map(q => this.p(q[0], q[1], q[2] ?? 0)), opts);
+  }
+  arrow(P, a, b, opts = {}) {
+    if (m3.is3dActive()) {
+      m3.arrow(a, b, { color: opts.color ?? 'vel', widthPx: opts.width ?? 3.2, tipPx: opts.head ?? 13, alpha: opts.alpha ?? 1, dashed: !!opts.dash });
+      if (opts.label) {
+        const [x0, y0] = this.p(...a), [x1, y1] = this.p(...b);
+        const [sx0, sy0] = P.S(x0, y0), [sx1, sy1] = P.S(x1, y1), len = Math.hypot(sx1 - sx0, sy1 - sy0);
+        if (len > 18) {
+          const ux = (sx1 - sx0) / len, uy = (sy1 - sy0) / len;
+          const M = P.M ?? palette(P.c), col = P.col(opts.color ?? 'vel');
+          tex(P, sx1 + ux * 18, sy1 + uy * 18, `\\vec ${opts.label.replace(/^\\vec\s*/, '')}`, { size: 17, color: col, halo: M.bg, alpha: opts.alpha ?? 1 });
+        }
+      }
+      return;
+    }
+    const [x0, y0] = this.p(...a), [x1, y1] = this.p(...b); P.arrow(x0, y0, x1, y1, opts);
+  }
   S(P, x, y, z = 0) { const [a, b] = this.p(x, y, z); return P.S(a, b); }
 
   // Circonferenza di centro c e raggio r nel piano perpendicolare all'asse ('x', 'y' o 'z'), come punti 3D.
@@ -86,7 +159,6 @@ const FADE = 0.1;
 const tilts = {};   // quanto è in 3D l'ultima camera di ogni esperimento (per lo sfondo, disegnato prima della scena)
 const orbits = {};  // rotazione scelta con il dito: { dp, dy } in radianti, per esperimento
 const cams = {};    // stato mostrato della camera di ogni esperimento: { p, y, k } (k = 0 di fronte, 1 in 3D)
-const DEG = Math.PI / 180;
 // Limiti dell'elevazione: la camera non scavalca mai la verticale e non scende sotto il pavimento.
 //   up 'y': pitch da 0° (all'altezza della scena) a 85° (quasi a piombo);
 //   up 'z': pitch da −85° (quasi all'orizzonte) a −5° (quasi a piombo sopra il piano).
@@ -103,7 +175,7 @@ export function camera3d(S, key, on, pitch, yaw, { tau = 0.32, up = 'y' } = {}) 
   o.pitch = pitch; o.up = up;
   const tp = on ? clampPitch(pitch + o.dp, up) : 0, ty = on ? yaw + o.dy : 0, tk = on ? 1 : 0;
   // Istantanee: la vista di arrivo, senza toccare lo stato della camera sullo schermo.
-  if (S.snap) { const V = new View3D().set(tp, ty, up); V.k = tk; return V; }
+  if (S.snap) { const V = new View3D().set(tp, ty, up).bindCam(S.P?.cam); V.k = tk; return V; }
   const c = cams[key] ??= { p: 0, y: 0, k: 0 };
   // Tornando di fronte l'angolo attorno alla verticale si riporta nel giro più vicino: niente giri a vuoto.
   if (!on) c.y = Math.atan2(Math.sin(c.y), Math.cos(c.y));
@@ -111,8 +183,9 @@ export function camera3d(S, key, on, pitch, yaw, { tau = 0.32, up = 'y' } = {}) 
   c.p += (tp - c.p) * g; c.y += (ty - c.y) * g; c.k += (tk - c.k) * g;
   // Arrivata a un soffio dalla meta la camera ci si posa: ferma del tutto (e di fronte è esattamente la vista piana).
   if (Math.abs(tp - c.p) < 1e-4 && Math.abs(ty - c.y) < 1e-4 && Math.abs(tk - c.k) < 1e-3) { c.p = tp; c.y = ty; c.k = tk; }
-  const V = new View3D().set(c.p, c.y, up);
+  const V = new View3D().set(c.p, c.y, up).bindCam(S.P?.cam);
   V.k = c.k; tilts[key] = c.k;
+  if (c.k > 0.001 && S.P) m3.sync3d(S.P, V);
   return V;
 }
 
@@ -131,16 +204,20 @@ export function orbit3d(key, on, dx, dy) {
 }
 
 // Sfondo per gli esperimenti con la vista 3D (exp.drawBackground): finché la camera è di fronte è il solito
-// NumberPlane piatto; appena si inclina resta solo il colore di fondo e la griglia la disegna la scena (grid3d),
-// nel piano dell'esperimento, così ruota insieme a tutto il resto.
+// NumberPlane piatto; appena si inclina pulisce il canvas 2D così traspare il WebGL sottostante (#stage3d).
 // labels: false per gli esperimenti in cui i numeri della griglia (in metri) non avrebbero senso (UA, km...).
 export const background3d = (key, { labels = true, default3d = false } = {}) => (ctx, cam, colors) => {
-  // Mentre la camera si inclina la griglia piatta sfuma e lascia il posto alla stanza a quadretti (room3d).
-  // Lo scambio con la stanza avviene nei primi gradi d'inclinazione: le due griglie non devono mai convivere.
-  const k = tilts[key] == null && default3d ? 1 : Math.min(1, (tilts[key] ?? 0) / FADE), M = palette(colors);
+  const rawK = tilts[key] == null && default3d ? 1 : (tilts[key] ?? 0);
+  const k = Math.min(1, rawK / FADE), M = palette(colors);
+  if (rawK > 0.001) {
+    ctx.clearRect(0, 0, cam.w, cam.h);
+    if (k < 1) {
+      ctx.save(); ctx.globalAlpha = 1 - k; drawGrid(ctx, cam, colors, labels && k < 0.05); ctx.restore();
+    }
+    return;
+  }
   ctx.fillStyle = M.bg; ctx.fillRect(0, 0, cam.w, cam.h);
-  if (k >= 1) return;
-  ctx.save(); ctx.globalAlpha = 1 - k; drawGrid(ctx, cam, colors, labels && k < 0.05); ctx.restore();
+  drawGrid(ctx, cam, colors, labels);
 };
 
 // Griglia del NumberPlane vista dalla camera, con le stesse linee e gli stessi colori di quella piatta.
@@ -224,17 +301,32 @@ export function room3d(P, V, box, { up = 'y', step = 1, alpha = 1 } = {}) {
   ctx.restore();
 }
 
-// Terna levogira (x, y, z antioraria, regola della mano destra) nell'origine della scena: gli assi x e y stanno sul
-// piano della griglia, z ne esce. Ruota con la camera insieme alla griglia; compare man mano che la camera si inclina.
-export function axes3d(P, V, { origin = [0, 0, 0], lx = 3, ly = 3, lz = 2.5, alpha = 1 } = {}) {
+// Terna levogira (x, y, z antioraria, regola della mano destra) nell'origine della scena: in 3D gli assi ThreeDAxes
+// attraversano tutto lo spazio con tacche regolari (immersione ManimGL), tenendo frecce e nomi dentro l'inquadratura.
+export function axes3d(P, V, { origin = [0, 0, 0], lx = 3, ly = 3, lz = 2.5, step = null, labels = ['x', 'y', 'z'], size = 18, alpha = 1, snap = false } = {}) {
   const k = V.tilt() * alpha;
   if (k < 0.02) return;
   const M = P.M ?? palette(P.c), [ox, oy, oz] = origin;
-  const ax = [['x', [ox + lx, oy, oz]], ['y', [ox, oy + ly, oz]], ['z', [ox, oy, oz + lz]]];
+  if (m3.is3dActive()) {
+    const tips = m3.axes({ origin, lx, ly, lz, step, alpha });
+    if (!snap && tips) {
+      const placed = [];
+      for (let i = 0; i < 3; i++) {
+        const t = tips[i], lbl = labels[i];
+        if (!t || !lbl) continue;
+        if (placed.some(r => Math.abs(r.x - t.tx) < 28 && Math.abs(r.y - t.ty) < 22)) continue;
+        placed.push({ x: t.tx, y: t.ty });
+        tex(P, t.tx, t.ty, lbl, { size, color: M.text, halo: M.bg, alpha: k });
+      }
+    }
+    return;
+  }
+  const ax = [[labels[0], [ox + lx, oy, oz]], [labels[1], [ox, oy + ly, oz]], [labels[2], [ox, oy, oz + lz]]];
   for (const [n, e] of ax) {
     V.arrow(P, [ox, oy, oz], e, { color: M.axis, key: 'ax' + n, width: 2, alpha: 0.85 * k, head: 10 });
+    if (snap) continue;
     const [a, b] = V.S(P, ...e), [c, d] = V.S(P, ox, oy, oz), L = Math.hypot(a - c, b - d) || 1;
-    tex(P, a + (a - c) / L * 16, b + (b - d) / L * 16, n, { size: 18, color: M.text, halo: M.bg, alpha: k });
+    tex(P, a + (a - c) / L * 16, b + (b - d) / L * 16, n, { size, color: M.text, halo: M.bg, alpha: k });
   }
 }
 
@@ -271,6 +363,10 @@ export function triad(P, V, { size = 44, alpha = 1 } = {}) {
 // hollow: anello (tutta la massa sul bordo): le facce sono corone circolari larghe rim·r con il centro vuoto, e in 3D
 // si vede l'interno del tubo; così non si confonde con il cilindro pieno.
 export function cylinder(P, V, c, r, w, { color, edge, alpha = 0.8, spin = 0, hollow = false, mark = true, rim = 0.18 } = {}) {
+  if (m3.is3dActive()) {
+    m3.cylinder(c, r, w, { color, edge, alpha, spin, hollow, mark, rim });
+    return;
+  }
   const [cx, cy, cz] = c, zf = cz + w / 2, zb = cz - w / 2;
   const nearFront = V.depth(cx, cy, zf) >= V.depth(cx, cy, zb);
   const [zn, zr] = nearFront ? [zf, zb] : [zb, zf];
@@ -305,7 +401,11 @@ export function cylinder(P, V, c, r, w, { color, edge, alpha = 0.8, spin = 0, ho
 }
 
 // Sfera: la proiezione è un cerchio; un meridiano che ruota con spin la fa vedere girare.
-export function sphere(P, V, c, r, { color, edge, alpha = 0.8, spin = 0 } = {}) {
+export function sphere(P, V, c, r, { color, edge, alpha = 0.8, spin = 0, mesh = true, glow = false } = {}) {
+  if (m3.is3dActive()) {
+    m3.sphere(c, r, { color, edge, alpha, spin, mesh, glow });
+    return;
+  }
   const [x, y] = V.p(...c), rp = r * P.cam.scale;
   P.circle(x, y, rp, { fill: color, alpha: 0.8 * alpha });
   P.circle(x, y, rp, { stroke: edge ?? color, width: 1.6, alpha });
@@ -327,6 +427,11 @@ export function hull(pts) {
 
 // Prisma: poligono 2D (nel piano xy) estruso lungo z tra z0 e z1, disegnato dalle facce lontane a quelle vicine.
 export function prism(P, V, poly, z0, z1, { fill, stroke, alpha = 1, topEdge = null } = {}) {
+  if (m3.is3dActive()) {
+    m3.prism(poly, z0, z1, { color: fill, edge: stroke, alpha });
+    if (topEdge) m3.line(topEdge, { color: 'text', alpha });
+    return;
+  }
   const faces = [];
   const back = poly.map(([x, y]) => [x, y, z0]), front = poly.map(([x, y]) => [x, y, z1]);
   for (let i = 0; i < poly.length; i++) {

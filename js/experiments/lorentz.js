@@ -2,11 +2,12 @@ import { clamp, deg, niceStep, tn } from '../core/math.js';
 import { tex, texBox, arrowS, chargeDisk, drawPlaneAxes, mixHex } from '../core/manim.js';
 import { uq, unitView } from '../core/units.js';
 import { Stage, arrowPx, arrowMag, brace, rate01, symVal } from '../core/annot.js';
-import { camera3d, background3d, orbit3d, prism, sphere } from '../core/view3d.js';
+import { camera3d, background3d, orbit3d, axes3d, prism, sphere } from '../core/view3d.js';
+import * as m3 from '../core/manim3d.js';
 import { space3d } from '../core/space3d.js';
 import {
   SEL_L, SEL_H, SLIT_H, PARAMS, PRESETS, GRAPHS, THEORY,
-  particleOf, timeUnitOf, timeScale, fieldAt, lorentzForces, analytics,
+  particleOf, timeUnitOf, timeScale, fieldAt, lorentzForces, analytics, fmtCmTeX,
   init, step, done, snapshot, stateAt, resumeFrom, sample, formulas,
 } from './lorentz-phys.js';
 
@@ -90,10 +91,11 @@ function viewBox(p) {
   // Regime 'all': campo uniforme in tutto lo spazio.
   if (hasR && center && an.R_cm <= 48) {
     const [cx, cy] = center;
-    const pad = Math.max(3, Rcap * 0.3);
+    const hasE = Math.abs(fieldAt(sx, sy, 0, p).Ey) > 1e-6;
+    const pad = Math.max(Rcap * 0.35, hasE ? 3 : 1e-5);
     let x0 = Math.min(sx, cx - Rcap) - pad, x1 = Math.max(sx, cx + Rcap) + pad;
     let y0 = Math.min(sy, cy - Rcap) - pad, y1 = Math.max(sy, cy + Rcap) + pad;
-    if (p.show3d && Number.isFinite(an.pitch_cm) && Math.abs(an.pitch_cm) > 0.2) {
+    if (p.show3d && Number.isFinite(an.pitch_cm) && Math.abs(an.pitch_cm) > 1e-5) {
       // Proiezione della deriva elicoidale lungo z con l'inquadratura 3/4 (yaw = -34°, pitch = 22°).
       const zSpan = clamp(an.pitch_cm * Math.min(p.cycles ?? 3, 2.2), -56, 56);
       const dx = zSpan * Math.sin(-34 * deg), dy = -zSpan * Math.cos(-34 * deg) * Math.sin(22 * deg);
@@ -102,9 +104,10 @@ function viewBox(p) {
       y0 = Math.min(y0, cy - Rcap + dy - pad);
       y1 = Math.max(y1, cy + Rcap + dy + pad);
     }
-    const w = Math.max(12, x1 - x0), h = Math.max(12, y1 - y0);
+    const minSpan = hasE ? 12 : Math.max(Rcap * 2.8, 1e-5);
+    const w = Math.max(minSpan, x1 - x0), h = Math.max(minSpan, y1 - y0);
     const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
-    const drift = Math.abs(fieldAt(sx, sy, 0, p).Ey) > 1e-6 ? Math.max(w, 2.2 * Rcap) : w;
+    const drift = hasE ? Math.max(w, 2.2 * Rcap) : w;
     return { xmin: mx - drift / 2, xmax: mx + drift / 2, ymin: my - h / 2, ymax: my + h / 2 };
   }
   return { xmin: sx - 8, xmax: sx + 20, ymin: sy - 11, ymax: sy + 11 };
@@ -275,10 +278,14 @@ function drawFields2D(P, M, p, fade, ui) {
 function drawFields3D(P, V, M, p, vbox, fade, ui) {
   if (!p.showFields || fade <= 0.01) return;
   const bCol = M.vec.tension, eCol = M.field;
-  const span = Math.max(vbox.xmax - vbox.xmin, vbox.ymax - vbox.ymin);
-  const bLen = clamp(span * 0.16, 3.2, 6);
+  const span = Math.max(vbox.xmax - vbox.xmin, vbox.ymax - vbox.ymin, 1e-5);
+  const bLen = span * 0.16;
 
   const vec3 = (a, b, col, width, tip, alpha) => {
+    if (m3.is3dActive()) {
+      m3.arrow(a, b, { color: col, widthPx: width, tipPx: tip, alpha });
+      return;
+    }
     const [x0, y0] = V.S(P, ...a), [x1, y1] = V.S(P, ...b);
     arrowS(P.ctx, x0, y0, x1, y1, col, { width, tip, alpha });
   };
@@ -321,10 +328,13 @@ function drawFields3D(P, V, M, p, vbox, fade, ui) {
 
   // Regimi 'all' e 'half': fascio discreto e arioso 3 × 3 nella zona attiva.
   const x0 = p.region === 'half' ? 2 : vbox.xmin + (vbox.xmax - vbox.xmin) * 0.16;
-  const x1 = Math.max(x0 + 4, vbox.xmax - (vbox.xmax - vbox.xmin) * 0.16);
+  const x1 = p.region === 'half'
+    ? Math.max(x0 + 4, vbox.xmax - (vbox.xmax - vbox.xmin) * 0.16)
+    : vbox.xmax - (vbox.xmax - vbox.xmin) * 0.16;
   const y0 = vbox.ymin + (vbox.ymax - vbox.ymin) * 0.18;
   const y1 = vbox.ymax - (vbox.ymax - vbox.ymin) * 0.18;
-  const eLen = clamp(span * 0.18, 3.2, 6.5);
+  const eLen = span * 0.18;
+  const ez = span * 0.06;
   let bTip = null, eTip = null;
 
   for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
@@ -338,8 +348,8 @@ function drawFields3D(P, V, M, p, vbox, fade, ui) {
     const ex = x + (x1 - x0) * 0.14, ey = y, fe = fieldAt(ex, ey, 0, p);
     if (Math.hypot(fe.Ex, fe.Ey) > 1e-9) {
       const em = Math.hypot(fe.Ex, fe.Ey), ux = fe.Ex / em * eLen * 0.5, uy = fe.Ey / em * eLen * 0.5;
-      vec3([ex - ux, ey - uy, 1.2], [ex + ux, ey + uy, 1.2], eCol, 1.9, 8.5, 0.46 * fade);
-      if (i === 1 && j === 2) eTip = [ex + ux, ey + uy, 1.2];
+      vec3([ex - ux, ey - uy, ez], [ex + ux, ey + uy, ez], eCol, 1.9, 8.5, 0.46 * fade);
+      if (i === 1 && j === 2) eTip = [ex + ux, ey + uy, ez];
     }
   }
   if (bTip && !ui.snapshot) {
@@ -457,7 +467,7 @@ function drawIdealGuide(P, V, S, M, p, an, tilt, ui, lab) {
   const g = S.grow('ideal', 0.85);
   if (g <= 0.01) return;
   const [sx, sy, sz] = ptOf(an.startCm ?? [0, 0, 0]);
-  const R = an.R_cm, hasR = Number.isFinite(R) && R > 0.05 && R < 500;
+  const R = an.R_cm, hasR = Number.isFinite(R) && R > 1e-6 && R < 500;
 
   if (p.region === 'spectrometer') {
     V.line(P, [[-SEL_L, 0, sz], [0, 0, sz]], { color: 'ideal', width: 1.3, dash: [5, 5], alpha: 0.65 * g });
@@ -497,7 +507,7 @@ function drawIdealGuide(P, V, S, M, p, an, tilt, ui, lab) {
     const len = Math.hypot(p1x - p0x, p1y - p0y) || 1;
     let nx = -(p1y - p0y) / len, ny = (p1x - p0x) / len;
     if (ny > 0) { nx = -nx; ny = -ny; }
-    const src = symVal(P, 'R', uq('cm', R, 2)), B = texBox(P, src, 15);
+    const src = symVal(P, 'R', fmtCmTeX(R)), B = texBox(P, src, 15);
     const tx = mx + nx * 16, ty = my + ny * 16;
     tex(P, tx, ty, src, { size: 15, color: M.text, halo: M.bg, alpha: 0.9 * g });
     lab?.blockS(tx, ty, B.w / 2 + 4, (B.bot - B.top) / 2 + 3);
@@ -505,7 +515,7 @@ function drawIdealGuide(P, V, S, M, p, an, tilt, ui, lab) {
 
   // Elica guida e passo elicoidale p in 3D quando v_z != 0.
   const pitch = an.pitch_cm;
-  if (tilt > 0.1 && p.region === 'all' && Number.isFinite(pitch) && Math.abs(pitch) > 0.3 && Math.abs(pitch) < 60) {
+  if (tilt > 0.1 && p.region === 'all' && Number.isFinite(pitch) && Math.abs(pitch) > 1e-5 && Math.abs(pitch) < 60) {
     const th0 = Math.atan2(sy - cy, sx - cx), turns = 1.25, n = 90, hPts = [];
     const dir = Math.sign(an.qOverM || 1) * (Math.sign(fieldAt(sx, sy, sz, p).Bz) || 1);
     const wSign = dir ? -dir : 1;
@@ -520,7 +530,7 @@ function drawIdealGuide(P, V, S, M, p, an, tilt, ui, lab) {
     V.line(P, [[pxW, pyW, sz], [pxW, pyW, sz + pitch]], { color: 'tension', width: 1.4, dash: [3, 4], alpha: 0.8 * tilt * g });
     if (!ui.snapshot && g > 0.4) {
       const [px, py] = V.S(P, pxW, pyW, sz + pitch * 0.5);
-      const src = symVal(P, 'p', uq('cm', Math.abs(pitch), 2));
+      const src = symVal(P, 'p', fmtCmTeX(Math.abs(pitch)));
       tex(P, px + 14, py, src, { size: 14, color: M.vec.tension, halo: M.bg, align: 'left', alpha: 0.9 * tilt * g });
     }
   }
@@ -529,13 +539,13 @@ function drawIdealGuide(P, V, S, M, p, an, tilt, ui, lab) {
 function drawTrail3D(P, V, M, s, p, partCol, tilt) {
   const pts = s.trail?.length ? s.trail.slice() : [[s.x, s.y, s.z]];
   const last = pts[pts.length - 1];
-  if (Math.hypot(s.x - last[0], s.y - last[1], s.z - last[2]) > 1e-4) pts.push([s.x, s.y, s.z]);
+  if (Math.hypot(s.x - last[0], s.y - last[1], s.z - last[2]) > 1e-7) pts.push([s.x, s.y, s.z]);
   if (pts.length < 2) return;
 
   // Proiezione sul piano xy (z = 0) in vista 3D.
   if (p.showProj && tilt > 0.03) {
     V.line(P, pts.map(([x, y]) => [x, y, 0]), { color: 'muted', width: 1.4, dash: [4, 5], alpha: 0.65 * tilt });
-    if (Math.abs(s.z) > 1e-3) {
+    if (Math.abs(s.z) > 1e-6) {
       V.line(P, [[s.x, s.y, s.z], [s.x, s.y, 0]], { color: 'muted', width: 1.3, dash: [3, 4], alpha: 0.75 * tilt });
       const [px, py] = V.p(s.x, s.y, 0);
       P.circle(px, py, 3.8, { fill: 'muted', stroke: M.bg, width: 1, alpha: 0.85 * tilt });
@@ -543,6 +553,10 @@ function drawTrail3D(P, V, M, s, p, partCol, tilt) {
   }
 
   // Scia principale a tratti sfumati nel tempo.
+  if (m3.is3dActive()) {
+    m3.tube(pts, { color: partCol, widthPx: 2.5, alpha: 0.92, fadeTail: true });
+    return;
+  }
   const n = pts.length, chunk = Math.max(2, Math.ceil(n / 32));
   for (let i = 0; i < n - 1; i += chunk) {
     const a = 0.2 + 0.72 * (i / n);
@@ -576,8 +590,8 @@ function drawParticle(P, V, S, M, s, part, partCol, sc, ui, tilt) {
   ctx.restore();
 
   if (tilt >= 0.08) {
-    sphere(P, V, [s.x, s.y, s.z], rPx / sc, { color: partCol, edge: edgeCol, alpha: 0.95 });
-    P.circle(sx2d, sy2d, rPx * 0.62, { fill: partCol, alpha: 0.6 });
+    sphere(P, V, [s.x, s.y, s.z], rPx / sc, { color: partCol, edge: edgeCol, alpha: 0.96, mesh: false, glow: true });
+    if (!m3.is3dActive()) P.circle(sx2d, sy2d, rPx * 0.62, { fill: partCol, alpha: 0.6 });
   } else {
     P.circle(sx2d, sy2d, rPx, { fill: partCol, stroke: edgeCol, width: 1.5, alpha: 0.95 });
   }
@@ -684,6 +698,12 @@ function drawVectors(P, V, S, M, s, p, an, sc, ui, lab) {
       const dx = e2x - px2, dy = e2y - py2, d = Math.hypot(dx, dy) || 1;
       ox = -dy / d * opts.lat / sc; oy = dx / d * opts.lat / sc;
     }
+    if (m3.is3dActive()) {
+      const a3 = [pos[0] + ox, pos[1] + oy, pos[2]], b3 = [end[0] + ox, end[1] + oy, end[2]];
+      m3.arrow(a3, b3, { color: col, widthPx: opts.width ?? 3, dashed: !!opts.dash });
+      lab(V.p(...a3), V.p(...b3), texLbl, col, key, { side: opts.side ?? null, at: opts.at ?? 0.65 });
+      return;
+    }
     const [p0x, p0y] = V.p(...pos);
     P.arrow(p0x + ox, p0y + oy, e2x + ox, e2y + oy, { color: col, key, width: opts.width ?? 3, dash: opts.dash ?? null });
     lab([p0x + ox, p0y + oy], [e2x + ox, e2y + oy], texLbl, col, key, { side: opts.side ?? null, at: opts.at ?? 0.65 });
@@ -701,26 +721,29 @@ function drawVectors(P, V, S, M, s, p, an, sc, ui, lab) {
   void v0Def;
 }
 
-function drawAxes3d(P, V, M, origin, lx, ly, lz, ui) {
+function drawAxes3d(P, V, M, origin, lx, ly, lz, ui, uName = unitView('cm').name) {
   const k = V.tilt();
   if (k < 0.15) return;
   const fade = Math.min(1, (k - 0.15) / 0.35);
+  const labels = [`x\\ (\\mathrm{${uName}})`, `y\\ (\\mathrm{${uName}})`, `z\\ (\\mathrm{${uName}})`];
+  if (m3.is3dActive()) {
+    axes3d(P, V, { origin, lx, ly, lz, labels, size: 15, alpha: fade, snap: !!ui.snapshot });
+    return;
+  }
   const [ox, oy, oz] = origin;
-  const uName = unitView('cm').name;
   const pad = P.cam.padFn?.() ?? { top: 70, right: 20, bottom: 20, left: 20 };
   const sMinX = pad.left + 26, sMaxX = P.cam.w - pad.right - 34;
   const sMinY = pad.top + 22, sMaxY = P.cam.h - pad.bottom - 22;
   const ax = [
-    ['x', [ox + lx, oy, oz], `x\\ (\\mathrm{${uName}})`],
-    ['y', [ox, oy + ly, oz], `y\\ (\\mathrm{${uName}})`],
-    ['z', [ox, oy, oz + lz], `z\\ (\\mathrm{${uName}})`],
+    ['x', [ox + lx, oy, oz], labels[0]],
+    ['y', [ox, oy + ly, oz], labels[1]],
+    ['z', [ox, oy, oz + lz], labels[2]],
   ];
   const [c, d] = V.S(P, ox, oy, oz);
   const placed = [];
   for (const [, e, lbl] of ax) {
     let [a, b] = V.S(P, ...e);
     const B = texBox(P, lbl, 15);
-    // Accorcia leggermente la punta dell'asse se uscirebbe dall'area libera dello schermo.
     let f = 1;
     const mx = B.w / 2 + 12, my = (B.bot - B.top) / 2 + 12;
     if (a > sMaxX - mx && a > c + 5) f = Math.min(f, (sMaxX - mx - c) / (a - c));
@@ -764,6 +787,20 @@ export default {
   resumeFrom(sim, snap) { return resumeFrom(sim, snap); },
   sample(s, p) { return sample(s, p); },
   formulas(s, p) { return formulas(s, p); },
+
+  derivation() {
+    return {
+      title: 'Raggio di ciclotrone in campo magnetico',
+      steps: [
+        { tex: 'F_L = F_c', note: 'La forza di Lorentz fornisce la forza centripeta' },
+        { tex: '|q| v B = m \\frac{v^2}{R}', note: 'Esplicitiamo entrambe le forze' },
+        { indicate: 'v', note: 'Semplifichiamo una potenza della velocità v' },
+        { tex: '|q| B = m \\frac{v}{R}', note: 'Isoliamo il raggio R' },
+        { tex: 'R = \\frac{m v}{|q| B}', note: 'Raggio di ciclotrone (raggio di Larmor)' },
+        { box: 'R = \\frac{m v}{|q| B}', note: 'Base dello spettrometro di massa per separare gli isotopi' },
+      ],
+    };
+  },
 
   handles(s, p) {
     if (!CAM || s.t !== 0 || p.showVel === false) return [];
@@ -824,6 +861,7 @@ export default {
       forces,
       a: [F[0] * fScale, F[1] * fScale],
       v: [s.vx * vScale, s.vy * vScale],
+      params: ['v0', 'B', 'E'],
       note,
     }];
   },
@@ -839,9 +877,14 @@ export default {
     if (!ui.snapshot) { SC = sc; CAM = V; }
 
     const vbox = viewBox(p);
-    const span = Math.max(vbox.xmax - vbox.xmin, vbox.ymax - vbox.ymin, 12);
+    const span = Math.max(vbox.xmax - vbox.xmin, vbox.ymax - vbox.ymin, 1e-5);
+    const axisUnit = span < 0.08
+      ? { unit: 'µm', k: 1e4, lbl: '\\mu m' }
+      : span < 0.8
+        ? { unit: 'mm', k: 10, lbl: 'mm' }
+        : { unit: 'cm', k: 1, lbl: unitView('cm').name };
     space3d(P, V, { origin: [0, 0, 0], up: 'y', step: niceStep(span / 10) });
-    if (!ui.snapshot && tilt < 0.05) drawPlaneAxes(P, M, { unit: 'cm', k: 1 });
+    if (!ui.snapshot && tilt < 0.05) drawPlaneAxes(P, M, { unit: axisUnit.unit, k: axisUnit.k });
 
     const fade2d = clamp(1 - tilt / 0.08, 0, 1);
     const fade3d = clamp((tilt - 0.05) / 0.22, 0, 1);
@@ -862,9 +905,9 @@ export default {
     drawParticle(P, V, S, M, s, part, partCol, sc, ui, tilt);
     drawVectors(P, V, S, M, s, p, an, sc, ui, lab);
 
-    const lx = clamp(vbox.xmax * 0.85, 8, span * 0.55);
-    const ly = clamp(vbox.ymax * 0.85, 6, span * 0.55);
-    const lz = clamp(Math.min(lx, ly) * 0.9, 6, span * 0.5);
-    drawAxes3d(P, V, M, [0, 0, 0], lx, ly, lz, ui);
+    const lx = clamp(Math.abs(vbox.xmax) * 0.85, span * 0.3, span * 0.55);
+    const ly = clamp(Math.abs(vbox.ymax) * 0.85, span * 0.3, span * 0.55);
+    const lz = Math.min(lx, ly) * 0.9;
+    drawAxes3d(P, V, M, [0, 0, 0], lx, ly, lz, ui, axisUnit.lbl);
   },
 };

@@ -16,7 +16,7 @@ export class Inspector {
     const el = this.el = document.createElement('aside');
     el.id = 'inspector';
     el.innerHTML = `
-      <div class="insp-key"><div class="formulas key"></div></div>
+      <div class="insp-key"><div class="formulas key"></div><button type="button" class="derive-btn hidden" id="deriveBtn" title="Mostra la derivazione passo-passo">Deriva ▸</button></div>
       <div class="insp-acc">${SECS.map(([k, t]) => `
         <section class="insp-sec" data-sec="${k}">
           <button class="insp-head"><span class="title">${t}</span>${icons.chevron}</button>
@@ -86,7 +86,7 @@ export class Inspector {
     b.style.setProperty('--insp-w', this.reserved + 'px');
     el.classList.toggle('lesson', this.lesson);
     el.classList.toggle('sec-open', !!this.tab && !this.lesson);
-    el.classList.toggle('no-key', !this.keyBody.childElementCount);
+    el.classList.toggle('no-key', !this.keyBody.childElementCount && this.keyBody.dataset.hasKey !== '1');
     el.querySelectorAll('.insp-sec').forEach(s => {
       const k = s.dataset.sec;
       s.classList.toggle('hidden', !this.available.includes(k));

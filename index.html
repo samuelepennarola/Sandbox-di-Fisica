@@ -29,6 +29,7 @@
   </script>
 </head>
 <body>
+  <canvas id="stage3d"></canvas>
   <canvas id="stage"></canvas>
 
   <header class="topbar">
@@ -52,13 +53,7 @@
         <button data-tool="eraser" data-icon="eraser" title="Gomma (E)"></button>
         <button data-tool="lasso" data-icon="lasso" title="Lazo: seleziona, sposta, ingrandisci (L)"></button>
       </div>
-      <div class="swatches" id="swatches">
-        <button data-color="ink" title="Inchiostro"></button>
-        <button data-color="inkRed" title="Rosso"></button>
-        <button data-color="inkBlue" title="Blu"></button>
-        <button data-color="inkGreen" title="Verde"></button>
-        <button data-color="inkYellow" title="Giallo"></button>
-      </div>
+      <button class="ink-dot-btn" id="inkDotBtn" title="Colore, spessore e gomma" aria-label="Colore e impostazioni penna"><span></span></button>
       <button class="icon-btn" id="undoBtn" data-icon="undo" title="Annulla (⌘Z)"></button>
       <button class="icon-btn" id="redoBtn" data-icon="redo" title="Ripeti (⇧⌘Z)"></button>
       <button class="icon-btn" id="clearBtn" data-icon="trash" title="Cancella tutti gli appunti a penna (non la scena)"></button>
@@ -75,6 +70,7 @@
   </header>
 
   <nav id="rail" class="hidden" aria-label="Strumenti"></nav>
+  <div id="keyParams" class="key-params hidden" aria-label="Parametri principali"></div>
   <div id="pins" class="hidden"></div>
 
   <div class="quickbar hidden" id="quickbar" aria-label="Interruttori della scena"></div>
@@ -87,10 +83,23 @@
 
   <div class="popover hidden" id="penPop">
     <div class="seg wide"><button data-type="pen">Penna</button><button data-type="brush">Pennello</button></div>
+    <div class="sub">Colore</div>
+    <div class="swatches" id="swatches">
+      <button data-color="ink" title="Inchiostro"></button>
+      <button data-color="inkRed" title="Rosso"></button>
+      <button data-color="inkBlue" title="Blu"></button>
+      <button data-color="inkGreen" title="Verde"></button>
+      <button data-color="inkYellow" title="Giallo"></button>
+    </div>
     <div class="sub">Spessore <span id="penSizeLabel"></span></div>
     <div class="pen-presets" id="penPresets"></div>
     <input type="range" id="penSizeRange" step="0.1" aria-label="Spessore della penna">
     <canvas id="penPreview" class="pen-preview"></canvas>
+    <div class="sub">Gomma</div>
+    <div class="seg wide" id="eraserModeSeg">
+      <button data-eraser="stroke">Tratti interi</button>
+      <button data-eraser="part">Precisa</button>
+    </div>
   </div>
 
   <div class="ctxbar hidden" id="ctxbar"></div>

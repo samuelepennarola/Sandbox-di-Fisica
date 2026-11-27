@@ -64,9 +64,9 @@ export default {
   gridLabels: p => !p.showTrace,   // con il grafico x(t) acceso i numeri li porta il suo asse x, allineato alla scena
 
   params: [
-    { key: 'v0', label: 'Velocità iniziale v₀', unit: 'm/s', min: 1, max: 100, step: 0.5, value: 18 },
-    { key: 'theta', label: 'Angolo di lancio θ', unit: '°', min: 0, max: 90, step: 1, value: 50 },
-    { key: 'h0', label: 'Altezza iniziale h₀', unit: 'm', min: 0, max: 200, step: 0.5, value: 0 },
+    { key: 'v0', label: 'Velocità iniziale v₀', unit: 'm/s', min: 1, max: 100, step: 0.5, value: 18, quick: true },
+    { key: 'theta', label: 'Angolo di lancio θ', unit: '°', min: 0, max: 90, step: 1, value: 50, quick: true },
+    { key: 'h0', label: 'Altezza iniziale h₀', unit: 'm', min: 0, max: 200, step: 0.5, value: 0, quick: true },
     { key: 'g', label: 'Gravità g', unit: 'm/s²', min: 1, max: 25, step: 0.01, value: 9.81 },
     { key: 'm', label: 'Massa m', unit: 'kg', min: 0.1, max: 100, step: 0.1, value: 1 },
     { key: 'k', label: 'Resistenza dell\'aria k', unit: '1/m', min: 0, max: 0.5, step: 0.001, value: 0 },
@@ -117,6 +117,12 @@ export default {
   },
 
   done: s => s.landed,
+
+  // Rallentamento dolce automatico per lanci brevi: punta a ~6,5 s di visione reale.
+  timeScale(s, p) {
+    const tv = ideal(p).tv;
+    return tv > 0 ? Math.max(0.25, Math.min(1, tv / 6.5)) : 1;
+  },
 
   sample(s, p) {
     const v2 = s.vx * s.vx + s.vy * s.vy, K = 0.5 * p.m * v2, U = p.m * p.g * s.y;
@@ -279,6 +285,21 @@ export default {
       { tex: `${V('v_x')}=${un('m/s', s.vx)}\\quad ${V('v_y')}=${un('m/s', s.vy)}\\quad |${V('\\vec v')}|=${uq('m/s', v)}` },
       p.k > 0 && s.landed && { tex: `\\text{gittata reale } ${uq('m', s.x)}\\ \\ (${tn(100 * s.x / id.R, 0)}\\%\\text{ dell'ideale})`, cls: 'warn' },
     ].filter(Boolean);
+  },
+
+  derivation() {
+    return {
+      title: 'Gittata del moto parabolico',
+      steps: [
+        { tex: 'y(t) = v_0 \\sin\\theta \\ t - \\frac{1}{2} g t^2 = 0', note: 'All’atterraggio la quota torna a zero (h₀ = 0)' },
+        { tex: 't_{\\mathrm{volo}} = \\frac{2 v_0 \\sin\\theta}{g}', note: 'Ricaviamo il tempo di volo' },
+        { tex: 'R = v_0 \\cos\\theta \\cdot t_{\\mathrm{volo}}', note: 'La gittata è lo spostamento orizzontale' },
+        { tex: 'R = v_0 \\cos\\theta \\cdot \\frac{2 v_0 \\sin\\theta}{g}', note: 'Sostituiamo il tempo di volo' },
+        { indicate: '2', note: 'Applichiamo l’identità 2 sin θ cos θ = sin(2θ)' },
+        { tex: 'R = \\frac{v_0^2 \\sin(2\\theta)}{g}', note: 'Massima per 2θ = 90°, cioè θ = 45°' },
+        { box: 'R = \\frac{v_0^2 \\sin(2\\theta)}{g}', note: 'Formula della gittata' },
+      ],
+    };
   },
 
   theory: `

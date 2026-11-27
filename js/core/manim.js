@@ -45,14 +45,17 @@ export function mixHex(c1, c2, t) {
 
 /* ---------------- Piano cartesiano ---------------- */
 
-// Griglia del NumberPlane: linee principali più marcate, suddivisioni tenui. Solo le linee (va sotto a tutto).
+// Cache per il gradiente radiale della vignettatura del NumberPlane (nessuna allocazione per fotogramma).
+let _vigKey = '', _vigGrad = null;
+
+// Griglia del NumberPlane: linee principali più marcate, suddivisioni tenui, vignettatura radiale ai bordi.
 export function drawPlaneGrid(ctx, cam, M) {
   const step = niceStep(80 / cam.scale), minor = step / 2;
   const { x0, y0, x1, y1 } = cam.bounds();
   ctx.save();
   ctx.strokeStyle = M.plane;
   for (const [s, alpha] of [[minor, M.planeA[1]], [step, M.planeA[0]]]) {
-    ctx.globalAlpha = alpha; ctx.lineWidth = s === minor ? 1 : 1.25;
+    ctx.globalAlpha = alpha; ctx.lineWidth = s === minor ? 0.9 : 1.25;
     ctx.beginPath();
     for (let x = Math.ceil(x0 / s) * s; x <= x1; x += s) {
       if (s === minor && Math.abs(x / step - Math.round(x / step)) < 1e-6) continue;
@@ -64,6 +67,25 @@ export function drawPlaneGrid(ctx, cam, M) {
     }
     ctx.stroke();
   }
+  // Assi principali dell'origine leggermente più presenti quando passano nella vista.
+  const [ox, oy] = cam.toScreen(0, 0);
+  ctx.strokeStyle = M.axis; ctx.globalAlpha = M.dark ? 0.16 : 0.12; ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  if (ox >= 0 && ox <= cam.w) { ctx.moveTo(Math.round(ox) + .5, 0); ctx.lineTo(Math.round(ox) + .5, cam.h); }
+  if (oy >= 0 && oy <= cam.h) { ctx.moveTo(0, Math.round(oy) + .5); ctx.lineTo(cam.w, Math.round(oy) + .5); }
+  ctx.stroke();
+
+  // Vignettatura radiale morbida ai bordi del NumberPlane: concentra lo sguardo sulla scena come nei video 3B1B.
+  const vk = `${cam.w}|${cam.h}|${M.dark ? 1 : 0}`;
+  if (_vigKey !== vk) {
+    _vigKey = vk;
+    const cx = cam.w * 0.5, cy = cam.h * 0.5, rMax = Math.hypot(cx, cy);
+    const g = ctx.createRadialGradient(cx, cy, rMax * 0.52, cx, cy, rMax * 1.04);
+    if (M.dark) { g.addColorStop(0, 'rgba(11,11,13,0)'); g.addColorStop(1, 'rgba(11,11,13,0.44)'); }
+    else { g.addColorStop(0, 'rgba(246,243,234,0)'); g.addColorStop(1, 'rgba(246,243,234,0.34)'); }
+    _vigGrad = g;
+  }
+  ctx.globalAlpha = 1; ctx.fillStyle = _vigGrad; ctx.fillRect(0, 0, cam.w, cam.h);
   ctx.restore();
 }
 
@@ -106,22 +128,79 @@ export function drawPlaneAxes(P, M, { unit = 'm', k = 1 } = {}) {
   tex(P, ox + 10, T + 10, `y\\ (\\mathrm{${unit}})`, { size: 17, color: M.text, align: 'left', halo: M.bg });
 }
 
-/* ---------------- Frecce ---------------- */
+/* ---------------- Curve morbide e frecce ---------------- */
 
-// Freccia alla Manim, in px: asta sottile e punta triangolare piena; grow (0..1) la fa crescere dalla coda.
-export function arrowS(ctx, a, b, c, d, color, { width = 3, tip = 14, grow = 1, alpha = 1, halo = null, dash = null } = {}) {
+// Traccia un percorso morbido Catmull-Rom → Bézier cubiche su punti schermo [[x, y], ...].
+export function smoothPath(ctx, pts) {
+  const n = pts.length;
+  if (n < 2) return;
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  if (n === 2) { ctx.lineTo(pts[1][0], pts[1][1]); return; }
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = pts[i > 0 ? i - 1 : i];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2 < n ? i + 2 : i + 1];
+    const c1x = p1[0] + (p2[0] - p0[0]) / 6;
+    const c1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const c2x = p2[0] - (p3[0] - p1[0]) / 6;
+    const c2y = p2[1] - (p3[1] - p1[1]) / 6;
+    ctx.bezierCurveTo(c1x, c1y, c2x, c2y, p2[0], p2[1]);
+  }
+}
+
+// Disegna una curva morbida con doppio registro: nel tema scuro alone calibrato, nel tema chiaro tratto netto (+ alone carta opzionale).
+export function glowStroke(ctx, pts, color, { width = 2.6, alpha = 1, dark = isDark(), dash = null, halo = null } = {}) {
+  if (pts.length < 2 || alpha <= 0.005) return;
+  ctx.save();
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if (dash) ctx.setLineDash(dash);
+  if (halo && !dark) {
+    smoothPath(ctx, pts);
+    ctx.globalAlpha = alpha * 0.72; ctx.strokeStyle = halo; ctx.lineWidth = width + 3.2; ctx.stroke();
+  }
+  if (dark) {
+    smoothPath(ctx, pts);
+    ctx.globalAlpha = alpha * 0.2; ctx.strokeStyle = color; ctx.lineWidth = width + 5.5; ctx.stroke();
+  }
+  smoothPath(ctx, pts);
+  ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = width; ctx.stroke();
+  ctx.restore();
+}
+
+// Freccia alla Manim, in px: asta elegante e punta affusolata (StealthTip); grow (0..1) la fa crescere dalla coda.
+// Doppio registro: nel tema scuro bagliore calibrato sul colore, nel tema chiaro solo alone carta netto.
+export function arrowS(ctx, a, b, c, d, color, { width = 2.8, tip = 14, grow = 1, alpha = 1, halo = null, dash = null, glow = true } = {}) {
   c = a + (c - a) * grow; d = b + (d - b) * grow;
   const len = Math.hypot(c - a, d - b);
   if (len < 1.5) return null;
-  const ux = (c - a) / len, uy = (d - b) / len, h = Math.min(tip, len * 0.5), w = h * 0.5;
-  const shaftEnd = [c - ux * h * 0.9, d - uy * h * 0.9];
-  const tipPath = () => { ctx.beginPath(); ctx.moveTo(c, d); ctx.lineTo(c - ux * h - uy * w, d - uy * h + ux * w); ctx.lineTo(c - ux * h + uy * w, d - uy * h - ux * w); ctx.closePath(); };
+  const ux = (c - a) / len, uy = (d - b) / len, h = Math.min(tip, len * 0.5), w = h * 0.36;
+  const inset = h * 0.14;
+  const shaftEnd = [c - ux * (h - inset), d - uy * (h - inset)];
+  const tipPath = () => {
+    ctx.beginPath();
+    ctx.moveTo(c, d);
+    ctx.lineTo(c - ux * h - uy * w, d - uy * h + ux * w);
+    ctx.lineTo(c - ux * (h - inset), d - uy * (h - inset));
+    ctx.lineTo(c - ux * h + uy * w, d - uy * h - ux * w);
+    ctx.closePath();
+  };
+  const dark = isDark();
   ctx.save();
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   if (halo) {
-    // Alone del colore di fondo: stacca la freccia dalle linee di campo che attraversa.
-    ctx.globalAlpha = alpha * 0.7; ctx.strokeStyle = halo; ctx.lineWidth = width + 4;
+    // Alone del colore di fondo: stacca la freccia dalle linee di campo e dalla griglia.
+    ctx.globalAlpha = alpha * (dark ? 0.65 : 0.78); ctx.strokeStyle = halo; ctx.lineWidth = width + 3.8;
     ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(...shaftEnd); ctx.stroke();
+    tipPath(); ctx.lineWidth = 3.6; ctx.stroke();
+  }
+  if (dark && glow) {
+    // Bagliore calibrato alla 3B1B (solo tema scuro, doppia passata senza shadowBlur).
+    ctx.globalAlpha = alpha * 0.2; ctx.strokeStyle = ctx.fillStyle = color; ctx.lineWidth = width + 5.2;
+    if (dash) ctx.setLineDash(dash);
+    ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(...shaftEnd); ctx.stroke();
+    ctx.setLineDash([]);
     tipPath(); ctx.lineWidth = 4; ctx.stroke();
   }
   ctx.globalAlpha = alpha; ctx.strokeStyle = ctx.fillStyle = color; ctx.lineWidth = width;
@@ -175,9 +254,9 @@ function parseList(src) {
       else if (cmd === 'frac' || cmd === 'dfrac' || cmd === 'tfrac') { const num = parseList(group()), den = parseList(group()); out.push({ t: 'frac', num, den }); }
       else if (cmd === 'sqrt') out.push({ t: 'sqrt', body: parseList(group()) });
       else if (cmd === 'mathrm' || cmd === 'text') {
-        // Testo in tondo: le parole restano intere (con i loro spazi); se contiene apici o pedici (m/s^2) si impagina.
+        // Testo in tondo: le parole restano intere (con i loro spazi); se contiene apici o pedici (m/s^2, h₀) conserva gli spazi.
         const g = group();
-        if (/[\^_\\]/.test(g)) out.push(...roman(parseList(g)));
+        if (/[\^_\\]/.test(g)) out.push(...roman(parseList(g.replace(/ /g, '\\ '))));
         else out.push({ t: 'ch', s: g, font: 'main' });
       }
       else if (cmd === 'left' || cmd === 'right') { /* \left( \right): basta la parentesi */ }
@@ -301,13 +380,15 @@ export function tex(P, a, b, src, { size = 16, color = '#fff', align = 'center',
 }
 
 // Una sola operazione dell'impaginazione (glifo, riga di frazione, radice) con l'origine in (x0, b).
-// halo: colore dell'alone (passata dell'alone) oppure null (passata del colore). Serve anche a morph.js.
-export function drawTexOp(ctx, o, x0, b, c, halo = null) {
+// halo: colore dell'alone (passata dell'alone) oppure null (passata del colore).
+// outline: se true disegna solo il contorno del glifo (per l'animazione Write / DrawBorderThenFill di Manim).
+export function drawTexOp(ctx, o, x0, b, c, halo = null, outline = false) {
   const isHalo = !!halo, x = x0 + o.x, y = b + o.y;
   ctx.strokeStyle = isHalo ? halo : c; ctx.fillStyle = c;
   if (o.k === 'text') {
     ctx.font = o.font;
     if (isHalo) { ctx.lineWidth = 4; ctx.strokeText(o.s, x, y); }
+    else if (outline) { ctx.lineWidth = Math.max(0.9, o.size * 0.055); ctx.strokeText(o.s, x, y); }
     else ctx.fillText(o.s, x, y);
     if (o.vec) {
       // Freccetta sopra la lettera, spostata a destra come nel corsivo.
@@ -403,19 +484,45 @@ function partialLine(pts, f, acc) {
 
 /* ---------------- Cariche ---------------- */
 
-// Carica alla Manim: disco pieno con alone e segno bianco. hue: 1 positiva, 0 negativa (valori intermedi
-// durante l'inversione: il colore sfuma e il tratto verticale del + si accorcia).
+// Sfera 2.5D con doppio registro (scuro: luce dall'alto-sinistra + rim-light + bagliore opzionale; chiaro: sfumatura morbida senza bagliore).
+export function shadedDisc(ctx, a, b, r, col, dark, { alpha = 1, glow = false } = {}) {
+  const isHex = /^#[0-9a-f]{6}$/i.test(col);
+  if (dark && glow && isHex && r >= 5) {
+    const g = ctx.createRadialGradient(a, b, r * 0.55, a, b, r * 2.35);
+    g.addColorStop(0, col + '48'); g.addColorStop(1, col + '00');
+    ctx.globalAlpha = alpha; ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(a, b, r * 2.35, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.beginPath(); ctx.arc(a, b, r, 0, Math.PI * 2);
+  if (isHex && r >= 3) {
+    const g = ctx.createRadialGradient(a - r * 0.32, b - r * 0.34, r * 0.08, a, b, r * 1.05);
+    if (dark) {
+      g.addColorStop(0, mixHex(col, '#ffffff', 0.42));
+      g.addColorStop(0.5, col);
+      g.addColorStop(1, mixHex(col, '#08090c', 0.48));
+    } else {
+      g.addColorStop(0, mixHex(col, '#ffffff', 0.32));
+      g.addColorStop(0.58, col);
+      g.addColorStop(1, mixHex(col, '#1c1914', 0.28));
+    }
+    ctx.fillStyle = g;
+  } else {
+    ctx.fillStyle = col;
+  }
+  ctx.globalAlpha = alpha * (dark ? 0.94 : 0.96);
+  ctx.fill();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = isHex ? mixHex(col, dark ? '#ffffff' : '#1c1914', dark ? 0.44 : 0.32) : col;
+  ctx.lineWidth = dark ? 1.6 : 1.7;
+  ctx.stroke();
+}
+
+// Carica alla Manim: sfera 2.5D con segno bianco. hue: 1 positiva, 0 negativa (valori intermedi durante l'inversione).
 export function chargeDisk(ctx, a, b, r, hue, M, selected = false, glow = true) {
   const col = mixHex(M.neg, M.pos, hue);
   ctx.save();
-  if (glow) {
-    const g = ctx.createRadialGradient(a, b, r * 0.6, a, b, r * 2.5);
-    g.addColorStop(0, col + (M.dark ? '55' : '33')); g.addColorStop(1, col + '00');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(a, b, r * 2.5, 0, Math.PI * 2); ctx.fill();
-  }
   if (selected) { ctx.strokeStyle = M.sel; ctx.lineWidth = 2; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.arc(a, b, r + 6, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
-  ctx.fillStyle = col; ctx.globalAlpha = 0.95; ctx.beginPath(); ctx.arc(a, b, r, 0, Math.PI * 2); ctx.fill();
-  ctx.globalAlpha = 1; ctx.strokeStyle = mixHex(col, '#ffffff', 0.45); ctx.lineWidth = 1.5; ctx.stroke();
+  shadedDisc(ctx, a, b, r, col, M.dark, { alpha: 1, glow: glow && M.dark });
   const h = r * 0.45;
   ctx.strokeStyle = '#ffffff'; ctx.lineWidth = Math.max(1.8, r * 0.13); ctx.lineCap = 'round';
   ctx.beginPath(); ctx.moveTo(a - h, b); ctx.lineTo(a + h, b);
@@ -453,31 +560,46 @@ export function slabM(P, M, pts, { topEdge, selected = false } = {}) {
   ctx.restore();
 }
 
-// Corpo rigido: rettangolo arrotondato pieno (opacità alla Manim) con bordo più chiaro.
+// Corpo rigido: rettangolo arrotondato 2.5D (sfumatura morbida dall'alto) con bordo nitido.
 export function blockM(P, M, x, y, { w, h, angle = 0, color = 'blue', selected = false, grow = 1 }) {
   const { ctx } = P, [a, b] = P.S(x, y), s = P.cam.scale * grow, col = M.body[color] ?? color;
   const W = w * s, H = h * s;
   if (W < 1 || H < 1) return;
+  const isHex = /^#[0-9a-f]{6}$/i.test(col);
   ctx.save();
   ctx.translate(a, b); ctx.rotate(-angle);
-  const r = Math.min(W, H) * 0.08;
+  const r = Math.min(W, H) * 0.09;
   const path = (pad = 0) => { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(-W / 2 - pad, -H / 2 - pad, W + 2 * pad, H + 2 * pad, r + pad) : ctx.rect(-W / 2 - pad, -H / 2 - pad, W + 2 * pad, H + 2 * pad); };
   if (selected) { path(5); ctx.strokeStyle = M.sel; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.stroke(); ctx.setLineDash([]); }
-  path(); ctx.fillStyle = col; ctx.globalAlpha = M.dark ? 0.72 : 0.8; ctx.fill();
-  ctx.globalAlpha = 1; ctx.strokeStyle = mixHex(col, M.dark ? '#ffffff' : '#000000', M.dark ? 0.35 : 0.25); ctx.lineWidth = 2; ctx.stroke();
+  path();
+  if (isHex) {
+    const g = ctx.createLinearGradient(-W * 0.25, -H / 2, W * 0.25, H / 2);
+    if (M.dark) {
+      g.addColorStop(0, mixHex(col, '#ffffff', 0.22));
+      g.addColorStop(0.55, col);
+      g.addColorStop(1, mixHex(col, '#08090c', 0.42));
+    } else {
+      g.addColorStop(0, mixHex(col, '#ffffff', 0.2));
+      g.addColorStop(0.6, col);
+      g.addColorStop(1, mixHex(col, '#1c1914', 0.2));
+    }
+    ctx.fillStyle = g;
+  } else ctx.fillStyle = col;
+  ctx.globalAlpha = M.dark ? 0.86 : 0.9; ctx.fill();
+  ctx.globalAlpha = 1; ctx.strokeStyle = isHex ? mixHex(col, M.dark ? '#ffffff' : '#1c1914', M.dark ? 0.4 : 0.28) : col; ctx.lineWidth = 1.9; ctx.stroke();
   ctx.restore();
 }
 
-// Sfera: disco pieno con un raggio segnato, così si vede la rotazione.
+// Sfera 2.5D con raggio segnato per mostrare la rotazione (doppio registro scuro/chiaro).
 export function ballM(P, M, x, y, { r, color = 'red', spin = 0, selected = false, grow = 1 }) {
   const { ctx } = P, [a, b] = P.S(x, y), R = r * P.cam.scale * grow, col = M.body[color] ?? color;
   if (R < 1) return;
+  const isHex = /^#[0-9a-f]{6}$/i.test(col);
   ctx.save();
   if (selected) { ctx.strokeStyle = M.sel; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.beginPath(); ctx.arc(a, b, R + 5, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
-  ctx.fillStyle = col; ctx.globalAlpha = M.dark ? 0.72 : 0.8; ctx.beginPath(); ctx.arc(a, b, R, 0, Math.PI * 2); ctx.fill();
-  ctx.globalAlpha = 1; const edge = mixHex(col, M.dark ? '#ffffff' : '#000000', M.dark ? 0.35 : 0.25);
-  ctx.strokeStyle = edge; ctx.lineWidth = 2; ctx.stroke();
-  ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(a + Math.cos(spin) * R, b - Math.sin(spin) * R); ctx.stroke();
+  shadedDisc(ctx, a, b, R, col, M.dark, { alpha: 1, glow: M.dark && R >= 6 });
+  const edge = isHex ? mixHex(col, M.dark ? '#ffffff' : '#1c1914', M.dark ? 0.48 : 0.32) : col;
+  ctx.strokeStyle = edge; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(a + Math.cos(spin) * R, b - Math.sin(spin) * R); ctx.stroke();
   ctx.fillStyle = edge; ctx.beginPath(); ctx.arc(a, b, 2.2, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 }

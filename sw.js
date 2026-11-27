@@ -5,7 +5,7 @@
 // (avvio istantaneo, anche senza connessione). Quando si pubblica una nuova versione, il nuovo service worker
 // scarica i file aggiornati in sottofondo e aspetta che l'utente tocchi «Aggiorna».
 
-const VERSION = '6a998b58cd';
+const VERSION = 'f5d865c3a6';
 const FILES = [
   "./",
   "css/style.css",
@@ -20,6 +20,7 @@ const FILES = [
   "js/core/blobs.js",
   "js/core/camera.js",
   "js/core/collide.js",
+  "js/core/derive.js",
   "js/core/electric.js",
   "js/core/fbd.js",
   "js/core/grav.js",
@@ -27,11 +28,15 @@ const FILES = [
   "js/core/icons.js",
   "js/core/ink.js",
   "js/core/inspector.js",
+  "js/core/keyformulas.js",
+  "js/core/keyparams.js",
   "js/core/lasso.js",
   "js/core/look.js",
   "js/core/manim.js",
+  "js/core/manim3d.js",
   "js/core/math.js",
   "js/core/morph.js",
+  "js/core/navpop.js",
   "js/core/osc.js",
   "js/core/panels.js",
   "js/core/plot.js",
@@ -94,7 +99,8 @@ const FILES = [
   "vendor/katex/fonts/KaTeX_Typewriter-Regular.woff2",
   "vendor/katex/katex.min.css",
   "vendor/katex/katex.min.js",
-  "vendor/planck/planck.mjs"
+  "vendor/planck/planck.mjs",
+  "vendor/three/three.module.min.js"
 ];
 const CACHE = 'fisica-' + VERSION;
 

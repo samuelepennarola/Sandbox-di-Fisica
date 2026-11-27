@@ -263,7 +263,7 @@ export function timeScale(s, p) {
   const unitScale = timeUnitScale(p);
   const charUnit = charTimeSec(p) / unitScale;
   const tEnd = s?.tEnd ?? (p.cycles ?? 3) * charUnit;
-  const targetSec = p.region === 'spectrometer' ? 3.0 : Math.max(5.0, Math.min(12.0, 2.5 * (p.cycles ?? 3)));
+  const targetSec = p.region === 'spectrometer' ? 6.0 : Math.max(5.5, Math.min(12.0, 2.5 * (p.cycles ?? 3)));
   const raw = p.region === 'spectrometer'
     ? (expectedSpanSec(p) / unitScale) / targetSec
     : tEnd / targetSec;
@@ -561,7 +561,7 @@ export function step(s, dtUnit, p) {
   const aEMax = Math.abs((qC * Ey0) / mKg);
   const vPlane0 = (p.v0 ?? 2) * 1e6;
   const R_estCm = absOmegaMax > 0 ? (vPlane0 / absOmegaMax) * 100 : 5;
-  const minTrailCm = Math.min(0.25, Math.max(0.005, R_estCm * 0.03));
+  const minTrailCm = Math.min(0.25, Math.max(1e-6, R_estCm * 0.03));
 
   const epsSec = Math.max(1e-24, leftSec * 1e-12);
   const subCap = p.region === 'spectrometer'
@@ -712,6 +712,14 @@ function fmtTimeSecTeX(tSec) {
   return `${sciTeX(tSec)}\\ \\mathrm{s}`;
 }
 
+export function fmtCmTeX(cm) {
+  if (cm == null || !Number.isFinite(cm)) return '\\infty';
+  const abs = Math.abs(cm);
+  if (abs === 0 || abs >= 0.1) return uq('cm', cm, 2);
+  if (abs >= 0.01) return `${tn(cm * 10, 2)}\\ \\mathrm{mm}`;
+  return `${tn(cm * 1e4, 1)}\\ \\mathrm{\\mu m}`;
+}
+
 export function formulas(s, p) {
   const part = particleOf(p);
   const an = analytics(p);
@@ -739,12 +747,12 @@ export function formulas(s, p) {
   if (part.qC !== 0 && Bz !== 0 && EyActive === 0) {
     out.push({
       key: true,
-      tex: `R = \\dfrac{m\\,${C('vel', 'v_\\perp')}}{|q|\\,${C('tension', '|B_z|')}} = ${uq('cm', an.R_cm, 2)}\\qquad T = \\dfrac{2\\pi m}{|q|\\,${C('tension', '|B_z|')}} = ${fmtTimeSecTeX(an.T_s)}`,
+      tex: `R = \\dfrac{m\\,${C('vel', 'v_\\perp')}}{|q|\\,${C('tension', '|B_z|')}} = ${fmtCmTeX(an.R_cm)}\\qquad T = \\dfrac{2\\pi m}{|q|\\,${C('tension', '|B_z|')}} = ${fmtTimeSecTeX(an.T_s)}`,
     });
   } else if (part.qC !== 0 && Bz !== 0 && EyActive !== 0) {
     const second = p.region === 'spectrometer'
-      ? `d = 2R = ${uq('cm', 2 * an.R_cm, 2)}`
-      : `R = ${uq('cm', an.R_cm, 2)}`;
+      ? `d = 2R = ${fmtCmTeX(2 * an.R_cm)}`
+      : `R = ${fmtCmTeX(an.R_cm)}`;
     out.push({
       key: true,
       tex: `v_{\\text{sel}} = \\dfrac{${C('field', 'E_y')}}{${C('tension', 'B_z')}} = ${sciTeX(an.vSel_ms)}\\ \\mathrm{m/s}\\qquad ${second}`,
@@ -804,14 +812,14 @@ export function formulas(s, p) {
   if (part.qC !== 0 && Bz !== 0) {
     out.push({ h: 'Moto ciclotrone ed elica' });
     out.push({
-      tex: `R = \\dfrac{m\\,${C('vel', 'v_\\perp')}}{|q|\\,${C('tension', '|B_z|')}} = ${uq('cm', an.R_cm, 2)}`,
+      tex: `R = \\dfrac{m\\,${C('vel', 'v_\\perp')}}{|q|\\,${C('tension', '|B_z|')}} = ${fmtCmTeX(an.R_cm)}`,
     });
     out.push({
       tex: `f_c = \\dfrac{1}{T} = ${sciTeX(an.fc_Hz)}\\ \\mathrm{Hz}`,
     });
     if (Math.abs(p.vz ?? 0) > 1e-6) {
       out.push({
-        tex: `p_{\\text{elica}} = |${C('vel', 'v_z')}|\\,T = ${uq('cm', Math.abs(an.pitch_cm), 2)}`,
+        tex: `p_{\\text{elica}} = |${C('vel', 'v_z')}|\\,T = ${fmtCmTeX(Math.abs(an.pitch_cm))}`,
       });
     }
   }
@@ -826,7 +834,7 @@ export function formulas(s, p) {
     if (an.R_cm != null) {
       const yIdealDet = -Math.sign(part.qC * Bz) * 2 * an.R_cm;
       out.push({
-        tex: `d = 2R = ${uq('cm', 2 * an.R_cm, 2)}\\qquad y_{\\text{riv, ideale}} = ${uq('cm', yIdealDet, 2)}`,
+        tex: `d = 2R = ${fmtCmTeX(2 * an.R_cm)}\\qquad y_{\\text{riv, ideale}} = ${fmtCmTeX(yIdealDet)}`,
       });
     }
     if (s.hit === 'plate') {
@@ -850,8 +858,10 @@ export function formulas(s, p) {
   out.push({
     tex: `t = ${tn(s.t, 2)}\\ \\mathrm{${texUnit(timeUnitOf(p))}}\\qquad K = \\tfrac{1}{2} m v^2 = ${tn(K_keV, 2)}\\ \\mathrm{keV}`,
   });
+  const microPos = an.R_cm != null && an.R_cm < 0.1 && EyActive === 0 && p.region === 'all';
+  const fmtPos = v => (microPos ? fmtCmTeX(v) : uq('cm', v, 2));
   out.push({
-    tex: `\\vec r = (${uq('cm', s.x, 2)},\\ ${uq('cm', s.y, 2)},\\ ${uq('cm', s.z, 2)})`,
+    tex: `\\vec r = (${fmtPos(s.x)},\\ ${fmtPos(s.y)},\\ ${fmtPos(s.z)})`,
   });
   out.push({
     tex: `${C('vel', '\\vec v')} = (${tn(s.vx * 1e-6, 2)},\\ ${tn(s.vy * 1e-6, 2)},\\ ${tn(s.vz * 1e-6, 2)})\\cdot 10^{6}\\ \\mathrm{m/s}\\qquad |${C('vel', '\\vec v_\\perp')}| = ${tn(vPlane * 1e-6, 2)}\\cdot 10^{6}\\ \\mathrm{m/s}`,

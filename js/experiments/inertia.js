@@ -49,6 +49,8 @@ export default {
   init(p) { return { t: 0, tEnd: tLand(p) + 3 }; },
   step(s, dt) { s.t += dt; },
   done: s => s.t >= s.tEnd,
+  // Rallentamento dolce automatico quando la caduta del peso è rapida (~7 s reali).
+  timeScale: s => clamp((s?.tEnd ?? 7) / 7, 0.35, 1),
 
   sample(s, p) {
     const k = kin(p, s.t), a = k.taut ? accOf(p) : 0;

@@ -184,6 +184,21 @@ export default {
     ].filter(Boolean);
   },
 
+  derivation() {
+    return {
+      title: 'Periodo delle piccole oscillazioni',
+      steps: [
+        { tex: 'm L \\alpha = - m g \\sin\\theta', note: 'Equazione del moto lungo l’arco' },
+        { indicate: 'm', note: 'La massa m si semplifica: il periodo non dipende dalla massa' },
+        { tex: '\\alpha = -\\frac{g}{L} \\sin\\theta', note: 'Accelerazione angolare' },
+        { tex: '\\alpha \\approx -\\frac{g}{L} \\theta', note: 'Per piccoli angoli: sin θ ≈ θ (in radianti)' },
+        { tex: '\\omega^2 = \\frac{g}{L}', note: 'Moto armonico semplice con pulsazione ω' },
+        { tex: 'T = \\frac{2\\pi}{\\omega} = 2\\pi\\sqrt{\\frac{L}{g}}', note: 'Il periodo dipende solo da L e da g' },
+        { box: '2\\pi\\sqrt{\\frac{L}{g}}', note: 'Legge di isocronismo di Galileo' },
+      ],
+    };
+  },
+
   theory: `
 <h2>Pendolo semplice</h2>
 <p>Una pallina di massa $m$ appesa a un filo inestensibile di lunghezza $L$, spostata dalla verticale di un angolo $\\theta_0$ e lasciata andare, oscilla avanti e indietro. Le forze sono il peso $\\vec P$ e la tensione del filo. Scomponiamo il peso lungo il filo e lungo la tangente alla traiettoria: la componente lungo il filo è bilanciata (insieme alla tensione fornisce la forza centripeta); quella tangente</p>

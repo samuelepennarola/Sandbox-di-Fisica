@@ -59,28 +59,29 @@ export class Camera {
   }
 
   // Scorrimento verso un'inquadratura: la scala varia in modo geometrico (lo zoom appare uniforme) e il centro
-  // segue in modo che il punto fisso dello zoom resti coerente; avanza con requestAnimationFrame.
-  flyTo(to) {
+  // segue in modo che il punto fisso dello zoom resti coerente. Avanza sincronizzato con drawFrame tramite tick().
+  flyTo(to, dur = FLY_S) {
     const near = Math.abs(Math.log(to.scale / this.scale)) < 1e-3 && Math.hypot(to.cx - this.cx, to.cy - this.cy) * this.scale < 0.5;
-    if (near) { this.stop(); Object.assign(this, to); return; }
-    this.fly = { from: { scale: this.scale, cx: this.cx, cy: this.cy }, to, t0: performance.now() };
-    const step = now => {
-      const f = this.fly;
-      if (!f) return;
-      const t = Math.min(1, (now - f.t0) / 1000 / FLY_S), k = smooth(t);
-      const ls = Math.log(f.from.scale) + (Math.log(f.to.scale) - Math.log(f.from.scale)) * k;
-      this.scale = Math.exp(ls);
-      // Centro interpolato nello spazio "schermo per metro": evita che il soggetto sbandi durante lo zoom.
-      const w0 = 1 / f.from.scale, w1 = 1 / f.to.scale, wk = 1 / this.scale, u = Math.abs(w1 - w0) > 1e-12 ? (wk - w0) / (w1 - w0) : k;
-      this.cx = f.from.cx + (f.to.cx - f.from.cx) * u;
-      this.cy = f.from.cy + (f.to.cy - f.from.cy) * u;
-      if (t < 1) f.raf = requestAnimationFrame(step);
-      else { Object.assign(this, f.to); this.fly = null; }
-    };
-    this.fly.raf = requestAnimationFrame(step);
+    if (near || reducedMotion()) { this.stop(); Object.assign(this, to); return; }
+    this.fly = { from: { scale: this.scale, cx: this.cx, cy: this.cy }, to, t0: performance.now(), dur };
   }
 
-  stop() { if (this.fly) { cancelAnimationFrame(this.fly.raf); this.fly = null; } }
+  // Avanza l'eventuale volo della camera nel ciclo unico di rendering (chiamato da main.js prima di disegnare).
+  tick(now = performance.now()) {
+    const f = this.fly;
+    if (!f) return false;
+    const t = Math.min(1, (now - f.t0) / 1000 / (f.dur || FLY_S)), k = smooth(t);
+    const ls = Math.log(f.from.scale) + (Math.log(f.to.scale) - Math.log(f.from.scale)) * k;
+    this.scale = Math.exp(ls);
+    // Centro interpolato nello spazio "schermo per metro": evita che il soggetto sbandi durante lo zoom.
+    const w0 = 1 / f.from.scale, w1 = 1 / f.to.scale, wk = 1 / this.scale, u = Math.abs(w1 - w0) > 1e-12 ? (wk - w0) / (w1 - w0) : k;
+    this.cx = f.from.cx + (f.to.cx - f.from.cx) * u;
+    this.cy = f.from.cy + (f.to.cy - f.from.cy) * u;
+    if (t >= 1) { Object.assign(this, f.to); this.fly = null; }
+    return true;
+  }
+
+  stop() { this.fly = null; }
 
   zoomAt(sx, sy, factor) {
     this.stop();

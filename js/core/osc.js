@@ -3,7 +3,7 @@
 //             che scorre verso il basso (il tempo scende); la usano anche gli esperimenti di cinematica;
 //   phasor:   il vettore che ruota su una circonferenza e la cui proiezione orizzontale è il moto armonico;
 //   coilSpring: molla a spire con un numero fisso di spire (si stringe e si allunga davvero).
-import { palette, tex } from './manim.js';
+import { palette, tex, glowStroke } from './manim.js';
 import { rate } from './anim.js';
 import { niceStep, decimalsOf, tn } from './math.js';
 import { unitView } from './units.js';
@@ -55,25 +55,21 @@ export function penTrace(P, pts, tNow, { axis = 'x', top, end = null, pxs, color
     mv(y, o - 4); ln(y, o + 4);
   }
   ctx.stroke();
-  // La curva: dal pennino (adesso) verso il passato.
-  ctx.globalAlpha = alpha; ctx.strokeStyle = col; ctx.lineWidth = 2.6; ctx.lineJoin = ctx.lineCap = 'round';
-  ctx.beginPath();
-  // reach: quanto la curva sporge a sinistra dell'asse (sopra, per y): il nome va oltre, dove non la copre.
-  let started = false, prev = null, reach = 0;
-  // Il pennino sta sempre all'altezza dell'oggetto (nowX): la curva parte da lì e prosegue con i campioni registrati.
-  if (nowX != null) { const a = ac(nowX); mv(now, a); started = true; prev = [a, now]; reach = Math.max(0, o - a); }
+  // La curva morbida (Catmull-Rom + doppio registro scuro/chiaro): dal pennino (adesso) verso il passato.
+  const curve = [];
+  let prev = null, reach = 0;
+  if (nowX != null) { const a = ac(nowX); curve.push(pt(now, a)); prev = [a, now]; reach = Math.max(0, o - a); }
   for (let i = pts.length - 1; i >= 0; i--) {
     const [t, x] = pts[i], y = al(t), a = ac(x);
     if (out(y)) {
-      // Ultimo tratto tagliato esattamente sul bordo della carta.
-      if (prev) { const u = (edge - prev[1]) / (y - prev[1]); ln(edge, prev[0] + (a - prev[0]) * u); }
+      if (prev) { const u = (edge - prev[1]) / (y - prev[1]); curve.push(pt(edge, prev[0] + (a - prev[0]) * u)); }
       break;
     }
-    started ? ln(y, a) : mv(y, a);
-    started = true; prev = [a, y]; reach = Math.max(reach, o - a);
+    curve.push(pt(y, a));
+    prev = [a, y]; reach = Math.max(reach, o - a);
   }
-  ctx.stroke();
   ctx.restore();
+  glowStroke(ctx, curve, col, { width: 2.6, alpha, dark: M.dark });
   const pen = pts.length || nowX != null ? ac(nowX ?? pts[pts.length - 1][1]) : null;
   if (pen != null) {
     ctx.save(); ctx.globalAlpha = alpha;
@@ -155,10 +151,8 @@ export function chartTrace(P, pts, tNow, { left, right, vy, vmin, vmax, tSpan, c
   vis.reverse();
   if (nowV != null) vis.push([tNow, nowV]);
   ctx.save();
-  ctx.globalAlpha = alpha * g; ctx.strokeStyle = col; ctx.lineWidth = 2.6; ctx.lineJoin = ctx.lineCap = 'round';
-  ctx.beginPath();
-  vis.forEach(([t, v], i) => (i ? ctx.lineTo(tx(t), vy(v)) : ctx.moveTo(tx(t), vy(v))));
-  ctx.stroke();
+  const sPts = vis.map(([t, v]) => [tx(t), vy(v)]);
+  glowStroke(ctx, sPts, col, { width: 2.6, alpha: alpha * g, dark: M.dark });
   if (vis.length) {
     const [t, v] = vis[vis.length - 1], px = tx(t), py = vy(v);
     if (link) {
@@ -228,10 +222,8 @@ export function chartBelow(P, pts, tNow, { top, vmin, vmax, tSpan, pxs = null, s
   vis.reverse();
   if (nowV != null) vis.push([tNow, nowV]);
   ctx.save();
-  ctx.globalAlpha = alpha * g; ctx.strokeStyle = col; ctx.lineWidth = 2.6; ctx.lineJoin = ctx.lineCap = 'round';
-  ctx.beginPath();
-  vis.forEach(([t, v], i) => (i ? ctx.lineTo(vx(v), ty(t)) : ctx.moveTo(vx(v), ty(t))));
-  ctx.stroke();
+  const sPts = vis.map(([t, v]) => [vx(v), ty(t)]);
+  glowStroke(ctx, sPts, col, { width: 2.6, alpha: alpha * g, dark: M.dark });
   if (vis.length) {
     const [t, v] = vis[vis.length - 1], px = vx(v), py = ty(t);
     if (link != null) {

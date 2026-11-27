@@ -125,10 +125,13 @@ export class Painter {
   // Maniglia trascinabile (anello).
   // Sottile, alla Manim: anello fine e punto pieno; mentre la si trascina compare un alone tenue.
   // L'area di presa resta quella di main.js (HIT_PX), indipendente dal disegno.
+  // handleAlpha (impostato da main.js) la nasconde a riposo e la mostra vicino al cursore, al tocco o in trascinamento.
   handle(x, y, active = false) {
-    if (active) this.circle(x, y, 15, { fill: 'handle', alpha: 0.16 });
-    this.circle(x, y, active ? 8.5 : 7, { stroke: 'handle', width: 1.4, alpha: 0.95 });
-    this.circle(x, y, 2.6, { fill: 'handle' });
+    const a = this.handleAlpha ? this.handleAlpha(x, y, active) : 1;
+    if (a <= 0.02) return;
+    if (active) this.circle(x, y, 15, { fill: 'handle', alpha: 0.16 * a });
+    this.circle(x, y, active ? 8.5 : 7, { stroke: 'handle', width: 1.4, alpha: 0.95 * a });
+    this.circle(x, y, 2.6, { fill: 'handle', alpha: a });
   }
 
   // Suolo: linea netta con il tratteggio obliquo sotto, come nei diagrammi.
@@ -217,14 +220,14 @@ export function dragGuides(P, { x, y, vx = null, hy = null, text }) {
   ctx.stroke();
   ctx.restore();
   const [a, b] = cam.toScreen(x, y);
+  const src = textToTeX(text);
   ctx.save();
-  ctx.font = '600 13px -apple-system, BlinkMacSystemFont, sans-serif';
-  const w = ctx.measureText(text).width + 18, h = 26, bx = a - w / 2, by = b - 58;
-  ctx.fillStyle = c.handle; ctx.globalAlpha = 0.95;
+  ctx.font = '14px KaTeX_Main, "Times New Roman", serif';
+  const w = ctx.measureText(text).width + 20, h = 26, bx = a - w / 2, by = b - 58;
+  ctx.fillStyle = c.handle; ctx.globalAlpha = 0.94;
   ctx.beginPath(); ctx.roundRect ? ctx.roundRect(bx, by, w, h, 8) : ctx.rect(bx, by, w, h); ctx.fill();
-  ctx.globalAlpha = 1; ctx.fillStyle = c.bg; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(text, a, by + h / 2 + 0.5);
   ctx.restore();
+  tex(P, a, by + h / 2, src, { size: 13, color: c.bg, align: 'center' });
 }
 
 // Allineamento magnetico: se x (o y) è entro tol da quello di un altro punto, vi si aggancia.

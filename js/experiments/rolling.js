@@ -34,8 +34,8 @@ export default {
   sweepHorizon: 10,
 
   params: [
-    { key: 'alpha', label: 'Inclinazione α', unit: '°', min: 1, max: 80, step: 1, value: 20, refit: true },
-    { key: 'L', label: 'Lunghezza del piano L', unit: 'm', min: 1, max: 100, step: 0.5, value: 5, refit: true },
+    { key: 'alpha', label: 'Inclinazione α', unit: '°', min: 1, max: 80, step: 1, value: 20, refit: true, quick: true },
+    { key: 'L', label: 'Lunghezza del piano L', unit: 'm', min: 1, max: 100, step: 0.5, value: 5, refit: true, quick: true },
     { key: 'b_sphere', type: 'toggle', label: 'Sfera piena', value: true, live: true },
     { key: 'b_cyl', type: 'toggle', label: 'Cilindro pieno', value: true, live: true },
     { key: 'b_ring', type: 'toggle', label: 'Anello', value: true, live: true },
@@ -59,6 +59,8 @@ export default {
   init(p) { return { t: 0, tEnd: Math.max(...BODIES.map(b => tFinish(p, b))) + 0.6 }; },
   step(s, dt) { s.t += dt; },
   done: s => s.t >= s.tEnd,
+  // Rallentamento dolce automatico così la gara tra sfera, cilindro e anello dura ~7 s reali.
+  timeScale: s => clamp((s?.tEnd ?? 7) / 7, 0.28, 1),
 
   sample(s, p) {
     const o = { t: s.t };
@@ -123,9 +125,10 @@ export default {
     prism(P, V, [[0, 0], [w, 0], [0, h]], tilt > 0.02 ? z0 : -0.3, tilt > 0.02 ? z1 : 0.3, { fill: M.solid, stroke: M.solidEdge, alpha: 0.95 });
     V.line(P, [[0, h, z1 * tilt], [w, 0, z1 * tilt]], { color: 'text', width: 2.2 });
     if (tilt > 0.02) {
-      // Faccia superiore un po' più chiara e una corsia per ogni corpo: la rampa si legge come superficie.
-      V.poly(P, [[0, h, z0], [w, 0, z0], [w, 0, z1], [0, h, z1]], { fill: M.text, alpha: 0.08 * tilt });
-      for (const b of BODIES) if (on(p, b)) V.line(P, [[0, h, b.lane * tilt], [w, 0, b.lane * tilt]], { color: M.body[b.color], width: 1.2, alpha: 0.5 * tilt, dash: [5, 5] });
+      // Faccia superiore un po' più chiara e una corsia per ogni corpo: sollevate di 5 mm per evitare z-fighting.
+      const ox = Math.sin(a) * 0.005, oy = Math.cos(a) * 0.005;
+      V.poly(P, [[ox, h + oy, z0], [w + ox, oy, z0], [w + ox, oy, z1], [ox, h + oy, z1]], { fill: M.text, alpha: 0.08 * tilt });
+      for (const b of BODIES) if (on(p, b)) V.line(P, [[ox, h + oy, b.lane * tilt], [w + ox, oy, b.lane * tilt]], { color: M.body[b.color], width: 1.2, alpha: 0.65 * tilt, dash: [5, 5] });
     }
     if (tilt < 0.5) {
       angleMark(P, w, 0, 46, Math.PI, Math.PI - a, symVal(P, '\\alpha', degTeX(a)), { color: M.text, alpha: 1 - 2 * tilt });
@@ -156,7 +159,7 @@ export default {
     }
 
     // Tabellone in alto a destra: corpo, momento d'inerzia, tempo all'arrivo; sotto, la divisione dell'energia.
-    const pad = P.cam.padFn?.() ?? { top: 70, right: 20 }, x0 = P.cam.w - pad.right - 300, y0 = pad.top + 26;
+    const pad = P.cam.padFn?.() ?? { top: 70, right: 20 }, x0 = P.cam.w - pad.right - 300, y0 = pad.top + (x0 < 440 ? 78 : 26);
     const gT = S.grow('board', 0.7);
     let row = 0;
     for (const b of BODIES) {

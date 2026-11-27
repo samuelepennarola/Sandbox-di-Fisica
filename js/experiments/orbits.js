@@ -3,6 +3,7 @@ import { tex } from '../core/manim.js';
 import { uq } from '../core/units.js';
 import { Stage, C, arrowPx, arrowMag, symVal } from '../core/annot.js';
 import { camera3d, background3d, orbit3d, axes3d } from '../core/view3d.js';
+import * as m3 from '../core/manim3d.js';
 import { space3d } from '../core/space3d.js';
 import { scaleOf, scaleParam, elements, conicPts, star, planet, wedges, sectorArea } from '../core/grav.js';
 
@@ -161,7 +162,11 @@ export default {
     // Orbita prevista (conica) con il secondo fuoco e l'asse maggiore.
     if (p.showConic) {
       const g = S.grow('conic', 1);
-      for (const seg of conicPts(e0, ext * 1.5)) line(seg.slice(0, Math.max(2, Math.round(seg.length * g))), { color: 'muted', width: 1.3, dash: [5, 6], alpha: 0.75 });
+      for (const seg of conicPts(e0, ext * 1.5)) {
+        const pts = seg.slice(0, Math.max(2, Math.round(seg.length * g)));
+        if (m3.is3dActive()) m3.line(pts.map(([x, y]) => [x, y, 0]), { color: 'muted', dashed: true, alpha: 0.75 });
+        else line(pts, { color: 'muted', width: 1.3, dash: [5, 6], alpha: 0.75 });
+      }
       if (e0.bound && e0.e > 0.02) {
         const rp = e0.a * (1 - e0.e), ra = e0.a * (1 + e0.e), ux = Math.cos(e0.w), uy = Math.sin(e0.w);
         line([[rp * ux, rp * uy], [-ra * ux, -ra * uy]], { color: 'muted', width: 1, dash: [2, 5], alpha: 0.5 * g });
@@ -178,7 +183,17 @@ export default {
     if (p.showAreas && s.cuts.length > 1) {
       // Solo l'ultimo giro: dopo molte rivoluzioni gli spicchi sovrapposti diventerebbero colore pieno.
       const cuts = s.cuts.slice(-(NW + 1)), first = s.cuts.length - cuts.length;
-      wedges(P, s.path, cuts, { colors: first % 2 ? [M.vec.acc, M.vec.vel] : [M.vec.vel, M.vec.acc], alpha: 0.26, proj: pr });
+      const cols = first % 2 ? [M.vec.acc, M.vec.vel] : [M.vec.vel, M.vec.acc];
+      if (m3.is3dActive()) {
+        for (let i = 0; i + 1 < cuts.length; i++) {
+          const i0 = cuts[i], i1 = cuts[i + 1];
+          const pts = [[0, 0, 0]];
+          for (let k = i0; k <= i1; k++) pts.push([s.path[k][0], s.path[k][1], 0]);
+          m3.plane(pts, { color: cols[i % cols.length], alpha: 0.26 });
+        }
+      } else {
+        wedges(P, s.path, cuts, { colors: cols, alpha: 0.26, proj: pr });
+      }
       if (tilt < 0.05) {
         const n = s.cuts.length - 1, i0 = s.cuts[n - 1], i1 = s.cuts[n], A = sectorArea(s.path, i0, i1);
         const mid = s.path[Math.floor((i0 + i1) / 2)], [a, b] = P.S(...pr(mid[0] * 0.62, mid[1] * 0.62));
@@ -187,28 +202,49 @@ export default {
     }
 
     // Scia del pianeta.
-    line(s.path, { color: 'vel', width: 2, alpha: 0.75 });
+    if (m3.is3dActive()) {
+      m3.tube(s.path.map(([x, y]) => [x, y, 0]), { color: 'vel', widthPx: 2.2, alpha: 0.85, fadeTail: true });
+    } else {
+      line(s.path, { color: 'vel', width: 2, alpha: 0.75 });
+    }
 
     // Sole e pianeta.
-    const [ox, oy] = pr(0, 0);
-    star(P, ox, oy, sunPx(p) * (ui.size?.('sun') ?? 1));
-    const [X, Y] = pr(s.x, s.y);
-    planet(P, X, Y, planetPx(p) * (ui.size?.('planet') ?? 1), 'blue', { alpha: S.born('planet') });
+    if (m3.is3dActive()) {
+      m3.sphere([0, 0, 0], sunPx(p) * (ui.size?.('sun') ?? 1) / sc, { color: M.dark ? '#FFD84A' : '#d4a514', mesh: false, glow: true, emissive: 0.7 });
+      m3.sphere([s.x, s.y, 0], planetPx(p) * (ui.size?.('planet') ?? 1) / sc, { color: 'vel', mesh: true, alpha: S.born('planet') });
+    } else {
+      const [ox, oy] = pr(0, 0);
+      star(P, ox, oy, sunPx(p) * (ui.size?.('sun') ?? 1));
+      const [X, Y] = pr(s.x, s.y);
+      planet(P, X, Y, planetPx(p) * (ui.size?.('planet') ?? 1), 'blue', { alpha: S.born('planet') });
+    }
 
     // Velocità del pianeta (scala compressa) e, a simulazione ferma, le maniglie.
     const v = Math.hypot(s.vx, s.vy), vc = vCirc(p);
     if (v > 1e-9) {
-      const L = arrowPx(v / vc, 3, VA) / sc, [tx, ty] = pr(s.x + s.vx / v * L, s.y + s.vy / v * L);
-      P.arrow(X, Y, tx, ty, { color: 'vel', key: 'v', width: 3, label: 'v' });
+      const L = arrowPx(v / vc, 3, VA) / sc;
+      if (m3.is3dActive()) {
+        const end = [s.x + s.vx / v * L, s.y + s.vy / v * L, 0];
+        V.arrow(P, [s.x, s.y, 0], end, { color: 'vel', key: 'v', width: 3, label: 'v' });
+      } else {
+        const [X, Y] = pr(s.x, s.y), [tx, ty] = pr(s.x + s.vx / v * L, s.y + s.vy / v * L);
+        P.arrow(X, Y, tx, ty, { color: 'vel', key: 'v', width: 3, label: 'v' });
+      }
     }
 
     // Vista 3D: il momento angolare, perpendicolare al piano dell'orbita e costante.
     if (tilt > 0.02) {
       const h = s.x * s.vy - s.y * s.vx, Lz = Math.sign(h) * 0.55 * ext * tilt;
-      const [a0, b0] = pr(0, 0, 0), [a1, b1] = pr(0, 0, Lz);
-      P.arrow(a0, b0, a1, b1, { color: 'friction', key: 'L', width: 3.4 });
-      const [la, lb] = P.S(a1, b1);
-      tex(P, la + 18, lb, '\\vec L', { size: 18, color: M.vec.friction, halo: M.bg, alpha: tilt });
+      if (m3.is3dActive()) {
+        m3.arrow([0, 0, 0], [0, 0, Lz], { color: 'friction', widthPx: 3.4 });
+        const [la, lb] = V.S(P, 0, 0, Lz);
+        tex(P, la + 18, lb, '\\vec L', { size: 18, color: M.vec.friction, halo: M.bg, alpha: tilt });
+      } else {
+        const [a0, b0] = pr(0, 0, 0), [a1, b1] = pr(0, 0, Lz);
+        P.arrow(a0, b0, a1, b1, { color: 'friction', key: 'L', width: 3.4 });
+        const [la, lb] = P.S(a1, b1);
+        tex(P, la + 18, lb, '\\vec L', { size: 18, color: M.vec.friction, halo: M.bg, alpha: tilt });
+      }
       axes3d(P, V, { origin: [0, 0, 0], lx: ext * 0.9, ly: ext * 0.9, lz: ext * 0.7 });
     }
 
