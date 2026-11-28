@@ -108,7 +108,7 @@ const ARCHIMEDES = {
     { key: 'y0', label: 'Quota iniziale base y₀', unit: 'm', min: 0.00, max: 2.00, step: 0.02, value: 0.85 },
     { key: 'g', label: 'Gravità g', unit: 'm/s²', min: 1, max: 25, step: 0.01, value: 9.81 },
     { key: 'tMax', label: 'Durata della simulazione', unit: 's', min: 5, max: 60, step: 5, value: 15 },
-    { key: 'showForces', type: 'toggle', label: 'Forze sul corpo', value: true, live: true },
+    { key: 'showForces', type: 'toggle', label: 'Forze sul corpo', short: 'Forze', icon: 'buoyancy', value: true, live: true },
     { key: 'showDisplaced', type: 'toggle', label: 'Livello a riposo H₀ e volume immerso', value: true, live: true },
     { key: 'showTrace', type: 'toggle', label: 'Grafico quota y(t)', value: false, live: true, refit: true },
   ],

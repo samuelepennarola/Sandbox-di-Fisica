@@ -82,9 +82,9 @@ export const PARAMS = [
   { key: 'cycles', label: 'Durata (periodi / corsa)', unit: '', min: 1, max: 10, step: 0.5, value: 3 },
   { key: 'show3d', type: 'toggle', label: 'Vista 3D (elica e spazio)', value: false, live: true },
   { key: 'showFields', type: 'toggle', label: 'Campi E e B', value: true, live: true },
-  { key: 'showForces', type: 'toggle', label: 'Forze F_E e F_B', value: true, live: true },
+  { key: 'showForces', type: 'toggle', label: 'Forze elettrica e magnetica', short: 'Forze', icon: 'lorentzForce', value: true, live: true },
   { key: 'showVel', type: 'toggle', label: 'Velocità v', value: true, live: true },
-  { key: 'showIdeal', type: 'toggle', label: 'Traiettoria / raggio R', value: true, live: true },
+  { key: 'showIdeal', type: 'toggle', label: 'Traiettoria / raggio R', short: 'Raggio R', icon: 'radius', value: true, live: true },
   { key: 'showProj', type: 'toggle', label: 'Proiezione sul piano xy (3D)', value: true, live: true },
 ];
 

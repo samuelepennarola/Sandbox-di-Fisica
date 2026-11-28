@@ -44,7 +44,38 @@ const ICONS = {
   cannon: SVG('<path d="M3 16h14"/><path d="M5 15l6-5" stroke-width="3"/><path d="M11 10q4-4 7 0" stroke-dasharray="1.5 2"/>'),
   flines: SVG('<circle cx="6" cy="10" r="2" fill="currentColor"/><path d="M8 10h9M8 8.5q5-6 9-5M8 11.5q5 6 9 5"/>'),
   lattice3d: SVG('<path d="M3.5 6.5L10 3l6.5 3.5v7L10 17l-6.5-3.5z"/><path d="M3.5 6.5L10 10l6.5-3.5M10 10v7"/><path d="M6.8 4.8L13.2 8.2M13.2 4.8L6.8 8.2" stroke-opacity=".55"/>'),
-  eye: SVG('<path d="M2 10s3-6 8-6 8 6 8 6-3 6-8 6-8-6-8-6z"/><circle cx="10" cy="10" r="2.5"/>'),
+  // Campi E e B: B uscente (⊙) in alto, E come freccia in basso.
+  fieldsEB: SVG('<g stroke-width="1.2"><circle cx="4" cy="5.5" r="2.6"/><circle cx="10" cy="5.5" r="2.6"/><circle cx="16" cy="5.5" r="2.6"/></g>'
+    + '<circle cx="4" cy="5.5" r=".8" fill="currentColor" stroke="none"/><circle cx="10" cy="5.5" r=".8" fill="currentColor" stroke="none"/><circle cx="16" cy="5.5" r=".8" fill="currentColor" stroke="none"/>'
+    + ARROW(2.5, 14.5, 17.5, 14.5)),
+  // Forza di Lorentz: carica + con due forze perpendicolari.
+  lorentzForce: SVG('<circle cx="6" cy="14" r="2.6"/><path d="M4.9 14h2.2M6 12.9v2.2" stroke-width="1.2"/>' + ARROW(6, 11.4, 6, 2.5) + ARROW(8.6, 14, 17.5, 14)),
+  // Traiettoria circolare con raggio R dal centro.
+  radius: SVG('<circle cx="10" cy="10" r="7.5" stroke-dasharray="2.2 1.8"/><circle cx="10" cy="10" r="1.3" fill="currentColor"/><path d="M10 10L15.3 4.7"/><circle cx="15.3" cy="4.7" r="1.5" fill="currentColor"/>'),
+  // Torricelli: serbatoio con il getto che esce dal foro.
+  jet: SVG('<path d="M3 3v14h8V3"/><path d="M3 6.5h8" stroke-dasharray="1.6 1.6"/><path d="M11 12.5q5 0 6.5 4.5"/>'),
+  // Svuotamento: il livello scende.
+  drain: SVG('<path d="M3 3v14h10V3"/><path d="M3 6h10" stroke-dasharray="1.6 1.6"/><path d="M3 11h10"/>' + ARROW(17, 4, 17, 13)),
+  // Due fori simmetrici (h e H − h) con i getti che arrivano nello stesso punto.
+  symHoles: SVG('<path d="M3 3v14h6V3"/><path d="M9 7.5q5.5 0 8 9.5M9 12.5q6 0 8 4.5" stroke-dasharray="1.8 1.6"/><circle cx="17" cy="17" r="1.3" fill="currentColor"/>'),
+  // Profilo di Stevino: la pressione cresce con la profondità.
+  pressureProfile: SVG('<path d="M4 3v14M4 3l12 14"/>' + ARROW(4, 9, 9.6, 9) + ARROW(4, 14.5, 13.8, 14.5)),
+  // Archimede: corpo a pelo d'acqua con spinta in su e peso in giù.
+  buoyancy: SVG('<rect x="6.5" y="7.5" width="7" height="5" rx=".6"/><path d="M1.5 10h5M13.5 10h5"/>' + ARROW(10, 7.5, 10, 1.5) + ARROW(10, 12.5, 10, 18.5)),
+  // Volume immerso: livello a riposo H₀ (tratteggio) e livello alzato dal corpo, parte immersa ombreggiata.
+  displaced: SVG('<path d="M3 4v13h14V4"/><path d="M3 12h14" stroke-dasharray="1.6 1.6"/><path d="M3 9h4.5M12.5 9H17"/>'
+    + '<rect x="7.5" y="5" width="5" height="7.5" rx=".5"/><rect x="7.5" y="9" width="5" height="3.5" fill="currentColor" fill-opacity=".35" stroke="none"/>'),
+  // Piezometri su un tubo orizzontale, con la linea di carico tratteggiata.
+  piezo: SVG('<path d="M2 13h3M7 13h5M14 13h4M2 17h16"/><path d="M5 13V5M7 13V5M12 13V8M14 13V8"/>'
+    + '<rect x="5" y="7" width="2" height="6" fill="currentColor" fill-opacity=".4" stroke="none"/><rect x="12" y="10" width="2" height="3" fill="currentColor" fill-opacity=".4" stroke="none"/>'
+    + '<path d="M2 3h16" stroke-dasharray="1.6 1.6"/>'),
+  // Linee di corrente che si stringono nella strozzatura, con le particelle.
+  streamlines: SVG('<path d="M2 4q8 6 16 0M2 10h16M2 16q8-6 16 0"/><circle cx="6" cy="5.8" r="1.2" fill="currentColor"/><circle cx="12" cy="10" r="1.2" fill="currentColor"/><circle cx="15" cy="14.9" r="1.2" fill="currentColor"/>'),
+  // Trinomio di Bernoulli: due colonne divise diversamente ma con la stessa somma.
+  trinomial: SVG('<path d="M2 3h16" stroke-dasharray="1.6 1.6"/><rect x="4" y="3" width="4" height="14"/><rect x="12" y="3" width="4" height="14"/>'
+    + '<path d="M4 8h4M4 12h4M12 6h4M12 13h4"/><rect x="12" y="6" width="4" height="7" fill="currentColor" fill-opacity=".35" stroke="none"/><rect x="4" y="8" width="4" height="4" fill="currentColor" fill-opacity=".35" stroke="none"/>'),
+  // Ripiego neutro per un interruttore senza icona propria.
+  toggle: SVG('<rect x="2" y="6" width="16" height="8" rx="4"/><circle cx="14" cy="10" r="2.4" fill="currentColor"/>'),
 };
 
 // Chiave del parametro → [etichetta breve, icona].
@@ -60,10 +91,26 @@ const BY_KEY = {
   showAreas: ['Aree uguali', 'wedge'], showConic: ['Orbita prevista', 'orbit'], keepShots: ['Colpi precedenti', 'cannon'],
   showVec: ['Vettori del campo', 'field'], showEquip: ['Equipotenziali', 'contours'], showCM: ['Centro di massa', 'cm'],
   showTrails: ['Scie', 'trace'],
+  showFields: ['Campi E e B', 'fieldsEB'],
+  openHole: ['Foro di efflusso', 'jet'], drain: ['Svuotamento', 'drain'], showSym: ['Foro simmetrico', 'symHoles'],
+  showProfile: ['Profilo di pressione', 'pressureProfile'], showDisplaced: ['Volume immerso', 'displaced'],
+  showPiezo: ['Piezometri', 'piezo'], showStream: ['Linee di corrente', 'streamlines'], showBars: ['Trinomio', 'trinomial'],
 };
 
 export function quickLabel(def) { return def.short ?? BY_KEY[def.key]?.[0] ?? def.label.split(/[:(]/)[0].trim(); }
-export function quickIcon(def) { return ICONS[def.icon ?? BY_KEY[def.key]?.[1]] ?? ICONS.eye; }
+
+// Con ?debug nell'indirizzo segnala in console gli interruttori senza icona propria (una volta per chiave).
+const DEBUG = new URLSearchParams(location.search).has('debug');
+const warned = new Set();
+export function quickIcon(def) {
+  const icon = ICONS[def.icon ?? BY_KEY[def.key]?.[1]];
+  if (icon) return icon;
+  if (DEBUG && !warned.has(def.key)) {
+    warned.add(def.key);
+    console.warn(`[quickbar] interruttore senza icona: «${def.key}» (${def.label}). Aggiungilo a BY_KEY o dagli il campo icon.`);
+  }
+  return ICONS.toggle;
+}
 
 const MORE_ICON = SVG('<circle cx="4.5" cy="10" r="1.5" fill="currentColor"/><circle cx="10" cy="10" r="1.5" fill="currentColor"/><circle cx="15.5" cy="10" r="1.5" fill="currentColor"/>');
 const MAX_INLINE = 5;   // oltre 5 interruttori, i meno usati vanno nel menu "⋯"
