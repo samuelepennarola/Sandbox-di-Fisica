@@ -3,7 +3,7 @@
 __pycache__/
 
 # Montaggio dei reel (Remotion): su GitHub vanno solo i sorgenti, non dipendenze, render e media pesanti
-node_modules/
+node_modules
 videos-react/*/out/
 videos-react/*/public/audio/
 videos-react/*/public/clips/
