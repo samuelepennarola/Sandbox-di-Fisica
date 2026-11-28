@@ -439,11 +439,12 @@ body.insp-overlay #inspector { width: min(320px, calc(100vw - 24px)); }
 /* Tendine: da chiuse quasi invisibili (solo testo discreto senza riquadri né filetti); una sola aperta alla volta. */
 .insp-acc { display: flex; flex-direction: column; min-height: 0; flex: 0 1 auto; padding: 2px 6px 6px; }
 #inspector.lesson .insp-acc { display: none; }
-.insp-sec { display: flex; flex-direction: column; min-height: 0; border-top: 1px solid transparent; transition: border-color .25s var(--ease); }
+.insp-sec { display: flex; flex-direction: column; flex: 0 0 auto; border-top: 1px solid transparent; transition: border-color .25s var(--ease); }
 #inspector.sec-open .insp-sec { border-top-color: var(--hair); }
 .insp-sec.hidden { display: none; }
-.insp-sec.open { flex: 1 1 auto; }
+.insp-sec.open { flex: 1 1 auto; min-height: 0; }
 .insp-head {
+  flex: 0 0 auto;
   display: flex; align-items: center; gap: 6px; width: 100%; min-height: 44px; border: 0; background: transparent; cursor: pointer;
   padding: 6px 10px; border-radius: 10px; font-weight: 400; font-size: 13.5px; text-align: left;
   color: color-mix(in srgb, var(--c-text) 56%, transparent);
@@ -603,7 +604,10 @@ html, body { font-family: var(--ui-font); font-size: 16.5px; }
 .seg.mode button { font-size: 16px; }
 .insp-head { font-size: 16px; }
 .param-head, .param-value, .toggle, .ctxbar button, .selbar button { font-size: 16px; }
-.hint, .tabs button, .legend, .btn, .chips button, .pin-label, .ftable { font-size: 14.5px; }
+.hint, .tabs button, .btn, .chips button, .pin-label, .ftable { font-size: 14.5px; }
+.legend { font-size: 12px; gap: 3px 4px; }
+.legend span { white-space: nowrap; }
+.legend span::before { width: 8px; margin-right: 4px; }
 .timeline .tl-label { font-size: 14.5px; }
 #rail button { font-size: 11.5px; }
 .sub, .sec-head, #drawer h2, .formulas .fh { text-transform: none; letter-spacing: 0; font-style: italic; font-weight: 400; font-size: 14.5px; }

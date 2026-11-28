@@ -21,6 +21,9 @@ import orbits from './orbits.js';
 import cannon from './cannon.js';
 import gfield from './gfield.js';
 import threebody from './threebody.js';
+import stevin from './stevin.js';
+import archimedes from './archimedes.js';
+import bernoulli from './bernoulli.js';
 
 // Mappa dei moduli. Le voci senza esperimenti compaiono come "in arrivo".
 export const AREAS = [
@@ -30,7 +33,7 @@ export const AREAS = [
   { id: 'rigido', title: 'Corpo rigido', experiments: [lever, rolling, inertia, angmom], soon: [] },
   { id: 'oscillazioni', title: 'Oscillazioni e onde', experiments: [spring, pendulum, string, sources], soon: [] },
   { id: 'gravitazione', title: 'Gravitazione', experiments: [orbits, cannon, gfield, threebody], soon: [] },
-  { id: 'fluidi', title: 'Fluidi', experiments: [], soon: ['Archimede', 'Bernoulli'] },
+  { id: 'fluidi', title: 'Fluidi', experiments: [stevin, archimedes, bernoulli], soon: [] },
   { id: 'termo', title: 'Termodinamica', experiments: [], soon: ['Gas ideale', 'Cicli termici'] },
   { id: 'em', title: 'Elettromagnetismo', experiments: [charges, lorentz], soon: ['Potenziale ed equipotenziali'] },
   { id: 'ottica', title: 'Ottica geometrica', experiments: [], soon: ['Riflessione e rifrazione', 'Lenti'] },
