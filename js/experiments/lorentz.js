@@ -7,7 +7,7 @@ import * as m3 from '../core/manim3d.js';
 import { space3d } from '../core/space3d.js';
 import {
   SEL_L, SEL_H, SLIT_H, PARAMS, PRESETS, GRAPHS, THEORY,
-  particleOf, timeUnitOf, timeScale, fieldAt, lorentzForces, analytics, fmtCmTeX,
+  particleOf, timeUnitOf, timeScale, charTimeSec, fieldAt, lorentzForces, analytics, fmtCmTeX,
   init, step, done, snapshot, stateAt, resumeFrom, sample, formulas,
 } from './lorentz-phys.js';
 
@@ -326,32 +326,75 @@ function drawFields3D(P, V, M, p, vbox, fade, ui) {
     return;
   }
 
-  // Regimi 'all' e 'half': fascio discreto e arioso 3 × 3 nella zona attiva.
-  const x0 = p.region === 'half' ? 2 : vbox.xmin + (vbox.xmax - vbox.xmin) * 0.16;
-  const x1 = p.region === 'half'
-    ? Math.max(x0 + 4, vbox.xmax - (vbox.xmax - vbox.xmin) * 0.16)
-    : vbox.xmax - (vbox.xmax - vbox.xmin) * 0.16;
-  const y0 = vbox.ymin + (vbox.ymax - vbox.ymin) * 0.18;
-  const y1 = vbox.ymax - (vbox.ymax - vbox.ymin) * 0.18;
-  const eLen = span * 0.18;
-  const ez = span * 0.06;
-  let bTip = null, eTip = null;
-
-  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
-    const x = x0 + (x1 - x0) * i / 2, y = y0 + (y1 - y0) * j / 2;
-    const f = fieldAt(x, y, 0, p);
-    if (Math.abs(f.Bz) > 1e-12) {
-      const sz = Math.sign(f.Bz) * bLen * 0.5;
-      vec3([x, y, -sz], [x, y, sz], bCol, 1.9, 8.5, 0.4 * fade);
-      if (i === 2 && j === 2) bTip = [x, y, sz];
+  // Regimi 'all' e 'half': reticolo arioso nel volume della traiettoria.
+  // Il riquadro xy è quello del moto nel piano (senza la proiezione della deriva usata per
+  // inquadrare la camera 3D); gli strati in z coprono tutta la corsa lungo B.
+  const box = viewBox({ ...p, show3d: false });
+  const an = analytics(p);
+  const fE = fieldAt(p.region === 'half' ? 2 : 0, 0, 0, p), hasE = Math.hypot(fE.Ex, fE.Ey) > 1e-9;
+  const cols = [];
+  if (p.region === 'all' && !hasE && an.centerCm && Number.isFinite(an.R_cm) && an.R_cm > 0 && an.R_cm <= 48) {
+    // Elica o cerchio: otto colonne attorno all'asse, appena fuori dal cilindro della traiettoria.
+    const [cx, cy] = an.centerCm, g = an.R_cm * 1.3;
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      if (i || j) cols.push([cx + i * g, cy + j * g]);
     }
-    const ex = x + (x1 - x0) * 0.14, ey = y, fe = fieldAt(ex, ey, 0, p);
-    if (Math.hypot(fe.Ex, fe.Ey) > 1e-9) {
-      const em = Math.hypot(fe.Ex, fe.Ey), ux = fe.Ex / em * eLen * 0.5, uy = fe.Ey / em * eLen * 0.5;
-      vec3([ex - ux, ey - uy, ez], [ex + ux, ey + uy, ez], eCol, 1.9, 8.5, 0.46 * fade);
-      if (i === 1 && j === 2) eTip = [ex + ux, ey + uy, ez];
+  } else {
+    const w = box.xmax - box.xmin, h = box.ymax - box.ymin;
+    const x0 = p.region === 'half' ? Math.max(2, box.xmin + w * 0.16) : box.xmin + w * 0.16;
+    const x1 = Math.max(x0 + 4, box.xmax - w * 0.16);
+    const y0 = box.ymin + h * 0.18, y1 = box.ymax - h * 0.18;
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+      cols.push([x0 + (x1 - x0) * i / 2, y0 + (y1 - y0) * j / 2]);
     }
   }
+  const cg = cols.length > 1 ? Math.hypot(cols[1][0] - cols[0][0], cols[1][1] - cols[0][1]) : span * 0.3;
+
+  // Corsa in z: dalla partenza a z0 + vz·t_fine (stessa durata della simulazione).
+  const st0 = init(p);
+  const zA = st0.z, zB = st0.z + clamp(st0.vz * (p.cycles ?? 3) * charTimeSec(p) * 100, -80, 80);
+  const zLo = Math.min(zA, zB), zHi = Math.max(zA, zB);
+  // Strati distribuiti su tutta la corsa: il primo e l'ultimo appena dentro gli estremi, così
+  // le frecce accompagnano l'elica dall'inizio alla fine senza attraversare il piano z = 0.
+  // Con E e B insieme le frecce raddoppiano: meno strati per restare sobri.
+  const hasB = Math.abs(fieldAt(cols[0][0], cols[0][1], 0, p).Bz) > 1e-12;
+  const nL = 1 + clamp(Math.round((zHi - zLo) / (3 * cg)), 0, hasE && hasB ? 1 : 3);
+  const dz = (zHi - zLo) / nL;
+  const bL = nL > 1 ? Math.min(bLen, dz * 0.5) : bLen;
+  const za = zLo + 0.6 * bL, zb = zHi - 0.6 * bL;
+  const layers = nL > 1
+    ? Array.from({ length: nL }, (_, k) => za + (zb - za) * k / (nL - 1))
+    : [(zLo + zHi) / 2];
+  // Etichette solo dove non finiscono sotto la barra o l'ispettore.
+  const pad = P.cam.padFn?.() ?? { top: 70, right: 20, bottom: 20, left: 20 };
+  const inSafe = q => {
+    const [sx, sy] = V.S(P, ...q);
+    return sx > pad.left + 28 && sx < P.cam.w - pad.right - 44 && sy > pad.top + 28 && sy < P.cam.h - pad.bottom - 36;
+  };
+  const better = (q, cur) => inSafe(q) && (!cur || V.S(P, ...q)[1] < V.S(P, ...cur)[1] - 2);
+  const eLen = Math.min(span * 0.18, cg * 0.6);
+  const ez = Math.min(span * 0.06, nL > 1 ? dz * 0.3 : Infinity);
+  const ex0 = cols.length > 1 ? Math.max(...cols.map(c => c[0])) - Math.min(...cols.map(c => c[0])) : span;
+  let bTip = null, eTip = null;
+
+  layers.forEach((zc, k) => {
+    // Gli strati più lontani dalla partenza si attenuano appena, per dare profondità.
+    const depth = nL > 1 ? 1 - 0.25 * k / (nL - 1) : 1;
+    for (const [x, y] of cols) {
+      const f = fieldAt(x, y, zc, p);
+      if (Math.abs(f.Bz) > 1e-12) {
+        const sz = Math.sign(f.Bz) * bL * 0.5;
+        vec3([x, y, zc - sz], [x, y, zc + sz], bCol, 1.9, 8.5, 0.4 * depth * fade);
+        if (k === 0 && better([x, y, zc + sz], bTip)) bTip = [x, y, zc + sz];
+      }
+      const ex = x + ex0 * 0.14, ey = y, fe = fieldAt(ex, ey, zc, p);
+      if (Math.hypot(fe.Ex, fe.Ey) > 1e-9) {
+        const em = Math.hypot(fe.Ex, fe.Ey), ux = fe.Ex / em * eLen * 0.5, uy = fe.Ey / em * eLen * 0.5;
+        vec3([ex - ux, ey - uy, zc + ez], [ex + ux, ey + uy, zc + ez], eCol, 1.9, 8.5, 0.46 * depth * fade);
+        if (k === 0 && better([ex + ux, ey + uy, zc + ez], eTip)) eTip = [ex + ux, ey + uy, zc + ez];
+      }
+    }
+  });
   if (bTip && !ui.snapshot) {
     const [lx, ly] = V.S(P, ...bTip);
     tex(P, lx + 14, ly, '\\vec B', { size: 16, color: bCol, halo: M.bg, alpha: 0.9 * fade });
