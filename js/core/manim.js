@@ -11,7 +11,7 @@ export const isDark = () => document.documentElement.dataset.theme === 'dark';
 // Palette: nel tema scuro i colori di Manim su fondo quasi nero; nel tema chiaro le stesse tinte, scurite per la carta.
 export function palette(c) {
   if (isDark()) return {
-    dark: true, bg: '#0b0b0d', text: '#ece9e0', muted: MANIM.greyB, axis: '#ffffff', plane: MANIM.blueD, planeA: [0.4, 0.12],
+    dark: true, bg: '#0b0b0d', text: '#ece9e0', muted: MANIM.greyB, axis: '#ffffff', plane: MANIM.blueD, planeA: [0.48, 0.13],
     pos: MANIM.red, neg: MANIM.blue, force: MANIM.yellow, fx: MANIM.teal, fy: MANIM.green, field: MANIM.gold, sel: MANIM.blue,
     ramp: [MANIM.blueE, MANIM.blueD, MANIM.blue, MANIM.teal, MANIM.green], lineA: 0.9,
     // Vettori del costruttore (chiavi dei colori dell'app) e colori dei corpi.
@@ -21,7 +21,7 @@ export function palette(c) {
     solid: '#2a2c33', solidEdge: '#c8c8c8', rope: '#dddddd', springC: MANIM.teal,
   };
   return {
-    dark: false, bg: c.bg, text: '#23211c', muted: '#6b6658', axis: '#23211c', plane: MANIM.blueE, planeA: [0.3, 0.1],
+    dark: false, bg: c.bg, text: '#23211c', muted: '#6b6658', axis: '#23211c', plane: MANIM.blueE, planeA: [0.28, 0.085],
     pos: '#d9443a', neg: '#1f86ad', force: '#b8860b', fx: '#12876c', fy: '#4b8a2a', field: '#c25e12', sel: '#1f86ad',
     ramp: ['#9fbfd0', '#5a9cc0', '#236b8e', '#12876c', '#3f7f22'], lineA: 0.9,
     vec: { vel: '#1f86ad', acc: '#b8860b', weight: '#d9443a', normal: '#4b8a2a', friction: '#c25e12', applied: '#b0359e',
@@ -48,14 +48,14 @@ export function mixHex(c1, c2, t) {
 // Cache per il gradiente radiale della vignettatura del NumberPlane (nessuna allocazione per fotogramma).
 let _vigKey = '', _vigGrad = null;
 
-// Griglia del NumberPlane: linee principali più marcate, suddivisioni tenui, vignettatura radiale ai bordi.
+// Griglia del NumberPlane (faded_line_ratio = 4 di ManimGL): linee principali nitide, 4 suddivisioni tenui, vignettatura radiale ai bordi.
 export function drawPlaneGrid(ctx, cam, M) {
-  const step = niceStep(80 / cam.scale), minor = step / 2;
+  const step = niceStep(80 / cam.scale), minor = step / 4;
   const { x0, y0, x1, y1 } = cam.bounds();
   ctx.save();
   ctx.strokeStyle = M.plane;
   for (const [s, alpha] of [[minor, M.planeA[1]], [step, M.planeA[0]]]) {
-    ctx.globalAlpha = alpha; ctx.lineWidth = s === minor ? 0.9 : 1.25;
+    ctx.globalAlpha = alpha; ctx.lineWidth = s === minor ? 0.85 : 1.3;
     ctx.beginPath();
     for (let x = Math.ceil(x0 / s) * s; x <= x1; x += s) {
       if (s === minor && Math.abs(x / step - Math.round(x / step)) < 1e-6) continue;
@@ -98,15 +98,26 @@ export function drawPlaneAxes(P, M, { unit = 'm', k = 1 } = {}) {
   const L = pad.left + 8, R = cam.w - pad.right - 8, T = pad.top - 6, Bm = cam.h - pad.bottom + 6;
   let [ox, oy] = cam.toScreen(0, 0);
   ox = Math.min(Math.max(ox, L + 30), R - 30);
-  oy = Math.min(Math.max(oy, T + 30), Bm - 20);
+  // Se in alto a sinistra ci sono le pillole dei parametri chiave (#keyParams), la punta dell'asse y si ferma subito sotto.
+  const hasKp = typeof document !== 'undefined' && document.body.classList.contains('has-kp');
+  const Ttop = hasKp && ox < 510 ? pad.top + 48 : T;
+  oy = Math.min(Math.max(oy, Ttop + 30), Bm - 20);
   const step = niceStep(80 / cam.scale);
   const dec = Math.max(0, -Math.floor(Math.log10(step * k) + 1e-9));
   const lab = v => { const u = Math.abs(v) < 1e-9 ? 0 : v * k; return (u < 0 ? '−' : '') + Math.abs(u).toFixed(dec).replace('.', ','); };
   ctx.save();
-  ctx.strokeStyle = ctx.fillStyle = M.axis; ctx.globalAlpha = M.dark ? 0.85 : 0.75; ctx.lineWidth = 1.6;
-  ctx.beginPath(); ctx.moveTo(L, oy); ctx.lineTo(R, oy); ctx.moveTo(ox, Bm); ctx.lineTo(ox, T); ctx.stroke();
-  const head = (x, y, dx, dy) => { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - dx * 10 - dy * 4.5, y - dy * 10 + dx * 4.5); ctx.lineTo(x - dx * 10 + dy * 4.5, y - dy * 10 - dx * 4.5); ctx.closePath(); ctx.fill(); };
-  head(R, oy, 1, 0); head(ox, T, 0, -1);
+  ctx.strokeStyle = ctx.fillStyle = M.axis; ctx.globalAlpha = M.dark ? 0.86 : 0.76; ctx.lineWidth = 1.65;
+  ctx.beginPath(); ctx.moveTo(L, oy); ctx.lineTo(R - 3, oy); ctx.moveTo(ox, Bm); ctx.lineTo(ox, Ttop + 3); ctx.stroke();
+  const head = (x, y, dx, dy) => {
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x - dx * 11.5 - dy * 4.6, y - dy * 11.5 + dx * 4.6);
+    ctx.lineTo(x - dx * 9.8, y - dy * 9.8);
+    ctx.lineTo(x - dx * 11.5 + dy * 4.6, y - dy * 11.5 - dx * 4.6);
+    ctx.closePath();
+    ctx.fill();
+  };
+  head(R, oy, 1, 0); head(ox, Ttop, 0, -1);
   const { x0, y0, x1, y1 } = cam.bounds();
   ctx.lineWidth = 1.3; ctx.beginPath();
   const xs = [], ys = [];
@@ -117,15 +128,15 @@ export function drawPlaneAxes(P, M, { unit = 'm', k = 1 } = {}) {
   }
   for (let y = Math.ceil(y0 / step) * step; y <= y1; y += step) {
     const [, b] = cam.toScreen(0, y);
-    if (b < T + 22 || b > Bm - 4 || Math.abs(b - oy) < 3) continue;
+    if (b < Ttop + 22 || b > Bm - 4 || Math.abs(b - oy) < 3) continue;
     ctx.moveTo(ox - 5, b); ctx.lineTo(ox + 5, b); ys.push([b, lab(y)]);
   }
   ctx.stroke();
   ctx.restore();
   for (const [a, t] of xs) tex(P, a, oy + 16, t, { size: 13, color: M.muted, halo: M.bg });
   for (const [b, t] of ys) tex(P, ox - 9, b, t, { size: 13, color: M.muted, align: 'right', halo: M.bg });
-  tex(P, R - 2, oy - 14, `x\\ (\\mathrm{${unit}})`, { size: 17, color: M.text, align: 'right', halo: M.bg });
-  tex(P, ox + 10, T + 10, `y\\ (\\mathrm{${unit}})`, { size: 17, color: M.text, align: 'left', halo: M.bg });
+  tex(P, R - 4, oy - 15, `x\\ (\\mathrm{${unit}})`, { size: 16, color: M.text, align: 'right', halo: M.bg });
+  tex(P, ox + 11, Ttop + 10, `y\\ (\\mathrm{${unit}})`, { size: 16, color: M.text, align: 'left', halo: M.bg });
 }
 
 /* ---------------- Curve morbide e frecce ---------------- */
@@ -218,8 +229,8 @@ export function arrowS(ctx, a, b, c, d, color, { width = 2.8, tip = 14, grow = 1
 //   lettere latine e greche in corsivo matematico, cifre e segni in tondo, _x _{..} pedici, ^x ^{..} apici,
 //   \vec X (freccia sopra), \mathrm{..} testo in tondo (unità), \cdot, \  (spazio), i pedici Unicode ₀..₉,
 //   \frac{..}{..} frazioni, \sqrt{..} radici, \Delta e le lettere greche comuni.
-const GREEK = { alpha: 'α', beta: 'β', gamma: 'γ', theta: 'θ', sigma: 'σ', lambda: 'λ', mu: 'μ', omega: 'ω', varepsilon: 'ε', epsilon: 'ε', pi: 'π', Delta: 'Δ', phi: 'φ', varphi: 'φ', rho: 'ρ', tau: 'τ' };
-const SYMB = { cdot: ['·', 3], times: ['×', 3.5], approx: ['≈', 3.5], to: ['→', 3.5], Rightarrow: ['⇒', 3.5], parallel: ['∥', 0], perp: ['⊥', 0], infty: ['∞', 0], pm: ['±', 3],
+const GREEK = { alpha: 'α', beta: 'β', gamma: 'γ', theta: 'θ', sigma: 'σ', lambda: 'λ', mu: 'μ', omega: 'ω', varepsilon: 'ε', epsilon: 'ε', pi: 'π', Delta: 'Δ', Sigma: 'Σ', Omega: 'Ω', Phi: 'Φ', phi: 'φ', varphi: 'φ', rho: 'ρ', tau: 'τ' };
+const SYMB = { sum: ['∑', 1.5], prod: ['∏', 1.5], int: ['∫', 1.5], cdot: ['·', 3], times: ['×', 3.5], approx: ['≈', 3.5], to: ['→', 3.5], Rightarrow: ['⇒', 3.5], parallel: ['∥', 0], perp: ['⊥', 0], infty: ['∞', 0], pm: ['±', 3],
   le: ['≤', 3.5], ge: ['≥', 3.5], ne: ['≠', 3.5], circ: ['°', 0], prime: ['′', 0], dots: ['…', 1] };
 // Funzioni in tondo con un po' di spazio attorno (\sin\alpha, \cos\theta).
 const FUNCS = new Set(['sin', 'cos', 'tan', 'ln', 'log', 'exp', 'max', 'min']);

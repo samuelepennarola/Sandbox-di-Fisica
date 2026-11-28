@@ -903,6 +903,45 @@ export function tube(pts, { color = 'vel', widthPx = 2.6, alpha = 0.95, fadeTail
   drawSegments3d(pairs, { color, widthPx, alpha, alphas });
 }
 
+// Arco curvo 3D orientato con punta ManimGL (regola della mano destra attorno a un asse 'x', 'y' o 'z'):
+// la coda sfuma dolcemente (0.28 → 1.0) e la punta triangolare si orienta lungo la tangente finale.
+export function arcArrow(center, r, a0, a1, { axis = 'z', color = 'vel', widthPx = 2.4, tipPx = 11, alpha = 0.9 } = {}) {
+  const span = a1 - a0;
+  if (!st.active || r <= 1e-5 || Math.abs(span) < 0.06 || alpha <= 0.01) return;
+  const cx = center[0], cy = center[1], cz = center[2] ?? 0;
+  const ptAt = a => {
+    const u = r * Math.cos(a), v = r * Math.sin(a);
+    return axis === 'z' ? [cx + u, cy + v, cz] : axis === 'y' ? [cx + u, cy, cz + v] : [cx, cy + u, cz + v];
+  };
+  const endPt = ptAt(a1);
+  const sEnd = pxWorld(endPt[0], endPt[1], endPt[2]);
+  const tipWorld = Math.min(r * Math.abs(span) * 0.45, Math.max(10, tipPx) * 1.25 * sEnd);
+  const dAng = Math.sign(span) * Math.min(Math.abs(span) * 0.45, tipWorld / Math.max(1e-5, r));
+  const aStemEnd = a1 - dAng * 0.85;
+
+  const n = Math.max(16, Math.min(56, Math.ceil(Math.abs(aStemEnd - a0) * 24)));
+  const pairs = new Float32Array(n * 6);
+  const alphas = new Float32Array(n * 2);
+  let pPrev = ptAt(a0);
+  for (let i = 0; i < n; i++) {
+    const f1 = (i + 1) / n;
+    const pNext = ptAt(a0 + (aStemEnd - a0) * f1);
+    const o = i * 6;
+    pairs[o] = pPrev[0]; pairs[o + 1] = pPrev[1]; pairs[o + 2] = pPrev[2];
+    pairs[o + 3] = pNext[0]; pairs[o + 4] = pNext[1]; pairs[o + 5] = pNext[2];
+    alphas[i * 2] = 0.28 + 0.72 * (i / n);
+    alphas[i * 2 + 1] = 0.28 + 0.72 * f1;
+    pPrev = pNext;
+  }
+  drawSegments3d(pairs, { color, widthPx, alpha, alphas });
+
+  // Tangente esatta in a1 nel verso di percorrenza per orientare la punta ManimGL
+  const sg = Math.sign(span), sn = Math.sin(a1), cs = Math.cos(a1);
+  const tg = axis === 'z' ? [-sn * sg, cs * sg, 0] : axis === 'y' ? [-sn * sg, 0, cs * sg] : [0, -sn * sg, cs * sg];
+  const basePt = [endPt[0] - tg[0] * tipWorld, endPt[1] - tg[1] * tipWorld, endPt[2] - tg[2] * tipWorld];
+  arrow(basePt, endPt, { color, widthPx: widthPx * 0.85, tipPx, alpha, halo: false });
+}
+
 // Superficie poligonale 3D traslucida (spicchi di Keplero, piani di confine, superfici di rampa).
 export function plane(pts, { color = 'muted', alpha = 0.22, borderColor = null, borderAlpha = 0 } = {}) {
   if (!st.active || !pts || pts.length < 3 || alpha <= 0.005) return;

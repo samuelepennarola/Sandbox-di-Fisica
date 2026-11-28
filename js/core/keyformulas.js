@@ -9,19 +9,24 @@ import { writeTeX, drawTeX, morphTeX, emphasize } from './morph.js';
 const WRITE_S = 0.72;     // durata Write per riga
 const WRITE_LAG = 0.14;   // ritardo tra una riga e la successiva
 const MORPH_S = 0.42;     // durata TransformMatchingTex
-const IND_S = 0.65;       // durata Indicate quando si muove uno slider
+const IND_S = 0.75;       // durata Indicate quando si muove uno slider o una maniglia
 
-// Mappa chiave parametro → possibili simboli TeX da evidenziare con Indicate.
+// Mappa chiave parametro / maniglia → possibili simboli TeX da evidenziare con Indicate.
 const PARAM_SYM = {
-  m: ['m'], m1: ['m_1'], m2: ['m_2'], M: ['M'], mh: ['m'], mm: ['m'],
-  v: ['v', '\\vec v'], v0: ['v_0'], v1: ['v_1'], v2: ['v_2'], vp: ["v'", 'v'], V: ['V'],
+  m: ['m'], m1: ['m_1', '\\tau_1'], m2: ['m_2', '\\tau_2'], m3: ['m_3'], M: ['M'], Mp: ['M', 'I', '\\omega'],
+  mh: ['m', 'a'], mm: ['m_r', 'I'], mb: ['I', '\\tau_a'],
+  v: ['v', '\\vec v'], v0: ['v_0', 'v'], v1: ['v_1'], v2: ['v_2'], vp: ["v'", 'v'], vs: ['v_s'], V: ['V'],
   a: ['a'], A: ['A'], g: ['g'], G: ['G'],
-  theta: ['\\theta'], alpha: ['\\alpha'], phi: ['\\varphi', '\\phi'],
-  x0: ['x_0'], y0: ['y_0'], h0: ['h_0'], s0: ['s_0'], L: ['L'], r: ['r'], r0: ['r_0'], R: ['R'],
-  k: ['k'], mus: ['\\mu_s'], muk: ['\\mu_d', '\\mu_k'], e: ['e'],
-  q: ['q'], q1: ['q_1'], q2: ['q_2'], E: ['E', '\\vec E'], B: ['B', '\\vec B'],
-  f: ['f'], T: ['T'], omega: ['\\omega'], w0: ['\\omega_0'], lambda: ['\\lambda'],
-  F: ['F'], d: ['d'], tMax: ['t'],
+  theta: ['\\theta'], th0: ['\\theta_0', '\\theta'], alpha: ['\\alpha', 'a'], phi: ['\\varphi', '\\phi'],
+  x0: ['x_0'], y0: ['y_0'], h0: ['h_0'], s0: ['s_0'], L: ['L', 'T', '\\omega'], r: ['r', 'I', '\\omega'], r0: ['r_0', 'r'], R: ['R'],
+  k: ['k', '\\omega'], b: ['b'], gam: ['\\gamma'], mus: ['\\mu_s'], muk: ['\\mu_d', '\\mu_k'], e: ['e'],
+  q: ['q'], q1: ['q_1'], q2: ['q_2'], Q: ['Q'], sigma: ['\\sigma'], E: ['E', '\\vec E'], B: ['B', 'B_z', '\\vec B'],
+  f: ['f'], f1: ['f_1'], f2: ['f_2'], ff: ['f_F'], F0: ['F_0'],
+  T: ['T'], omega: ['\\omega'], w0: ['\\omega_0', '\\omega', 'L'], lambda: ['\\lambda'],
+  F: ['F', '\\tau_F'], d: ['d'], dF: ['\\tau_F', 'b'], xf: ['\\tau', 'I'], tMax: ['t'],
+  rho: ['\\rho'], rhoc: ['\\rho_c'], rhof: ['\\rho_f'],
+  H: ['H'], h: ['h'], H0: ['H_0'], h1: ['h_1'], h2: ['h_2'],
+  d1: ['d_1', 'A_1', '\\tau_1', 'b'], d2: ['d_2', 'A_2', '\\tau_2', 'b'], p0: ['p_0'], p1: ['p_1'],
 };
 
 // Normalizza macro KaTeX non presenti nel mini-LaTeX di manim.js, mantenendo colori e struttura.
@@ -58,7 +63,14 @@ export function extractKeyLines(list) {
           if (s) out.push({ tex: normTeX(s), cls: f.cls || '' });
         }
       } else {
-        out.push({ tex: normTeX(t), cls: f.cls || '' });
+        let clean = normTeX(t);
+        // Se una riga chiave ha sviluppo numerico intermedio (A = B = conto = risultato) troppo lungo per la scena,
+        // sulla scena mostriamo A = B = risultato lasciando il passaggio intermedio in "Tutte le formule".
+        const eqParts = clean.split('=');
+        if (clean.length > 54 && eqParts.length >= 4) {
+          clean = `${eqParts[0].trim()} = ${eqParts[1].trim()} = ${eqParts[eqParts.length - 1].trim()}`;
+        }
+        out.push({ tex: clean, cls: f.cls || '' });
       }
     }
   }
@@ -101,7 +113,8 @@ export class KeyFormulas {
         next.push({ tex: r.tex, cls: r.cls || '', prev: null, t0: now, mode: still ? 'idle' : 'write' });
       } else if (cur.tex === r.tex) {
         next.push({ ...cur, cls: r.cls || '' });
-      } else if (playing && skel(cur.tex) === skel(r.tex)) {
+      } else if (skel(cur.tex) === skel(r.tex)) {
+        // Stessa struttura simbolica (cambiano solo le cifre, in Play o trascinando uno slider): aggiorna subito così Indicate si vede subito
         next.push({ tex: r.tex, cls: r.cls || '', prev: null, t0: now, mode: 'idle' });
       } else {
         next.push({
@@ -129,7 +142,7 @@ export class KeyFormulas {
     const now = performance.now() / 1000;
     const still = reducedMotion();
     const baseSize = 15.5;
-    const maxW = rect.width - 8;
+    const maxW = Math.min(rect.width - 8, (P.cam?.w ?? 9999) - rect.left - 16);
     const indT = this.indTerm ? (now - this.indT0) / IND_S : 2;
     if (indT >= 1) this.indTerm = null;
 
@@ -138,7 +151,7 @@ export class KeyFormulas {
       let sz = baseSize;
       let L = texLayout(P, l.tex, sz);
       if (L.w > maxW && L.w > 1) {
-        sz = Math.max(10.5, sz * (maxW / L.w));
+        sz = Math.max(9.2, sz * (maxW / L.w));
         L = texLayout(P, l.tex, sz);
       }
       const lineH = Math.max(26, L.bot - L.top + 10);

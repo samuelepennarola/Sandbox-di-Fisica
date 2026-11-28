@@ -136,13 +136,23 @@ export default {
       }
     }
 
+    // Verso di rotazione della ruota (arco curvo 3D attorno al bordo esterno, concorde con ω).
+    if (Math.abs(k.w) > 1e-4 || T > 0) {
+      const sg = Math.sign(k.w || -1), gArc = S.grow('wArc', 0.7);
+      const aStart = th + Math.PI * 0.62;
+      W.arcArrow(P, [0, H, 0.08], RW + 0.14, aStart, aStart + sg * 0.82 * gArc, {
+        axis: 'z', color: 'vel', width: 2.3, tip: 10.5, alpha: 0.85,
+      });
+    }
+
     // Vista 3D: velocità angolare e momento come vettori lungo l'asse (regola della mano destra: orario = verso −z).
     if (tilt > 0.02) {
       const wmax = Math.max(accOf(p) / RH * tLand(p), 1e-6), Lw = arrowPx(k.w, wmax, { min: 24, max: 110 }) / sc * tilt;
       if (Math.abs(k.w) > 1e-6) {
-        W.arrow(P, [0, H, 0.14], [0, H, 0.14 + Math.sign(k.w) * Lw], { color: 'vel', key: 'wz', width: 3.2 });
-        const [la, lb] = W.S(P, 0, H, 0.14 + Math.sign(k.w) * Lw);
-        tex(P, la - 18, lb + 4, '\\vec\\omega', { size: 17, color: M.vec.vel, halo: M.bg, alpha: tilt });
+        const z0 = k.w < 0 ? -0.26 : 0.14, z1 = z0 + Math.sign(k.w) * Lw;
+        W.arrow(P, [0, H, z0], [0, H, z1], { color: 'vel', key: 'wz', width: 3.2 });
+        const [la, lb] = W.S(P, 0, H, z1);
+        tex(P, la + (k.w < 0 ? 18 : -20), lb - 12, '\\vec\\omega', { size: 17, color: M.vec.vel, halo: M.bg, alpha: tilt });
       }
       if (T > 0) {
         const Lt = 70 / sc * tilt;

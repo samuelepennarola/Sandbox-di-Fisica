@@ -1,5 +1,6 @@
 import { tn, clamp } from '../core/math.js';
-import { tex } from '../core/manim.js';
+import { tex, mixHex } from '../core/manim.js';
+import { rate } from '../core/anim.js';
 import { uq } from '../core/units.js';
 import { Stage, C, angleMark, symVal, degTeX, brace } from '../core/annot.js';
 import { camera3d, background3d, orbit3d, axes3d, prism, cylinder, sphere } from '../core/view3d.js';
@@ -165,9 +166,13 @@ export default {
     for (const b of BODIES) {
       if (!on(p, b)) continue;
       const col = M.body[b.color], y = y0 + row * 30, tf = tFinish({ ...p }, b), done = s.t >= tf;
-      ctx.save(); ctx.globalAlpha = gT; ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x0, y, 6, 0, 7); ctx.fill(); ctx.restore();
+      // Lampo dorato Indicate alla Manim quando il corpo taglia il traguardo
+      const finU = done && !ui.snapshot ? Math.min(1, Math.max(0, (s.t - tf) / 0.55)) : 1;
+      const indW = finU < 1 ? rate.thereAndBack(finU) : 0;
+      const tCol = done ? (indW > 0.02 ? mixHex(col, M.dark ? '#FFFF00' : '#b8860b', indW) : col) : M.muted;
+      ctx.save(); ctx.globalAlpha = gT; ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x0, y, 6 + 1.8 * indW, 0, 7); ctx.fill(); ctx.restore();
       tex(P, x0 + 14, y, b.k ? `I=${b.kIn}\\,mR^2` : '\\text{non ruota}', { size: 15, color: M.text, halo: M.bg, align: 'left', alpha: gT });
-      tex(P, x0 + 128, y, done ? `t=${uq('s', tf)}` : `t=${uq('s', s.t)}`, { size: 15, color: done ? col : M.muted, halo: M.bg, align: 'left', alpha: gT });
+      tex(P, x0 + 128, y, done ? `t=${uq('s', tf)}` : `t=${uq('s', s.t)}`, { size: 15 + 2.2 * indW, color: tCol, halo: M.bg, align: 'left', alpha: gT });
       if (p.showEnergy) {
         // Barra orizzontale: parte di traslazione (piena) e di rotazione (velata), sul totale m g h già convertito.
         const E = G * Math.min(sAt(p, b, s.t), p.L) * Math.sin(p.alpha * deg), Et = E / (1 + b.k), Er = E - Et;

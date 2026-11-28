@@ -3,7 +3,8 @@
 // mostrare lo spazio attorno al piano,
 // dove vivono i vettori "fuori dal piano" (momento di una forza, velocità angolare, momento angolare).
 // Le coordinate proiettate sono coordinate mondo 2D, quindi si disegnano con il Painter di sempre.
-import { palette, tex } from './manim.js';
+import { palette, arrowS, tex } from './manim.js';
+import { rate } from './anim.js';
 import { niceStep } from './math.js';
 import { drawGrid } from './render.js';
 import * as m3 from './manim3d.js';
@@ -130,6 +131,22 @@ export class View3D {
   }
   S(P, x, y, z = 0) { const [a, b] = this.p(x, y, z); return P.S(a, b); }
 
+  // Arco curvo orientato nello spazio 3D attorno a center nel piano perpendicolare ad axis ('x', 'y', 'z').
+  arcArrow(P, center, r, a0, a1, { axis = 'z', color = 'vel', width = 2.4, tip = 11, alpha = 0.9 } = {}) {
+    if (Math.abs(a1 - a0) < 0.06 || r <= 1e-5 || alpha <= 0.01) return;
+    if (m3.is3dActive()) {
+      m3.arcArrow(center, r, a0, a1, { axis, color, widthPx: width, tipPx: tip, alpha });
+      return;
+    }
+    const pts = this.ring(center, r, axis, 36, a0, a1);
+    const col = P.col(color);
+    P.line(pts.slice(0, -1).map(q => this.p(...q)), { color: col, width: width * 0.85, alpha: alpha * 0.85 });
+    const q0 = pts[pts.length - 2], q1 = pts[pts.length - 1];
+    const [sx0, sy0] = this.S(P, ...q0), [sx1, sy1] = this.S(P, ...q1);
+    const d = Math.hypot(sx1 - sx0, sy1 - sy0) || 1, ux = (sx1 - sx0) / d, uy = (sy1 - sy0) / d;
+    arrowS(P.ctx, sx1 - ux * tip * 1.1, sy1 - uy * tip * 1.1, sx1, sy1, col, { width, tip, alpha, glow: true });
+  }
+
   // Circonferenza di centro c e raggio r nel piano perpendicolare all'asse ('x', 'y' o 'z'), come punti 3D.
   ring(c, r, axis = 'z', n = 64, a0 = 0, a1 = 2 * Math.PI) {
     const pts = [];
@@ -166,23 +183,63 @@ const LIMITS = { y: [0, 85 * DEG], z: [-85 * DEG, -5 * DEG] };
 const clampPitch = (v, up) => Math.max(LIMITS[up][0], Math.min(LIMITS[up][1], v));
 const orbitOf = key => (orbits[key] ??= { dp: 0, dy: 0, user: false, pitch: 0, up: 'y' });
 
-// In vista 3D la camera va con morbidezza verso (pitch, yaw) e poi resta ferma: si muove solo se la si gira con
-// il dito (orbit3d). up: l'asse verticale della scena ('y' o 'z'), attorno a cui gira yaw (vedi View3D.set).
-// Spegnendo la vista 3D torna esattamente di fronte e la rotazione scelta con il dito si azzera.
-export function camera3d(S, key, on, pitch, yaw, { tau = 0.32, up = 'y' } = {}) {
+// In vista 3D la camera compie un movimento morbido con curva smooth di Manim (move_camera):
+//   - all'apertura di una scena 3D (S.R.frame <= 2), esegue una lieve panoramica d'ingresso di 14° in 0,88 s
+//     tenendo subito k = 1 così il canvas WebGL è già attivo senza stacchi 2D→3D;
+//   - accendendo/spegnendo "Vista 3D", transita con rate.smooth in 0,76 s;
+//   - appena l'utente ruota col dito o mouse (orbit3d), cede subito il passo a una risposta diretta (tau = 0,055 s).
+export function camera3d(S, key, on, pitch, yaw, { tau = 0.32, run = 0.76, up = 'y' } = {}) {
   const o = orbitOf(key);
   if (!on) Object.assign(o, { dp: 0, dy: 0, user: false });
   o.pitch = pitch; o.up = up;
   const tp = on ? clampPitch(pitch + o.dp, up) : 0, ty = on ? yaw + o.dy : 0, tk = on ? 1 : 0;
   // Istantanee: la vista di arrivo, senza toccare lo stato della camera sullo schermo.
   if (S.snap) { const V = new View3D().set(tp, ty, up).bindCam(S.P?.cam); V.k = tk; return V; }
-  const c = cams[key] ??= { p: 0, y: 0, k: 0 };
-  // Tornando di fronte l'angolo attorno alla verticale si riporta nel giro più vicino: niente giri a vuoto.
-  if (!on) c.y = Math.atan2(Math.sin(c.y), Math.cos(c.y));
-  const dt = Math.max(0, S.R?.dt ?? 0), g = S.still ? 1 : 1 - Math.exp(-dt / (o.user ? 0.06 : tau));
-  c.p += (tp - c.p) * g; c.y += (ty - c.y) * g; c.k += (tk - c.k) * g;
-  // Arrivata a un soffio dalla meta la camera ci si posa: ferma del tutto (e di fronte è esattamente la vista piana).
-  if (Math.abs(tp - c.p) < 1e-4 && Math.abs(ty - c.y) < 1e-4 && Math.abs(tk - c.k) < 1e-3) { c.p = tp; c.y = ty; c.k = tk; }
+
+  const now = S.R?.now ?? (performance.now() / 1000);
+  const freshMount = (S.R?.frame ?? 99) <= 2;
+  let c = cams[key];
+  if (!c) {
+    c = cams[key] = { p: tp, y: ty, k: tk, on, tw: null };
+    if (on && !S.still) {
+      const p0 = clampPitch(tp * 0.78, up), y0 = ty - 14 * DEG;
+      c.p = p0; c.y = y0; c.k = 1;
+      c.tw = { p0, y0, k0: 1, p1: tp, y1: ty, k1: 1, t0: now, dur: 0.88 };
+    }
+  } else if (freshMount && on && !o.user && !S.still && (!c.tw || now - c.tw.t0 > 0.15)) {
+    const p0 = clampPitch(tp * 0.80, up), y0 = ty - 13 * DEG;
+    c.p = p0; c.y = y0; c.k = 1; c.on = true;
+    c.tw = { p0, y0, k0: 1, p1: tp, y1: ty, k1: 1, t0: now, dur: 0.88 };
+  } else if (c.on !== on) {
+    c.on = on;
+    if (!on) c.y = Math.atan2(Math.sin(c.y), Math.cos(c.y));
+    if (S.still) {
+      c.p = tp; c.y = ty; c.k = tk; c.tw = null;
+    } else {
+      c.tw = { p0: c.p, y0: c.y, k0: c.k, p1: tp, y1: ty, k1: tk, t0: now, dur: run };
+    }
+  }
+
+  if (o.user) c.tw = null;
+
+  if (S.still) {
+    c.p = tp; c.y = ty; c.k = tk; c.tw = null;
+  } else if (c.tw) {
+    const u = (now - c.tw.t0) / c.tw.dur;
+    if (u >= 1) {
+      c.p = tp; c.y = ty; c.k = tk; c.tw = null;
+    } else {
+      const e = rate.smooth(Math.max(0, u));
+      c.p = c.tw.p0 + (tp - c.tw.p0) * e;
+      c.y = c.tw.y0 + (ty - c.tw.y0) * e;
+      c.k = c.tw.k0 + (tk - c.tw.k0) * e;
+    }
+  } else {
+    const dt = Math.max(0, S.R?.dt ?? 0), g = 1 - Math.exp(-dt / (o.user ? 0.055 : tau));
+    c.p += (tp - c.p) * g; c.y += (ty - c.y) * g; c.k += (tk - c.k) * g;
+    if (Math.abs(tp - c.p) < 1e-4 && Math.abs(ty - c.y) < 1e-4 && Math.abs(tk - c.k) < 1e-3) { c.p = tp; c.y = ty; c.k = tk; }
+  }
+
   const V = new View3D().set(c.p, c.y, up).bindCam(S.P?.cam);
   V.k = c.k; tilts[key] = c.k;
   if (c.k > 0.001 && S.P) m3.sync3d(S.P, V);
@@ -226,7 +283,7 @@ export const background3d = (key, { labels = true, default3d = false } = {}) => 
 // È estesa e finita come un piano di Manim; alpha la sfuma (per incrociare muro e pavimento mentre la camera gira).
 export function grid3d(P, V, { plane = 'xy', extend = 1.8, alpha = 1, zr = 6 } = {}) {
   if (alpha <= 0.01) return null;
-  const M = P.M ?? palette(P.c), cam = P.cam, step = niceStep(80 / cam.scale), minor = step / 2;
+  const M = P.M ?? palette(P.c), cam = P.cam, step = niceStep(80 / cam.scale), minor = step / 4;
   const { x0, y0, x1, y1 } = cam.bounds(), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
   const hx = (x1 - x0) / 2 * extend, hy = plane === 'xz' ? zr : (y1 - y0) / 2 * extend, cv = plane === 'xz' ? 0 : cy;
   const X0 = Math.floor((cx - hx) / step) * step, X1 = Math.ceil((cx + hx) / step) * step;
@@ -278,7 +335,7 @@ export function room3d(P, V, box, { up = 'y', step = 1, alpha = 1 } = {}) {
   ctx.strokeStyle = M.plane;
   for (const f of faces) {
     const [u, w] = axes.filter(a => a !== f.ax);
-    for (const [st, a0] of [[step / 2, M.planeA[1]], [step, M.planeA[0]]]) {
+    for (const [st, a0] of [[step / 4, M.planeA[1]], [step, M.planeA[0]]]) {
       ctx.globalAlpha = a0 * k * f.w * (f.floor ? 1 : 0.7); ctx.lineWidth = st < step ? 1 : 1.25;
       ctx.beginPath();
       const seg = (p, q) => { const [a1, b1] = P.S(...V.p(...p)), [a2, b2] = P.S(...V.p(...q)); ctx.moveTo(a1, b1); ctx.lineTo(a2, b2); };

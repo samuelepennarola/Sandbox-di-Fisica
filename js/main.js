@@ -1286,6 +1286,7 @@ canvas.addEventListener('pointermove', e => {
     gesture.moved = true;
     // Un esperimento può dichiarare "live" un trascinamento che non cambia il moto (per esempio una sonda).
     const live = app.exp.drag(gesture.handle, wx, wy, app.params) === 'live';
+    keyFormulas.indicate(gesture.handle);
     syncParams();
     if (live) app.formulasDirty = true; else resetSim();
   } else if (gesture.type === 'pan') {

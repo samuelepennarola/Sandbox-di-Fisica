@@ -129,15 +129,19 @@ export default {
       brace(P, [0, 0], e, symVal(P, 'r', uq('m', r)), { side: 1, gap: rr * sc + 4, size: 15, grow: S.grow('r', 0.6), color: M.text, alpha: 0.8 });
     }
 
-    // Verso di rotazione nel piano: arco con la freccia (antiorario).
-    if (tilt < 0.95) {
+    // Verso di rotazione: in 2D arco sullo schermo, in 3D ricciolo curvo orientato attorno alla piattaforma (regola della mano destra).
+    if (tilt < 0.08) {
       const [a, b] = W.S(P, 0, 0, 0), rad = (RP + 0.2) * sc, a0 = th + 0.2, a1 = th + 0.9;
-      ctx.save(); ctx.globalAlpha = 0.8 * (1 - tilt); ctx.strokeStyle = ctx.fillStyle = M.vec.vel; ctx.lineWidth = 2.2;
+      ctx.save(); ctx.globalAlpha = 0.8 * (1 - tilt * 10); ctx.strokeStyle = ctx.fillStyle = M.vec.vel; ctx.lineWidth = 2.2;
       ctx.beginPath(); ctx.arc(a, b, rad, -a0, -a1, true); ctx.stroke();
       const ex = a + rad * Math.cos(a1), ey = b - rad * Math.sin(a1), tx = -Math.sin(a1), ty = -Math.cos(a1);
       ctx.beginPath(); ctx.moveTo(ex + tx * 9, ey + ty * 9); ctx.lineTo(ex - ty * 5, ey + tx * 5); ctx.lineTo(ex + ty * 5, ey - tx * 5); ctx.closePath(); ctx.fill();
       ctx.restore();
-      tex(P, a + (rad + 18) * Math.cos(a1), b - (rad + 18) * Math.sin(a1), '\\omega', { size: 17, color: M.vec.vel, halo: M.bg, alpha: 1 - tilt });
+      tex(P, a + (rad + 18) * Math.cos(a1), b - (rad + 18) * Math.sin(a1), '\\omega', { size: 17, color: M.vec.vel, halo: M.bg, alpha: 1 - tilt * 10 });
+    } else {
+      const gArc = S.grow('arc3d', 0.75);
+      const span = (0.55 + Math.min(0.65, s.w * 0.08)) * gArc;
+      W.arcArrow(P, [0, 0, 0.02], RP + 0.22, th + 0.25, th + 0.25 + span, { axis: 'z', color: 'vel', width: 2.5, tip: 11, alpha: 0.88 * tilt });
     }
 
     // In 3D: L (costante) e ω (cambia) lungo l'asse, uno accanto all'altro.

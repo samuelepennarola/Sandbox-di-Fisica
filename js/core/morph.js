@@ -261,6 +261,31 @@ export function emphasize(P, src, t, { x, y, size = 24, color = '#fff', align = 
   }
   const w = kind === 'indicate' ? rate.thereAndBack(clamp01(t)) : 0;
   ctx.save(); prep(ctx); ctx.globalAlpha = alpha;
+  if (kind === 'indicate' && w > 0.01 && alpha > 0) {
+    // Alone dorato diffuso + sottile sottolineatura luminosa (ShowPassingFlash) sotto il termine evidenziato
+    for (const g of terms) {
+      const b = bboxOf(g.map(i => T[i]));
+      const cx = ox + b.cx, cy = y + b.cy, rx = Math.max(14, b.w * 0.75 + 8);
+      if (dark) {
+        const gr = ctx.createRadialGradient(cx, cy, 2, cx, cy, rx);
+        gr.addColorStop(0, hl + '3a');
+        gr.addColorStop(1, hl + '00');
+        ctx.save();
+        ctx.globalAlpha = alpha * w;
+        ctx.fillStyle = gr;
+        ctx.beginPath(); ctx.arc(cx, cy, rx, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+      const uy = y + b.y1 + Math.max(2.5, size * 0.14), hw = (b.w * 0.5 + 3) * (0.35 + 0.65 * w);
+      ctx.save();
+      ctx.globalAlpha = alpha * w * (dark ? 0.88 : 0.78);
+      ctx.strokeStyle = hl;
+      ctx.lineWidth = Math.max(1.8, size * 0.095);
+      ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(cx - hw, uy); ctx.lineTo(cx + hw, uy); ctx.stroke();
+      ctx.restore();
+    }
+  }
   if (alpha > 0) T.forEach((k, i) => {
     const b = pick.get(i);
     if (!b || !w) return drawTok(ctx, k, ox + k.cx, y + k.cy, 1, 1, k.col ?? color, false, halo);

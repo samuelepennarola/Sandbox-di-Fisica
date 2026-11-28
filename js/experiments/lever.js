@@ -223,6 +223,11 @@ export default {
         W.arrow(P, [p.xf + 0.55, ty, 0], [p.xf + 0.55, ty, Lz], { color: 'text', key: 'tznet', width: 2, dash: [5, 4] });
         const [la, lb] = W.S(P, p.xf + 0.55, ty, Lz);
         tex(P, la + 18, lb - 12, '\\vec\\tau', { size: 17, color: M.text, halo: M.bg, alpha: tilt });
+        // Ricciolo curvo 3D attorno al fulcro: mostra subito il verso di rotazione legato a τ dalla regola della mano destra
+        const sg = Math.sign(net), gArc = S.grow('tauArc3d', 0.7);
+        W.arcArrow(P, [p.xf, H, 0.28], 0.62, Math.PI * 0.5 - sg * 0.52, Math.PI * 0.5 + sg * 0.52 * gArc, {
+          axis: 'z', color: sg > 0 ? 'vel' : 'weight', width: 2.3, tip: 10.5, alpha: 0.85 * tilt,
+        });
       } else {
         const [la, lb] = W.S(P, p.xf + 0.3, ty, 0.3);
         tex(P, la + 40, lb, '\\vec\\tau=\\vec 0', { size: 17, color: M.text, halo: M.bg, alpha: tilt });
