@@ -291,19 +291,19 @@ function drawFields3D(P, V, M, p, vbox, fade, ui, lab, s) {
   const pad = cam.padFn?.() ?? { top: 70, right: 20, bottom: 20, left: 20 };
   const hasKp = typeof document !== 'undefined' && document.body.classList.contains('has-kp');
 
-  // Fascio di campo contenuto interamente nell'area visibile dello schermo, lontano da barra, ispettore e moviola.
+  // Fascio di campo esteso su tutto il quadro visibile allo zoom corrente, lontano da barra, ispettore e moviola.
   const sMinX = pad.left + 24, sMaxX = cam.w - pad.right - 24;
-  const sMinY = pad.top + 36, sMaxY = cam.h - pad.bottom - 36;
+  const sMinY = pad.top + (hasKp ? 50 : 34), sMaxY = cam.h - pad.bottom - 34;
   const safeTopAt = sx => (hasKp && sx < 520 ? Math.max(sMinY, pad.top + 56) : sMinY);
 
   const D = V.dist0(), rV = V.r, uV = V.u, fV = V.f;
   const [px0, py0, sx0, sy0] = V.focusPt();
   const pz0 = cam.cz || 0;
-  const dMin = 0.58 * D;
+  const dMin = 0.62 * D, dMax = 1.56 * D;
   const depthCam = q => D - ((q[0] - px0) * fV[0] + (q[1] - py0) * fV[1] + (q[2] - pz0) * fV[2]);
   const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 
-  // Ritaglio proiettivo esatto sul segmento 3D: impone d >= 0.58*D (niente distorsione grandangolare)
+  // Ritaglio proiettivo esatto sul tronco di piramide visibile: impone d ∈ [0.62*D, 1.56*D]
   // e mantiene sia la coda sia la punta finale dentro [sMinX..sMaxX] × [sMinY..sMaxY].
   const kL = (sMinX - sx0) / (D * sc), kR = (sMaxX - sx0) / (D * sc);
   const kB = (sy0 - sMaxY) / (D * sc), kT = (sy0 - sMinY) / (D * sc);
@@ -327,6 +327,7 @@ function drawFields3D(P, V, M, p, vbox, fade, ui, lab, s) {
       return true;
     };
     if (!clipPlane(d0 - dMin, d1 - dMin) ||
+        !clipPlane(dMax - d0, dMax - d1) ||
         !clipPlane(vx0 - kL * d0, vx1 - kL * d1) ||
         !clipPlane(kR * d0 - vx0, kR * d1 - vx1) ||
         !clipPlane(vy0 - kB * d0, vy1 - kB * d1) ||
@@ -334,6 +335,22 @@ function drawFields3D(P, V, M, p, vbox, fade, ui, lab, s) {
     if (t1 <= t0 + 1e-4) return null;
     return [lerp3(a, b, t0), lerp3(a, b, t1), t0, t1];
   };
+
+  // Inviluppo mondo esatto degli 8 vertici del frustum visibile a qualsiasi yaw, pitch, pan e zoom.
+  let fX0 = Infinity, fX1 = -Infinity, fY0 = Infinity, fY1 = -Infinity, fZ0 = Infinity, fZ1 = -Infinity;
+  for (const kx of [kL, kR]) {
+    for (const ky of [kB, kT]) {
+      for (const d of [dMin, dMax]) {
+        const vx = kx * d, vy = ky * d, vz = D - d;
+        const wx = px0 + vx * rV[0] + vy * uV[0] + vz * fV[0];
+        const wy = py0 + vx * rV[1] + vy * uV[1] + vz * fV[1];
+        const wz = pz0 + vx * rV[2] + vy * uV[2] + vz * fV[2];
+        if (wx < fX0) fX0 = wx; if (wx > fX1) fX1 = wx;
+        if (wy < fY0) fY0 = wy; if (wy > fY1) fY1 = wy;
+        if (wz < fZ0) fZ0 = wz; if (wz > fZ1) fZ1 = wz;
+      }
+    }
+  }
 
   const vec3 = (a, b, col, width, tip, alpha) => {
     if (m3.is3dActive()) {
@@ -344,36 +361,71 @@ function drawFields3D(P, V, M, p, vbox, fade, ui, lab, s) {
     arrowS(P.ctx, x0, y0, x1, y1, col, { width, tip, alpha });
   };
 
-  // Emette una singola linea di campo pulita, interamente contenuta nel quadro sicuro e con una sola punta finale.
-  const emitFieldLine = (a, b, col, width, tip, alpha, tips, periph) => {
-    if (alpha <= 0.02) return;
+  const fract = v => v - Math.floor(v);
+  // Emette una linea di campo continua con lieve rientro organico dagli spigoli (evita la "staccionata" di punte sui bordi).
+  const emitFieldLine = (a, b, col, width, tip, baseAlpha, tips, periph, seed = 0) => {
+    if (baseAlpha <= 0.02) return;
     const clipped = clipFrustumSafe(a, b);
     if (!clipped) return;
-    const [p0, p1] = clipped;
+    const h0 = 0.015 + 0.055 * fract(seed * 1.37 + 0.21);
+    const h1 = 0.020 + 0.095 * fract(seed + 0.47);
+    const p0 = lerp3(clipped[0], clipped[1], h0);
+    const p1 = lerp3(clipped[0], clipped[1], 1 - h1);
     const [x0, y0] = V.S(P, ...p0), [x1, y1] = V.S(P, ...p1);
     if (Math.hypot(x1 - x0, y1 - y0) < 38) return;
+    const dMid = depthCam(lerp3(p0, p1, 0.5));
+    const depthFade = clamp(1.06 - 0.56 * (dMid - dMin) / Math.max(dMax - dMin, 1e-5), 0.34, 1);
+    const alpha = baseAlpha * depthFade;
+    if (alpha <= 0.02) return;
     vec3(p0, p1, col, width, tip, alpha);
     tips.push({ pt: p1, periph, isTip: true });
     tips.push({ pt: lerp3(p0, p1, 0.55), periph, isTip: false });
   };
 
-  // Distribuisce n coordinate in [a, b] tenendole lontane dagli assi cartesiani (x ≈ 0 o y ≈ 0).
-  const spreadCoords = (a, b, n, padFrac = 0.14) => {
-    const w = Math.max(b - a, 1e-5), out = [];
-    if (n <= 1) out.push(a + w * 0.5);
-    else for (let i = 0; i < n; i++) out.push(a + w * (padFrac + (1 - 2 * padFrac) * i / (n - 1)));
-    if (a < 0 && b > 0) {
-      const eps = 0.065 * w, push = 0.09 * w;
-      return out.map(v => (Math.abs(v) < eps ? (v >= 0 ? push : -push) : v));
+  // Passo progressivo "tondo" per la griglia 3D: riducendo lo zoom i raggi di campo coprono tutto il quadro aumentando di numero.
+  const nice3D = raw => {
+    const p10 = 10 ** Math.floor(Math.log10(Math.max(raw, 1e-12)));
+    for (const m of [1, 1.25, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * p10 >= raw) return m * p10;
+    return 10 * p10;
+  };
+  const qList = (lo, hi, stp, off = 0.5) => {
+    const out = [];
+    const k0 = Math.floor(lo / stp - off);
+    const k1 = Math.ceil(hi / stp - off);
+    for (let k = k0; k <= k1; k++) {
+      const v = (k + off) * stp;
+      if (v >= lo && v <= hi) out.push([k, v]);
     }
     return out;
   };
 
+  const fProbe = fieldAt(p.region === 'spectrometer' ? -SEL_L / 2 : (p.region === 'half' ? Math.max(1, px0) : px0), py0, pz0, p);
+  const bothEB = Math.abs(fProbe.Bz) > 1e-12 && Math.hypot(fProbe.Ex, fProbe.Ey) > 1e-9;
+  const pxGap = bothEB ? 215 : 176;
+  const step = Math.max(1e-4, nice3D(pxGap / Math.max(sc, 1e-6)));
+  const stepZ = step * 2.1;
+  const fSpanX = Math.max(fX1 - fX0, 1e-4), fSpanY = Math.max(fY1 - fY0, 1e-4), fSpanZ = Math.max(fZ1 - fZ0, 1e-4);
+
+  const emitBGrid = (xMin, xMax, alphaB, periphFn) => {
+    const bxs = qList(xMin, xMax, step, 0.5);
+    const zMid = (fZ0 + fZ1) * 0.5;
+    for (const [kx, x] of bxs) {
+      // Sfasamento aureo contenuto per colonna: evita coppie sovrapposte in prospettiva senza mai toccare gli assi.
+      const yOff = 0.5 + (fract(kx * 0.6180339887498949) - 0.5) * 0.26;
+      const bys = qList(fY0, fY1, step, yOff);
+      for (const [ky, y] of bys) {
+        const f = fieldAt(x, y, zMid, p);
+        if (Math.abs(f.Bz) <= 1e-12) continue;
+        const szDir = Math.sign(f.Bz);
+        const a = [x, y, szDir > 0 ? fZ0 : fZ1];
+        const b = [x, y, szDir > 0 ? fZ1 : fZ0];
+        const seed = kx * 0.6180339887 + ky * 0.3819660113;
+        emitFieldLine(a, b, bCol, 1.8, 9, alphaB, bTips, periphFn(x, y), seed);
+      }
+    }
+  };
+
   const bTips = [], eTips = [];
-  const tb = trajBox(p);
-  const lx = clamp(Math.abs(vbox.xmax) * 0.85, span * 0.3, span * 0.55);
-  const ly = clamp(Math.abs(vbox.ymax) * 0.85, span * 0.3, span * 0.55);
-  const lz = Math.min(lx, ly) * 0.9;
 
   if (p.region === 'spectrometer') {
     const fSel = fieldAt(-SEL_L / 2, 0, 0, p);
@@ -390,102 +442,33 @@ function drawFields3D(P, V, M, p, vbox, fade, ui, lab, s) {
         vec3([x, y, -sz], [x, y, sz], bCol, 1.6, 8, 0.36 * fade);
       }
     }
-    const cx0 = 2.0, cx1 = Math.max(cx0 + 5, Math.min(Math.max(vbox.xmax - 1.5, tb.x1 + 1.5), 36));
-    const cy0 = Math.max(vbox.ymin + 1.6, Math.min(tb.y0 - 2, -9));
-    const cy1 = Math.min(vbox.ymax - 1.6, Math.max(tb.y1 + 2, 9));
-    const cz0 = Math.min(tb.z0, -Z_APP * 1.15) - 1.0, cz1 = Math.max(tb.z1, Z_APP * 1.15) + 1.0;
-    const cxs = spreadCoords(cx0, cx1, 3, 0.12), cys = spreadCoords(cy0, cy1, 3, 0.14);
-    cxs.forEach((x, ix) => cys.forEach((y, iy) => {
-      const f = fieldAt(x, y, 0, p);
-      if (Math.abs(f.Bz) <= 1e-12) return;
-      const szDir = Math.sign(f.Bz);
-      // Preferenza per il bordo esterno destro della camera magnetica (lontano dal muro x = 0 e dall'asse y).
-      const periph = (ix === 2 ? 1.2 : ix === 1 ? 0.5 : 0) + Math.abs(iy - 1) * 0.4;
-      emitFieldLine([x, y, szDir > 0 ? cz0 : cz1], [x, y, szDir > 0 ? cz1 : cz0], bCol, 1.8, 9, 0.4 * fade, bTips, periph);
-    }));
+    const cxMin = 1.8, cxMax = Math.max(cxMin + step, fX1);
+    emitBGrid(cxMin, cxMax, 0.42 * fade,
+      (x, y) => Math.max((x - cxMin) / Math.max(cxMax - cxMin, 1), Math.abs(y - py0) / fSpanY));
   } else {
-    // Regimi 'all' e 'half': fascio compatto su reticolo fisso nello spazio mondo attorno al fuoco visibile
-    // [px0, py0, pz0] con dissolvenza morbida ai bordi, così avanzando lungo z lo spazio scorre intorno all'elica.
-    const stepX = Math.max(1e-4, niceStep(lx * 0.36));
-    const stepY = Math.max(1e-4, niceStep(ly * 0.38));
-    const stepZ = Math.max(1e-4, niceStep(lz * 0.44));
-    const stepBZ = stepZ * 4;
-
-    const winCx = p.region === 'half' ? Math.max(0.3 + 0.45 * lx, px0 + 0.25 * lx) : px0;
-    const winCy = py0 + 0.45 * ly * Math.sin(V.pitch ?? 0);
-    const winCz = pz0 + 0.18 * lz;
-    const winRx = 0.76 * lx, winRy = 0.66 * ly, winRz = 1.05 * lz;
-
-    const winFade = (v, c, hw) => {
-      const u = Math.abs(v - c) / Math.max(hw, 1e-5);
-      if (u >= 1) return 0;
-      if (u <= 0.55) return 1;
-      const t = (1 - u) / 0.45;
-      return t * t * (3 - 2 * t);
-    };
-
-    const xMin = p.region === 'half' ? 0.3 : winCx - winRx, xMax = winCx + winRx;
-    const yMin = winCy - winRy, yMax = winCy + winRy;
-    const zMin = winCz - winRz, zMax = winCz + winRz;
-
-    const fSample = fieldAt(p.region === 'half' ? Math.max(1, winCx) : winCx, winCy, winCz, p);
+    // Regimi 'all' e 'half': reticolo continuo esteso sull'intero frustum dello schermo e distribuito sullo zoom.
+    const xMin = p.region === 'half' ? 0.3 : fX0;
+    const xMax = Math.max(xMin + step, fX1);
+    const fSample = fieldAt(p.region === 'half' ? Math.max(1, px0) : px0, py0, pz0, p);
     const hasB = Math.abs(fSample.Bz) > 1e-12;
     const emSample = Math.hypot(fSample.Ex, fSample.Ey);
     const hasE = emSample > 1e-9;
 
-    const qList = (lo, hi, stp, half) => {
-      const out = [];
-      const k0 = Math.floor(lo / stp - (half ? 0.5 : 0));
-      const k1 = Math.ceil(hi / stp - (half ? 0.5 : 0));
-      for (let k = k0; k <= k1; k++) {
-        const v = (k + (half ? 0.5 : 0)) * stp;
-        if (v >= lo && v <= hi) out.push([k, v]);
-      }
-      return out;
-    };
-
     if (hasB) {
-      const bxs = qList(xMin, xMax, stepX, true);
-      const bys = qList(yMin, yMax, stepY, true);
-      const kBz0 = Math.floor((zMin - 0.45 * stepBZ) / stepBZ);
-      const kBz1 = Math.ceil((zMax + 0.45 * stepBZ) / stepBZ);
-      for (const [, x] of bxs) {
-        if (p.region === 'half' && x < 0.3) continue;
-        const fx = winFade(x, winCx, winRx);
-        if (fx <= 0.03) continue;
-        for (const [, y] of bys) {
-          const fy = winFade(y, winCy, winRy);
-          if (fx * fy <= 0.03) continue;
-          const periph = Math.max(Math.abs(x - winCx) / winRx, Math.abs(y - winCy) / winRy);
-          for (let kz = kBz0; kz <= kBz1; kz++) {
-            const zc = kz * stepBZ, fz = winFade(zc, winCz, winRz + 0.35 * stepBZ);
-            const alphaB = 0.40 * fade * fx * fy * fz;
-            if (alphaB <= 0.025) continue;
-            const f = fieldAt(x, y, zc, p);
-            if (Math.abs(f.Bz) <= 1e-12) continue;
-            const szDir = Math.sign(f.Bz);
-            const za = zc - 0.45 * stepBZ, zb = zc + 0.45 * stepBZ;
-            emitFieldLine([x, y, szDir > 0 ? za : zb], [x, y, szDir > 0 ? zb : za], bCol, 1.8, 9, alphaB, bTips, periph);
-          }
-        }
-      }
+      emitBGrid(xMin, xMax, (hasE ? 0.36 : 0.43) * fade,
+        (x, y) => Math.max(Math.abs(x - px0) / fSpanX, Math.abs(y - py0) / fSpanY));
     }
 
     if (hasE) {
       const ux = fSample.Ex / emSample, uy = fSample.Ey / emSample;
       const nx = -uy, ny = ux;
-      const eyLo = winCy - 0.48 * ly, eyHi = winCy + 0.48 * ly;
-      const ezs = qList(zMin, zMax, stepZ, true);
-      const sMin = Math.min(xMin * nx, xMax * nx) + Math.min(eyLo * ny, eyHi * ny);
-      const sMax = Math.max(xMin * nx, xMax * nx) + Math.max(eyLo * ny, eyHi * ny);
-      // Quando B è presente, E si sfalsa esattamente a metà tra le linee B ((i + 0.5)*stepX -> i*stepX).
-      const exs = Math.abs(ux) < 0.1
-        ? qList(xMin, xMax, stepX, !hasB).map(([k, xv]) => [k, xv * nx, xv])
-        : qList(sMin, sMax, stepX, true).map(([k, sv]) => [k, sv, null]);
+      const ezs = qList(fZ0, fZ1, stepZ, 0.5);
+      const sMin = Math.min(xMin * nx, xMax * nx) + Math.min(fY0 * ny, fY1 * ny);
+      const sMax = Math.max(xMin * nx, xMax * nx) + Math.max(fY0 * ny, fY1 * ny);
 
       const clipXY = (px, py) => {
         let tMin = -Infinity, tMax = Infinity;
-        for (const [o, d, lo, hi] of [[px, ux, xMin, xMax], [py, uy, eyLo, eyHi]]) {
+        for (const [o, d, lo, hi] of [[px, ux, xMin, xMax], [py, uy, fY0, fY1]]) {
           if (Math.abs(d) < 1e-9) {
             if (o < lo || o > hi) return null;
           } else {
@@ -498,28 +481,29 @@ function drawFields3D(P, V, M, p, vbox, fade, ui, lab, s) {
         return [tMin, tMax];
       };
 
-      const dOf = ezs.map(([, z]) => V.depth(0, 0, z)), dMinE = Math.min(...dOf), dMaxE = Math.max(...dOf);
-      ezs.forEach(([, zc], idxZ) => {
-        const fz = winFade(zc, winCz, winRz);
-        if (fz <= 0.03) return;
-        const depth = dMaxE - dMinE > 1e-9 ? 0.78 + 0.22 * (dOf[idxZ] - dMinE) / (dMaxE - dMinE) : 1;
-        for (const [, sVal, xKnown] of exs) {
+      const baseAlphaE = (hasB ? 0.40 : 0.46) * fade;
+      for (const [kz, zc] of ezs) {
+        // Sfasamento aureo per piano z: elimina impilamenti lungo raggi visivi (Orchard) mantenendo E nei corridoi tra le linee B.
+        const gOff = (fract(kz * 0.6180339887498949) - 0.5) * (hasB ? 0.36 : 0.72);
+        const exs = Math.abs(ux) < 0.1
+          ? qList(xMin, xMax, step, (hasB ? 0 : 0.5) + gOff).map(([k, xv]) => [k, xv * nx])
+          : qList(sMin, sMax, step, 0.5 + gOff).map(([k, sv]) => [k, sv]);
+        for (const [kx, sVal] of exs) {
           const px = sVal * nx, py = sVal * ny;
           const spanT = clipXY(px, py);
           if (!spanT) continue;
           const [tA, tB] = spanT;
           if (tB - tA <= 1e-4) continue;
-          const a = [px + tA * ux, py + tA * uy, zc], b = [px + tB * ux, py + tB * uy, zc];
+          const a = [px + tA * ux, py + tA * uy, zc];
+          const b = [px + tB * ux, py + tB * uy, zc];
           const mx = (a[0] + b[0]) * 0.5, my = (a[1] + b[1]) * 0.5;
-          const fx = xKnown != null ? winFade(xKnown, winCx, winRx) : winFade(mx, winCx, winRx);
-          const alphaE = 0.44 * depth * fade * fx * fz;
-          if (alphaE <= 0.025) continue;
           const fe = fieldAt(mx, my, zc, p);
           if (Math.hypot(fe.Ex, fe.Ey) <= 1e-9) continue;
-          const periph = Math.max(Math.abs(mx - winCx) / winRx, Math.abs(zc - winCz) / winRz);
-          emitFieldLine(a, b, eCol, 1.8, 9, alphaE, eTips, periph);
+          const periph = Math.max(Math.abs(mx - px0) / fSpanX, Math.abs(zc - pz0) / fSpanZ);
+          const seed = kx * 0.6180339887 + kz * 0.7548776662;
+          emitFieldLine(a, b, eCol, 1.8, 9, baseAlphaE, eTips, periph, seed);
         }
-      });
+      }
     }
   }
 
