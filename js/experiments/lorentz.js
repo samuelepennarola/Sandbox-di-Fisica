@@ -7,7 +7,7 @@ import * as m3 from '../core/manim3d.js';
 import { space3d } from '../core/space3d.js';
 import {
   SEL_L, SEL_H, SLIT_H, PARAMS, PRESETS, GRAPHS, THEORY,
-  particleOf, timeUnitOf, timeScale, charTimeSec, fieldAt, lorentzForces, analytics, fmtCmTeX,
+  particleOf, timeUnitOf, timeScale, fieldAt, lorentzForces, analytics, fmtCmTeX,
   init, step, done, snapshot, stateAt, resumeFrom, sample, formulas,
 } from './lorentz-phys.js';
 
@@ -122,6 +122,10 @@ function labeler(S, P) {
     const la = alpha * rate01(S.grow('arr:' + key, 0.6, delay));
     const [a, b] = P.S(a2d[0], a2d[1]), [c, d] = P.S(b2d[0], b2d[1]), L = Math.hypot(c - a, d - b);
     if (la <= 0.01 || L <= 16) return;
+    // Freccia del tutto fuori dall'area libera: niente etichetta (finirebbe schiacciata contro il bordo).
+    const pad0 = P.cam.padFn?.() ?? { top: 70, right: 20, bottom: 20, left: 20 };
+    const out = (u, v) => u < pad0.left || u > P.cam.w - pad0.right || v < pad0.top || v > P.cam.h - pad0.bottom;
+    if (out(a, b) && out(c, d)) return;
     const ux = (c - a) / L, uy = (d - b) / L, B = texBox(P, src, 17);
     const hw = B.w / 2 + 3, hh = (B.bot - B.top) / 2 + 2;
     let x, y;
@@ -136,21 +140,25 @@ function labeler(S, P) {
       x = c + ux * dd;
       y = d + uy * dd;
     }
+    // Prima si porta l'etichetta dentro l'area libera (tra barra, ispettore, quickbar e moviola),
+    // poi si cerca un posto libero: così due etichette spinte contro lo stesso bordo non si toccano.
+    const pad = P.cam.padFn?.() ?? { top: 70, right: 20, bottom: 20, left: 20 };
+    const cx = v => clamp(v, pad.left + hw + 4, P.cam.w - pad.right - hw - 4);
+    const cy = v => clamp(v, pad.top + hh + 4, P.cam.h - pad.bottom - hh - 4);
+    x = cx(x); y = cy(y);
     search: if (hits(x, y, hw, hh)) {
-      for (let k = 1; k <= 6; k++) {
-        for (const [px, py] of [[-uy, ux], [uy, -ux], [ux, uy], [-ux, -uy]]) {
-          const qx = x + px * k * 11, qy = y + py * k * 11;
+      for (let k = 1; k <= 8; k++) {
+        for (const [px, py] of [[-uy, ux], [uy, -ux], [ux, uy], [-ux, -uy], [0, -1], [0, 1], [1, 0], [-1, 0]]) {
+          const qx = cx(x + px * k * 11), qy = cy(y + py * k * 11);
           if (!hits(qx, qy, hw, hh)) { x = qx; y = qy; break search; }
         }
       }
     }
-    const pad = P.cam.padFn?.() ?? { top: 70, right: 20, bottom: 20, left: 20 };
-    x = clamp(x, pad.left + hw + 4, P.cam.w - pad.right - hw - 4);
-    y = clamp(y, pad.top + hh + 4, P.cam.h - pad.bottom - hh - 4);
     placed.push({ x, y, hw, hh });
     tex(P, x, y - (B.top + B.bot) / 2, src, { size: 17, color: resolveCol(P, S.M, color), halo: S.M.bg, alpha: la });
   };
   put.blockS = (a, b, rx, ry = rx) => placed.push({ x: a, y: b, hw: rx, hh: ry });
+  put.hits = hits;
   put.block = (pt2d, r) => { const [a, b] = P.S(pt2d[0], pt2d[1]); put.blockS(a, b, r); };
   return put;
 }
@@ -275,7 +283,7 @@ function drawFields2D(P, M, p, fade, ui) {
   if (eTag && !ui.snapshot) tex(P, eTag[0] + 15, eTag[1], '\\vec E', { size: 15, color: eCol, halo: M.bg, alpha: 0.85 * fade });
 }
 
-function drawFields3D(P, V, M, p, vbox, fade, ui) {
+function drawFields3D(P, V, M, p, vbox, fade, ui, lab) {
   if (!p.showFields || fade <= 0.01) return;
   const bCol = M.vec.tension, eCol = M.field;
   const span = Math.max(vbox.xmax - vbox.xmin, vbox.ymax - vbox.ymin, 1e-5);
@@ -326,87 +334,109 @@ function drawFields3D(P, V, M, p, vbox, fade, ui) {
     return;
   }
 
-  // Regimi 'all' e 'half': reticolo arioso nel volume della traiettoria.
-  // Il riquadro xy è quello del moto nel piano (senza la proiezione della deriva usata per
-  // inquadrare la camera 3D); gli strati in z coprono tutta la corsa lungo B.
-  const box = viewBox({ ...p, show3d: false });
-  const an = analytics(p);
-  const fE = fieldAt(p.region === 'half' ? 2 : 0, 0, 0, p), hasE = Math.hypot(fE.Ex, fE.Ey) > 1e-9;
-  const cols = [];
-  if (p.region === 'all' && !hasE && an.centerCm && Number.isFinite(an.R_cm) && an.R_cm > 0 && an.R_cm <= 48) {
-    // Elica o cerchio: otto colonne attorno all'asse, appena fuori dal cilindro della traiettoria.
-    const [cx, cy] = an.centerCm, g = an.R_cm * 1.3;
-    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
-      if (i || j) cols.push([cx + i * g, cy + j * g]);
-    }
-  } else {
-    const w = box.xmax - box.xmin, h = box.ymax - box.ymin;
-    const x0 = p.region === 'half' ? Math.max(2, box.xmin + w * 0.16) : box.xmin + w * 0.16;
-    const x1 = Math.max(x0 + 4, box.xmax - w * 0.16);
-    const y0 = box.ymin + h * 0.18, y1 = box.ymax - h * 0.18;
-    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
-      cols.push([x0 + (x1 - x0) * i / 2, y0 + (y1 - y0) * j / 2]);
-    }
-  }
-  const cg = cols.length > 1 ? Math.hypot(cols[1][0] - cols[0][0], cols[1][1] - cols[0][1]) : span * 0.3;
-
-  // Corsa in z: dalla partenza a z0 + vz·t_fine (stessa durata della simulazione).
-  const st0 = init(p);
-  const zA = st0.z, zB = st0.z + clamp(st0.vz * (p.cycles ?? 3) * charTimeSec(p) * 100, -80, 80);
-  const zLo = Math.min(zA, zB), zHi = Math.max(zA, zB);
-  // Strati distribuiti su tutta la corsa: il primo e l'ultimo appena dentro gli estremi, così
-  // le frecce accompagnano l'elica dall'inizio alla fine senza attraversare il piano z = 0.
-  // Con E e B insieme le frecce raddoppiano: meno strati per restare sobri.
-  const hasB = Math.abs(fieldAt(cols[0][0], cols[0][1], 0, p).Bz) > 1e-12;
-  const nL = 1 + clamp(Math.round((zHi - zLo) / (3 * cg)), 0, hasE && hasB ? 1 : 3);
-  const dz = (zHi - zLo) / nL;
-  const bL = nL > 1 ? Math.min(bLen, dz * 0.5) : bLen;
-  const za = zLo + 0.6 * bL, zb = zHi - 0.6 * bL;
-  const layers = nL > 1
-    ? Array.from({ length: nL }, (_, k) => za + (zb - za) * k / (nL - 1))
-    : [(zLo + zHi) / 2];
-  // Etichette solo dove non finiscono sotto la barra o l'ispettore.
-  const pad = P.cam.padFn?.() ?? { top: 70, right: 20, bottom: 20, left: 20 };
-  const inSafe = q => {
-    const [sx, sy] = V.S(P, ...q);
-    return sx > pad.left + 28 && sx < P.cam.w - pad.right - 44 && sy > pad.top + 28 && sy < P.cam.h - pad.bottom - 36;
+  // Regimi 'all' e 'half': reticolo 3D regolare che copre tutto il volume della traiettoria
+  // (dalla partenza alla fine, deriva compresa) con un piccolo margine. I nodi stanno al centro
+  // delle celle (multipli dispari di g/2), così nessuna freccia tocca gli assi; le frecce di E sono
+  // sfalsate di mezzo passo in x rispetto a quelle di B, così le coppie non si confondono.
+  const tb = trajBox(p);
+  const ext = Math.max(tb.x1 - tb.x0, tb.y1 - tb.y0, tb.z1 - tb.z0, span * 0.25);
+  const nodes = (a, b, g) => {
+    const m = 0.55 * g, out = [];
+    for (let i = Math.ceil((a - m) / g - 0.5); i <= Math.floor((b + m) / g - 0.5); i++) out.push((i + 0.5) * g);
+    if (!out.length) out.push((Math.round((a + b) / 2 / g - 0.5) + 0.5) * g);
+    return out;
   };
-  const better = (q, cur) => inSafe(q) && (!cur || V.S(P, ...q)[1] < V.S(P, ...cur)[1] - 2);
-  const eLen = Math.min(span * 0.18, cg * 0.6);
-  const ez = Math.min(span * 0.06, nL > 1 ? dz * 0.3 : Infinity);
-  const ex0 = cols.length > 1 ? Math.max(...cols.map(c => c[0])) - Math.min(...cols.map(c => c[0])) : span;
-  let bTip = null, eTip = null;
-
-  layers.forEach((zc, k) => {
-    // Gli strati più lontani dalla partenza si attenuano appena, per dare profondità.
-    const depth = nL > 1 ? 1 - 0.25 * k / (nL - 1) : 1;
-    for (const [x, y] of cols) {
+  let g = ext / 3.2, xs, ys, zs;
+  for (let it = 0; it < 24; it++) {
+    xs = nodes(tb.x0, tb.x1, g); ys = nodes(tb.y0, tb.y1, g); zs = nodes(tb.z0, tb.z1, g);
+    if (Math.max(xs.length, ys.length, zs.length) <= 4 && xs.length * ys.length * zs.length <= 24) break;
+    g *= 1.12;
+  }
+  // Lunghezze legate al passo, ma entro una misura sobria sullo schermo.
+  const sc = P.cam.scale;
+  const bL = Math.min(0.5 * g, Math.max(34 / sc, Math.min(0.5 * g, 78 / sc)));
+  const eLen = Math.min(0.55 * g, Math.max(38 / sc, Math.min(0.55 * g, 86 / sc)));
+  // Profondità: gli strati più lontani dalla camera si attenuano appena.
+  const dOf = zs.map(z => V.depth(0, 0, z)), dMin = Math.min(...dOf), dMax = Math.max(...dOf);
+  const bTips = [], eTips = [];
+  zs.forEach((zc, k) => {
+    const depth = dMax - dMin > 1e-9 ? 0.75 + 0.25 * (dOf[k] - dMin) / (dMax - dMin) : 1;
+    for (const x of xs) for (const y of ys) {
       const f = fieldAt(x, y, zc, p);
       if (Math.abs(f.Bz) > 1e-12) {
         const sz = Math.sign(f.Bz) * bL * 0.5;
         vec3([x, y, zc - sz], [x, y, zc + sz], bCol, 1.9, 8.5, 0.4 * depth * fade);
-        if (k === 0 && better([x, y, zc + sz], bTip)) bTip = [x, y, zc + sz];
+        bTips.push([x, y, zc + sz]);
       }
-      const ex = x + ex0 * 0.14, ey = y, fe = fieldAt(ex, ey, zc, p);
-      if (Math.hypot(fe.Ex, fe.Ey) > 1e-9) {
-        const em = Math.hypot(fe.Ex, fe.Ey), ux = fe.Ex / em * eLen * 0.5, uy = fe.Ey / em * eLen * 0.5;
-        vec3([ex - ux, ey - uy, zc + ez], [ex + ux, ey + uy, zc + ez], eCol, 1.9, 8.5, 0.46 * depth * fade);
-        if (k === 0 && better([ex + ux, ey + uy, zc + ez], eTip)) eTip = [ex + ux, ey + uy, zc + ez];
+      const ex = x + g / 2, fe = fieldAt(ex, y, zc, p), em = Math.hypot(fe.Ex, fe.Ey);
+      if (em > 1e-9) {
+        const ux = fe.Ex / em * eLen * 0.5, uy = fe.Ey / em * eLen * 0.5;
+        vec3([ex - ux, y - uy, zc], [ex + ux, y + uy, zc], eCol, 1.9, 8.5, 0.46 * depth * fade);
+        eTips.push([ex + ux, y + uy, zc]);
       }
     }
   });
-  if (bTip && !ui.snapshot) {
-    const [lx, ly] = V.S(P, ...bTip);
-    tex(P, lx + 14, ly, '\\vec B', { size: 16, color: bCol, halo: M.bg, alpha: 0.9 * fade });
+  if (ui.snapshot) return;
+
+  // Etichette: dentro l'area libera, lontane tra loro e dalla carica (le registra il labeler,
+  // così anche le etichette dei vettori le evitano).
+  const pad = P.cam.padFn?.() ?? { top: 70, right: 20, bottom: 20, left: 20 };
+  const placed = [];
+  const place = (tips, src, col) => {
+    const B = texBox(P, src, 16), hw = B.w / 2 + 4, hh = (B.bot - B.top) / 2 + 4;
+    let best = null;
+    for (const q of tips) {
+      const [tx, ty] = V.S(P, ...q);
+      const x = tx + 10 + hw, y = ty - 4;
+      if (x - hw < pad.left + 8 || x + hw > P.cam.w - pad.right - 8 || y - hh < pad.top + 8 || y + hh > P.cam.h - pad.bottom - 8) continue;
+      if (placed.some(r => Math.abs(r.x - x) < r.hw + hw + 24 && Math.abs(r.y - y) < r.hh + hh + 18)) continue;
+      if (lab?.hits?.(x, y, hw + 6, hh + 6)) continue;
+      // Preferenza: in alto e a sinistra nell'area libera (lontano dalla moviola e dall'ispettore).
+      const score = y + 0.35 * x;
+      if (!best || score < best.score) best = { x, y, score };
+    }
+    if (!best) return;
+    placed.push({ x: best.x, y: best.y, hw, hh });
+    lab?.blockS(best.x, best.y, hw, hh);
+    tex(P, best.x, best.y - (B.top + B.bot) / 2, src, { size: 16, color: col, halo: M.bg, alpha: 0.9 * fade });
+  };
+  place(bTips, '\\vec B', bCol);
+  place(eTips, '\\vec E', eCol);
+}
+
+// Riquadro 3D (cm) dell'intera traiettoria con i parametri correnti: la si simula una volta sola
+// (in memoria finché i parametri non cambiano) per stendere il reticolo dei campi su tutto il moto.
+let TB_KEY = '', TB = null;
+function trajBox(p) {
+  const key = JSON.stringify(['particle', 'q', 'mA', 'region', 'v0', 'theta', 'vz', 'B', 'E', 'cycles'].map(k => p[k]));
+  if (key === TB_KEY && TB) return TB;
+  const s = init(p);
+  const box = { x0: s.x, x1: s.x, y0: s.y, y1: s.y, z0: s.z, z1: s.z };
+  const grow = (x, y, z) => {
+    if (!Number.isFinite(x + y + z)) return;
+    box.x0 = Math.min(box.x0, x); box.x1 = Math.max(box.x1, x);
+    box.y0 = Math.min(box.y0, y); box.y1 = Math.max(box.y1, y);
+    box.z0 = Math.min(box.z0, z); box.z1 = Math.max(box.z1, z);
+  };
+  const dt = s.tEnd / 240;
+  for (let i = 0; i < 400 && !done(s) && dt > 0; i++) {
+    step(s, dt, p);
+    for (const q of s.trail.splice(0, Math.max(0, s.trail.length - 1))) grow(...q);
+    grow(s.x, s.y, s.z);
   }
-  if (eTip && !ui.snapshot) {
-    const [lx, ly] = V.S(P, ...eTip);
-    tex(P, lx + 14, ly - 8, '\\vec E', { size: 16, color: eCol, halo: M.bg, alpha: 0.9 * fade });
-  }
+  // Limite di sicurezza per moti che fuggono lontano (campo E da solo, raggi enormi).
+  const cap = 120;
+  box.x0 = Math.max(box.x0, -cap); box.x1 = Math.min(box.x1, cap);
+  box.y0 = Math.max(box.y0, -cap); box.y1 = Math.min(box.y1, cap);
+  box.z0 = Math.max(box.z0, -cap); box.z1 = Math.min(box.z1, cap);
+  TB_KEY = key; TB = box;
+  return box;
 }
 
 function drawBoundaryHalf(P, V, M, vbox, tilt) {
-  const y0 = vbox.ymin, y1 = vbox.ymax;
+  const b = P.cam.bounds();
+  const y0 = tilt < 0.08 ? Math.min(vbox.ymin, b.y0) : vbox.ymin;
+  const y1 = tilt < 0.08 ? Math.max(vbox.ymax, b.y1) : vbox.ymax;
   if (tilt < 0.08) {
     V.line(P, [[0, y0, 0], [0, y1, 0]], { color: 'muted', width: 1.6, dash: [6, 5], alpha: 0.75 });
   } else {
@@ -439,9 +469,10 @@ function drawSpectrometer(P, V, M, p, vbox, s, tilt) {
   const plateColor = sg => (sg > 0 ? mixHex(M.pos, M.bg, 0.3) : sg < 0 ? mixHex(M.neg, M.bg, 0.3) : M.solid);
   const plateEdge = sg => (sg > 0 ? M.pos : sg < 0 ? M.neg : M.solidEdge);
 
+  const b = P.cam.bounds();
   const hitY = s.hit === 'detector' && s.hitPos ? Math.abs(ptOf(s.hitPos)[1]) : 0;
-  const wallTop = Math.max(SEL_H + 1.5, hitY + 2, vbox.ymax - 0.5);
-  const wallBot = Math.min(-SEL_H - 1.5, -hitY - 2, vbox.ymin + 0.5);
+  const wallTop = Math.max(SEL_H + 1.5, hitY + 2, vbox.ymax - 0.5, tilt < 0.06 ? b.y1 : -Infinity);
+  const wallBot = Math.min(-SEL_H - 1.5, -hitY - 2, vbox.ymin + 0.5, tilt < 0.06 ? b.y0 : Infinity);
   const tVis2D = Math.max(PLATE_T, 9 / sc);
 
   const items = [
@@ -755,11 +786,30 @@ function drawVectors(P, V, S, M, s, p, an, sc, ui, lab) {
   const onYAxis = Math.abs(pos[0]) < 0.25 && Math.abs(FE[0]) < 1e-30 && Math.abs(FB[0]) < 1e-30;
   const inSel = p.region === 'spectrometer' && pos[0] < 0;
   const fSide = inSel ? [1, 0] : (onYAxis ? [-1, 0] : null);
-  drawF(FE, feM, 'applied', 'FE', '\\vec F_E', { lat: parallel ? -5 : 0, side: parallel ? [-1, 0] : (inSel ? [1, 0] : (onYAxis ? [1, 0] : null)), at: 0.62 });
-  drawF(FB, fbM, 'normal', 'FB', '\\vec F_B', { lat: parallel ? 5 : 0, side: parallel ? [1, 0] : fSide, at: 0.62 });
-  if (both && fM > fRef * 0.025) {
-    drawF(F, fM, 'weight', 'F', '\\vec F', { width: 2.6, dash: [5, 4], side: [1, -1], at: 0.8 });
+  // Direzione sullo schermo (coordinate mondo 2D) di un vettore applicato alla carica.
+  const dir2 = vec => {
+    const m = Math.hypot(...vec) || 1, e = 40 / sc;
+    const [bx, by] = V.p(pos[0] + vec[0] / m * e, pos[1] + vec[1] / m * e, pos[2] + vec[2] / m * e);
+    const dx = bx - px2, dy = by - py2, d = Math.hypot(dx, dy) || 1;
+    return [dx / d, dy / d];
+  };
+  const showF = both && fM > fRef * 0.025;
+  // Se la risultante è quasi allineata (stesso verso) con F_B o F_E, la si scosta di lato e le
+  // etichette vanno sui due lati opposti della coppia di frecce.
+  let fOpt = { width: 2.6, dash: [5, 4], side: [1, -1], at: 0.8 }, feOpt = {}, fbOpt = {};
+  if (showF) {
+    const dF = dir2(F), nW = [-dF[1], dF[0]], nS = [nW[0], -nW[1]];
+    const near = v => { const d = dir2(v); return d[0] * dF[0] + d[1] * dF[1] > 0.94; };
+    const partner = fbM > tol && near(FB) ? 'FB' : (feM > tol && near(FE) ? 'FE' : null);
+    if (partner) {
+      fOpt = { ...fOpt, lat: 7, side: nS, at: 0.7 };
+      const o = { lat: -3, side: [-nS[0], -nS[1]], at: 0.5 };
+      if (partner === 'FB') fbOpt = o; else feOpt = o;
+    }
   }
+  drawF(FE, feM, 'applied', 'FE', '\\vec F_E', { lat: parallel ? -5 : 0, side: parallel ? [-1, 0] : (inSel ? [1, 0] : (onYAxis ? [1, 0] : null)), at: 0.62, ...feOpt });
+  drawF(FB, fbM, 'normal', 'FB', '\\vec F_B', { lat: parallel ? 5 : 0, side: parallel ? [1, 0] : fSide, at: 0.62, ...fbOpt });
+  if (showF) drawF(F, fM, 'weight', 'F', '\\vec F', fOpt);
   void an;
   void v0Def;
 }
@@ -822,6 +872,20 @@ export default {
   theory: THEORY,
 
   view(p) { return viewBox(p); },
+  // Solo in 2D: contiene la traiettoria fino a 2,2×, poi passa in carrellata sulla particella (deriva E×B / moto accelerato).
+  follow(s, p) {
+    if (p.show3d) return null;
+    const an = analytics(p);
+    const [sx0, sy0] = ptOf(an.startCm ?? [0, 0, 0]);
+    return {
+      mode: 'contain',
+      pts: [[sx0, sy0], [s.x, s.y]],
+      focus: [[s.x, s.y]],
+      maxOut: 2.2,
+      panOnMaxOut: true,
+      padPx: 24,
+    };
+  },
   init(p) { return init(p); },
   step(s, dtUnit, p) { step(s, dtUnit, p); },
   done(s) { return done(s); },
@@ -932,13 +996,13 @@ export default {
     const fade2d = clamp(1 - tilt / 0.08, 0, 1);
     const fade3d = clamp((tilt - 0.05) / 0.22, 0, 1);
     drawFields2D(P, M, p, fade2d, ui);
-    drawFields3D(P, V, M, p, vbox, fade3d, ui);
+    const lab = labeler(S, P);
+    drawFields3D(P, V, M, p, vbox, fade3d, ui, lab);
 
     if (p.region === 'half') drawBoundaryHalf(P, V, M, vbox, tilt);
     if (p.region === 'spectrometer') drawSpectrometer(P, V, M, p, vbox, s, tilt);
 
     const an = analytics(p);
-    const lab = labeler(S, P);
     drawIdealGuide(P, V, S, M, p, an, tilt, ui, lab);
 
     const part = particleOf(p);

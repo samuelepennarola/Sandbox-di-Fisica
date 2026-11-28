@@ -85,10 +85,24 @@ export default {
   ],
 
   view(p) {
-    const { hmax } = ideal(p), xr = sceneRight(p), top = Math.max(hmax, p.h0, 5) + 3;
+    const { hmax, R } = ideal(p), padX = Math.max(3, 0.07 * R), xr = Math.max(R, 10) + padX;
+    const top = Math.max(hmax, p.h0, 5) + Math.max(3, 0.08 * hmax);
     // Con i grafici accesi: sotto il suolo x(t) (il tempo scende), a destra y(t) (il tempo va a destra).
-    if (p.showTrace) return { xmin: -3, xmax: xr + 0.75 * (xr + 3), ymin: -Math.max(0.9 * (xr + 3), 1.2 * top), ymax: top };
-    return { xmin: -3, xmax: xr, ymin: -2, ymax: top };
+    if (p.showTrace) return { xmin: -padX, xmax: xr + 0.75 * (xr + padX), ymin: -Math.max(0.9 * (xr + padX), 1.2 * top), ymax: top };
+    return { xmin: -padX, xmax: xr, ymin: -2, ymax: top };
+  },
+
+  // Nei lanci già inquadrati resta ferma; interviene dolcemente se il proiettile supera la vista (es. parametri cambiati senza reinquadrare).
+  follow(s, p) {
+    return {
+      mode: 'contain',
+      pts: [[0, p.h0], [s.x, s.y]],
+      focus: [[s.x, s.y]],
+      margin: 0.045,
+      padPx: 6,
+      maxOut: 6,
+      panOnMaxOut: true,
+    };
   },
 
   init(p) {

@@ -178,34 +178,38 @@ export function chartBelow(P, pts, tNow, { top, vmin, vmax, tSpan, pxs = null, s
   if (!(sp > 0) || !(sc > 0)) return;
   const col = color ?? M.vec.vel, t0w = Math.max(0, tNow - tSpan), ty = t => top + (t - t0w) * sp, vx = v => P.S(v + shift, 0)[0];
   const x0 = vx(Math.min(vmax, Math.max(vmin, 0))), xL = vx(vmin), xR = vx(vmax);
+  const axisL = Math.max(xL, pad.left + 12), axisR = Math.min(xR, P.cam.w - pad.right - 62);
+  if (axisR <= axisL + 24) return;
+  const x0a = (x0 >= axisL + 16 && x0 <= axisR - 12) ? x0 : Math.min(Math.max(x0, axisL + 28), axisR - 12);
   const g = rate.smooth(Math.min(1, grow / 0.7)), la = alpha * rate.smooth(Math.min(1, Math.max(0, (grow - 0.6) / 0.4)));
   // Assi: si disegnano (Create), con le frecce in punta: x verso destra, t verso il basso.
-  const xEnd = xL - 6 + (xR - xL + 24) * g, tEnd = top + (H + 16) * g;
+  const xEnd = axisL - 6 + (axisR - axisL + 24) * g, tEnd = top + (H + 16) * g;
   ctx.save();
   ctx.globalAlpha = 0.85 * alpha; ctx.strokeStyle = M.muted; ctx.fillStyle = M.muted; ctx.lineWidth = 1.3; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(xL - 6, top); ctx.lineTo(xEnd, top); ctx.moveTo(x0, top); ctx.lineTo(x0, tEnd); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(axisL - 6, top); ctx.lineTo(xEnd, top); ctx.moveTo(x0a, top); ctx.lineTo(x0a, tEnd); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(xEnd + 2, top); ctx.lineTo(xEnd - 7, top - 4.5); ctx.lineTo(xEnd - 7, top + 4.5); ctx.closePath(); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(x0, tEnd + 2); ctx.lineTo(x0 - 4.5, tEnd - 7); ctx.lineTo(x0 + 4.5, tEnd - 7); ctx.closePath(); ctx.fill();
-  // Tacche numerate, mai così fitte che i numeri si tocchino.
-  const U = unitView(unit);
-  let ts = niceStep(tSpan / 5), vs = niceStep((vmax - vmin) * U.f / 4) / U.f;
+  ctx.beginPath(); ctx.moveTo(x0a, tEnd + 2); ctx.lineTo(x0a - 4.5, tEnd - 7); ctx.lineTo(x0a + 4.5, tEnd - 7); ctx.closePath(); ctx.fill();
+  // Tacche numerate, mai così fitte che i numeri si tocchino; se la camera scorre, adatta il passo alla porzione visibile.
+  const U = unitView(unit), vSpan = Math.min(vmax - vmin, Math.max(1e-6, (axisR - axisL) / sc));
+  let ts = niceStep(tSpan / 5), vs = niceStep(vSpan * U.f / 4) / U.f;
   let gTs = 0;
   while (ts * sp < 34 && gTs++ < 40) ts = niceStep(ts * 1.01);
   let gVs = 0;
   while (vs * sc < 44 && gVs++ < 40) vs = niceStep(vs * U.f * 1.01) / U.f;
   const td = decimalsOf(ts), vd = decimalsOf(vs * U.f), tT = [], vT = [];
+  const vStart = Math.max(vmin, P.cam.toWorld(axisL, 0)[0] - shift), vEnd = Math.min(vmax, P.cam.toWorld(axisR, 0)[0] - shift);
   ctx.globalAlpha = 0.7 * alpha; ctx.lineWidth = 1; ctx.beginPath();
-  for (let k = Math.ceil(t0w / ts - 1e-9) * ts; k <= t0w + tSpan + 1e-9; k += ts) { const y = ty(k); if (y > top + 2) { ctx.moveTo(x0 - 4, y); ctx.lineTo(x0 + 4, y); tT.push([y, k]); } }
-  for (let v = Math.ceil(vmin / vs - 1e-9) * vs; v <= vmax + 1e-9; v += vs) { const x = vx(v); ctx.moveTo(x, top - 4); ctx.lineTo(x, top + 4); vT.push([x, v]); }
+  for (let k = Math.ceil(t0w / ts - 1e-9) * ts; k <= t0w + tSpan + 1e-9; k += ts) { const y = ty(k); if (y > top + 2) { ctx.moveTo(x0a - 4, y); ctx.lineTo(x0a + 4, y); tT.push([y, k]); } }
+  for (let v = Math.ceil(vStart / vs - 1e-9) * vs; v <= vEnd + 1e-9; v += vs) { const x = vx(v); ctx.moveTo(x, top - 4); ctx.lineTo(x, top + 4); vT.push([x, v]); }
   ctx.stroke();
   ctx.restore();
   if (la > 0.01) {
     const o = { size: 13, color: M.muted, halo: M.bg, alpha: 0.9 * la };
-    for (const [y, k] of tT) tex(P, x0 - 9, y + 4.5, tn(k, td), { ...o, align: 'right' });
-    for (const [x, v] of vT) if (Math.abs(x - x0) > 6 || t0w > 0) tex(P, x, top - 9, tn(v * U.f, vd), o);
-    if (t0w === 0 && vmin <= 0 && vmax >= 0) tex(P, x0 - 9, top - 9, '0', { ...o, align: 'right' });   // l'origine, una volta sola
+    for (const [y, k] of tT) tex(P, x0a - 9, y + 4.5, tn(k, td), { ...o, align: 'right' });
+    for (const [x, v] of vT) if (Math.abs(x - x0a) > (Math.abs(x0a - x0) < 1 ? 6 : 16) || t0w > 0) tex(P, x, top - 9, tn(v * U.f, vd), o);
+    if (t0w === 0 && vmin <= 0 && vmax >= 0 && Math.abs(x0a - x0) < 1) tex(P, x0a - 9, top - 9, '0', { ...o, align: 'right' });   // l'origine, una volta sola
     tex(P, xEnd + 12, top + 5, `${name}\\ (\\mathrm{${U.name}})`, { size: 16, color: col, halo: M.bg, align: 'left', alpha: la });
-    tex(P, x0 + 12, tEnd - 4, 't\\ (\\mathrm{s})', { size: 16, color: M.muted, halo: M.bg, align: 'left', alpha: la });
+    tex(P, x0a + 12, tEnd - 4, 't\\ (\\mathrm{s})', { size: 16, color: M.muted, halo: M.bg, align: 'left', alpha: la });
   }
   // La curva, dall'inizio della finestra fino all'adesso.
   const vis = [];

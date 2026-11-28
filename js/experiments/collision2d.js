@@ -64,6 +64,14 @@ export default {
 
   view() { return { xmin: -5.5, xmax: 5.5, ymin: -3.2, ymax: 3.6 }; },
 
+  // Contiene i due dischi (e il centro di massa) allargando la vista fino a 5× dopo l'urto.
+  follow(s, p) {
+    const mt = p.m1 + p.m2;
+    const pts = [[s.x1, s.y1], [s.x2, s.y2]];
+    if (mt > 0) pts.push([(p.m1 * s.x1 + p.m2 * s.x2) / mt, (p.m1 * s.y1 + p.m2 * s.y2) / mt]);
+    return { mode: 'contain', pts, padPx: 18, maxOut: 5 };
+  },
+
   init(p) {
     const [vx1, vy1, vx2, vy2] = vel0(p);
     return { t: 0, x1: p.x1, y1: p.y1, vx1, vy1, x2: p.x2, y2: p.y2, vx2, vy2,

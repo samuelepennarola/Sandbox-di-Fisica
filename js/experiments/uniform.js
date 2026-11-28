@@ -43,6 +43,21 @@ export default {
     return { xmin: c - w / 2, xmax: c + w / 2, ymin: p.showTrace ? -0.55 * w : -0.15 * w, ymax: 0.2 * w };
   },
 
+  // Carrellata a scala costante lungo la pista, lasciando spazio alla freccia velocità davanti al corpo.
+  follow(s, p) {
+    const aPx = Math.abs(p.v) > 1e-6 ? arrowPx(Math.abs(p.v), VREF, VA) + 28 : 0;
+    return {
+      mode: 'pan',
+      pts: [[s.x, RB]],
+      padPx: {
+        left: p.v < 0 ? aPx : p.v === 0 ? 18 : 2,
+        right: p.v > 0 ? aPx : p.v === 0 ? 18 : 2,
+        top: 28,
+        bottom: 28,
+      },
+    };
+  },
+
   init(p) { return { t: 0, x: p.x0, tEnd: p.tMax, trace: [[0, p.x0]], strobe: [p.x0] }; },
 
   step(s, dt, p) {

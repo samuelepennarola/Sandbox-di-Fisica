@@ -76,6 +76,20 @@ export default {
     return { xmin: cx - w, xmax: cx + w, ymin: cy - w, ymax: cy + w };
   },
 
+  // Solo in 2D: per orbite aperte o allargate contiene Sole e pianeta fino a 5×, poi segue il pianeta.
+  follow(s, p) {
+    if (p.show3d) return null;
+    return {
+      mode: 'contain',
+      pts: [[0, 0], [s.x, s.y]],
+      focus: [[s.x, s.y]],
+      margin: 0.07,
+      padPx: 10,
+      maxOut: 5,
+      panOnMaxOut: true,
+    };
+  },
+
   init(p) {
     const q = init0(p);
     return { t: 0, ...q, path: [[q.x, q.y]], cuts: [0], next: dtWedge(p), hit: false, tEnd: p.tMax };

@@ -106,6 +106,14 @@ const INCLINE = {
     return { xmin: -0.8, xmax: g.B[0] + 0.8, ymin: -0.6, ymax };
   },
 
+  // Resta fermo nelle viste normali (mantenendo i grafici al loro posto); allarga dolcemente se α cresce oltre la vista.
+  follow(st, p) {
+    const g = geom(p);
+    const cx = g.T[0] + g.d[0] * st.s + g.n[0] * BH / 2;
+    const cy = g.T[1] + g.d[1] * st.s + g.n[1] * BH / 2;
+    return { mode: 'contain', pts: [[cx, cy]], margin: 0.015, padPx: 4, maxOut: 4 };
+  },
+
   init(p) {
     // s₀ resta sul piano anche se il piano si accorcia.
     const g = geom(p), s0 = clamp(p.s0, BW / 2, p.L - BW / 2);

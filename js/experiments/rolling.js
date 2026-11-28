@@ -57,6 +57,21 @@ export default {
     return { xmin: -1.2, xmax: w + 2.2, ymin: -0.8, ymax: h + 1.6 };
   },
 
+  // Solo in 2D: carrellata a scala costante lungo il piano inclinato seguendo i corpi in gara.
+  follow(s, p) {
+    if (p.show3d) return null;
+    const a = p.alpha * deg, h = p.L * Math.sin(a), active = BODIES.filter(b => on(p, b));
+    if (!active.length) return null;
+    const pts = active.map(b => {
+      const ss = sAt(p, b, s.t);
+      return [ss * Math.cos(a) + Math.sin(a) * R, h - ss * Math.sin(a) + Math.cos(a) * R];
+    });
+    const lead = active.reduce((best, b) => (sAt(p, b, s.t) > sAt(p, best, s.t) ? b : best), active[0]);
+    const sl = sAt(p, lead, s.t);
+    const focus = [[sl * Math.cos(a) + Math.sin(a) * R, h - sl * Math.sin(a) + Math.cos(a) * R]];
+    return { mode: 'pan', pts, focus, panOnMaxOut: true, padPx: 14, margin: p.L > 15 ? 0.04 : 0.09 };
+  },
+
   init(p) { return { t: 0, tEnd: Math.max(...BODIES.map(b => tFinish(p, b))) + 0.6 }; },
   step(s, dt) { s.t += dt; },
   done: s => s.t >= s.tEnd,

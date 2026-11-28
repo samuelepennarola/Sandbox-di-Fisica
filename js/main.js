@@ -47,6 +47,7 @@ const app = {
   running: false, speed: 1, acc: 0,
   samples: [], history: [], lastSampleT: -Infinity,
   view: null, viewCache: null,      // moviola: indice del campione mostrato (null = istante corrente)
+  camUser: false, _followSettle: false, _followRefit: false,
   sweep: null,                      // animazione di un parametro in corso
   syncs: [],                        // funzioni che riallineano i controlli ai valori
   tool: store.get('tool', 'hand'), inkColor: store.get('inkColor', 'ink'), penSeen: store.get('penSeen', false),
@@ -321,7 +322,7 @@ function applyPreset(pr) {
   // Situazioni costruite dall'esperimento stesso (pannelli fatti a mano): pr.apply(api).
   if (pr?.apply) { pr.apply(api); syncParams(); return; }
   if (pr) Object.assign(app.params, pr.values); else app.params = defaults(app.exp);
-  syncParams(); resetSim(); fitView();
+  syncParams(); resetSim({ autoFit: false }); fitView();
 }
 
 function defaults(exp) { return Object.fromEntries((exp.params ?? []).map(p => [p.key, p.value])); }
@@ -329,9 +330,10 @@ function syncParams() { app.syncs.forEach(s => s()); }
 
 function setParam(def, value) {
   app.params[def.key] = value;
-  if (!def.live) resetSim();
+  const refit = def.refit || def.type === 'select';
+  if (!def.live) resetSim({ autoFit: !refit });
   // Le scelte (select) e i parametri marcati "refit" cambiano la scena: va reinquadrata.
-  if (def.refit || def.type === 'select') fitView();
+  if (refit) fitView();
   keyFormulas.indicate(def.key);
   app.formulasDirty = true;
   tour.notify('param');
@@ -593,7 +595,7 @@ function loadExperiment(id) {
   closeParamPopover();
   $('deriveBtn')?.classList.toggle('hidden', !exp.derivation);
   app._freshKey = true;
-  resetSim();
+  resetSim({ autoFit: false });
   buildParams(); buildGraphTabs(); buildDrawer(); renderTheory();
   renderFormulas();
   app.formulasDirty = false;
@@ -601,11 +603,20 @@ function loadExperiment(id) {
   fitView();
 }
 
-function resetSim() {
+function resetSim({ fit = false, autoFit = true } = {}) {
+  const prevT = app.sim?.t ?? 0, wasCamUser = app.camUser;
   app.sim = app.exp.init(app.params);
   app.running = false; app.acc = 0;
   app.samples = []; app.history = []; app.lastSampleT = -Infinity;
-  app.view = null; app.viewCache = null; app.trails = {}; app.camUser = false;
+  app.view = null; app.viewCache = null; app.trails = {};
+  app._followSettle = false; app._followRefit = false;
+  // Durante il trascinamento di una maniglia a t = 0 non spostare la camera né cambiare app.camUser.
+  if (gesture?.type !== 'drag') {
+    app.camUser = false;
+    if (!app.sweep && (fit || (autoFit && prevT > 0 && !wasCamUser && app.exp.follow))) {
+      cam.fit(app.exp.view(app.params, app.sim));
+    }
+  }
   recordSample();
   app.formulasDirty = true;
   store.set('params.' + app.exp.id, app.params);
@@ -702,7 +713,29 @@ function updatePlayBtn() {
 }
 
 function fitView() {
-  app.camUser = false; app.exp.fit ? app.exp.fit(cam, api) : cam.fit(app.exp.view(app.params, app.sim)); }
+  app.camUser = false;
+  if (app.exp.follow) {
+    const shown = viewSim(), baseRect = app.exp.view(app.params, shown), baseTo = cam.target(baseRect);
+    cam.baseScale = baseTo.scale;
+    if (shown.t > 0) {
+      const spec = app.exp.follow(shown, app.params);
+      if (spec) {
+        if (app.running) { cam.stop(); app._followSettle = true; app._followRefit = true; return; }
+        if (!spec.mode && 'xmin' in spec) { cam.fit(spec); app._followSettle = false; app._followRefit = false; return; }
+        const pose = cam.followTarget(spec, baseTo);
+        if (pose) {
+          if (cam.fitted) cam.flyTo(pose);
+          else { cam.stop(); Object.assign(cam, { scale: pose.scale, cx: pose.cx, cy: pose.cy }); }
+          cam.fitted = true;
+          app._followSettle = false; app._followRefit = false;
+          return;
+        }
+      }
+    }
+  }
+  app._followSettle = false; app._followRefit = false;
+  app.exp.fit ? app.exp.fit(cam, api) : cam.fit(app.exp.view(app.params, viewSim()));
+}
 
 /* --- Animazione di un parametro: il valore oscilla tra min e max e il moto viene ricalcolato --- */
 
@@ -934,8 +967,16 @@ function drawFrame(ts) {
   if (app.sweep) stepSweep(dt);
   // exp.timeScale: un esperimento può rallentare il proprio tempo (per esempio il rallentatore negli urti).
   else if (app.running) advance(dt * app.speed * (app.exp.timeScale?.(app.sim, app.params) ?? 1));
-  // exp.follow: la camera insegue il soggetto mentre la simulazione scorre, finché l'utente non sposta la vista.
-  if (app.running && app.exp.follow && !app.camUser) cam.follow(app.exp.follow(app.sim, app.params), dt);
+  // exp.follow: la camera insegue il soggetto (in Play o durante moviola/passo-passo), finché l'utente non sposta la vista.
+  if (app.exp.follow && !app.camUser && !cam.fly && gesture?.type !== 'drag') {
+    if (app.running) {
+      const moving = cam.follow(app.exp.follow(app.sim, app.params), dt, undefined, { refit: app._followRefit });
+      if (!moving) app._followRefit = false;
+    } else if (app._followSettle) {
+      const moving = cam.follow(app.exp.follow(viewSim(), app.params), dt, undefined, { refit: app._followRefit });
+      if (!moving) { app._followSettle = false; app._followRefit = false; }
+    }
+  }
   cam.tick();
   derive.update(dt);
   // Le animazioni decorative (polvere) nascono solo mentre la simulazione scorre dal vivo.
@@ -1259,7 +1300,7 @@ canvas.addEventListener('pointermove', e => {
     if (touches.size < 2) return;
     const [p1, p2] = [...touches.values()];
     const cx = (p1.x + p2.x) / 2, cy = (p1.y + p2.y) / 2, d = Math.hypot(p1.x - p2.x, p1.y - p2.y);
-    app.camUser = true;   // l'utente prende la camera: smette di seguire il soggetto
+    app.camUser = true; app._followSettle = false; app._followRefit = false;   // l'utente prende la camera: smette di seguire il soggetto
     cam.panBy(cx - gesture.cx, cy - gesture.cy);
     if (gesture.d > 0) cam.zoomAt(cx, cy, d / gesture.d);
     Object.assign(gesture, { cx, cy, d });
@@ -1288,7 +1329,11 @@ canvas.addEventListener('pointermove', e => {
     lasso.scale(app.exp, k / gesture.k, gesture.ax, gesture.ay);
     gesture.k = k;
   } else if (gesture.type === 'custom') {
-    if (gesture.custom.pan) { cam.panBy(x - gesture.lx, y - gesture.ly); gesture.lx = x; gesture.ly = y; }
+    if (gesture.custom.pan) {
+      app.camUser = true; app._followSettle = false; app._followRefit = false;
+      cam.panBy(x - gesture.lx, y - gesture.ly);
+      gesture.lx = x; gesture.ly = y;
+    }
     gesture.custom.move?.({ wx, wy, sx: x, sy: y });
   } else if (gesture.type === 'size') {
     const r = resizables().find(o => o.key === gesture.key);
@@ -1309,7 +1354,7 @@ canvas.addEventListener('pointermove', e => {
   } else if (gesture.type === 'pan') {
     // In vista 3D (exp.orbit) il trascinamento sullo spazio vuoto fa girare la camera; altrimenti sposta la scena.
     if (app.exp.orbit?.(x - gesture.lx, y - gesture.ly, app.params)) tour.notify('scene');
-    else { cam.panBy(x - gesture.lx, y - gesture.ly); app.camUser = true; }
+    else { cam.panBy(x - gesture.lx, y - gesture.ly); app.camUser = true; app._followSettle = false; app._followRefit = false; }
     gesture.lx = x; gesture.ly = y;
   }
 });
@@ -1350,9 +1395,9 @@ canvas.addEventListener('wheel', e => {
   const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;   // righe o pagine (Firefox) → pixel
   const dx = e.deltaX * unit, dy = e.deltaY * unit;
   const [x, y] = pos(e);
+  app.camUser = true; app._followSettle = false; app._followRefit = false;
   if (e.shiftKey && !e.ctrlKey) { cam.panBy(-(dx || dy), 0); return; }
   const d = Math.max(-120, Math.min(120, dy));
-  app.camUser = true;
   cam.zoomAt(x, y, Math.exp(-d * (e.ctrlKey ? 0.01 : 0.002)));
 }, { passive: false });
 
@@ -1530,24 +1575,43 @@ function toggleTheme() {
 function scrubTo(idx) {
   stopSweep();
   app.running = false; updatePlayBtn();
-  const last = app.history.length - 1;
-  app.view = idx >= last ? (app.view == null ? null : last) : Math.max(0, idx);
+  const last = app.history.length - 1, prevIdx = app.view ?? last;
+  const nextIdx = idx >= last ? last : Math.max(0, idx);
+  app.view = idx >= last ? (app.view == null ? null : last) : nextIdx;
+  if (!app.camUser && app.exp.follow) {
+    const shown = viewSim();
+    if (nextIdx === 0 || shown.t === 0) {
+      app._followSettle = false; app._followRefit = false;
+      if (prevIdx !== 0) cam.fit(app.exp.view(app.params, shown));
+    } else {
+      cam.stop();
+      app._followSettle = true;
+      if (nextIdx < prevIdx) app._followRefit = true;
+    }
+  }
   tour.notify('scrub');
 }
 
 function stepFrame() {
   stopSweep();
   app.running = false; updatePlayBtn();
-  if (app.view != null && app.view < app.history.length - 1) { app.view++; return; }
-  commitView();
-  if (!isDone()) advance(1 / 30 * (app.exp.timeScale?.(app.sim, app.params) ?? 1));
+  if (app.view != null && app.view < app.history.length - 1) app.view++;
+  else {
+    commitView();
+    if (!isDone()) advance(1 / 30 * (app.exp.timeScale?.(app.sim, app.params) ?? 1));
+  }
+  if (!app.camUser && app.exp.follow) {
+    cam.stop();
+    app._followRefit = false;
+    app._followSettle = viewSim().t > 0;
+  }
 }
 
 $('menuBtn').onclick = () => { quickNav.close(); toggleDrawer(true); };
 $('crumbBtn').onclick = () => { toggleDrawer(false); quickNav.toggle($('crumbBtn')); };
 $('scrim').onclick = () => toggleDrawer(false);
 $('playBtn').onclick = togglePlay;
-$('resetBtn').onclick = () => { stopSweep(); resetSim(); };
+$('resetBtn').onclick = () => { stopSweep(); resetSim({ fit: true }); };
 $('stepBtn').onclick = stepFrame;
 $('fitBtn').onclick = fitView;
 $('helpBtn').onclick = () => tour.toggle();
@@ -1569,7 +1633,12 @@ tlRange.oninput = () => scrubTo(+tlRange.value);
 // Moviola al tocco: area di presa su tutta l'altezza e salto al punto toccato (vedi ui.js, touchSlider).
 { const zone = document.createElement('div'); zone.className = 'tl-zone'; tlRange.before(zone); zone.appendChild(tlRange); touchSlider(zone, tlRange); }
 $('tlStart').onclick = () => scrubTo(0);
-$('tlEnd').onclick = () => { stopSweep(); app.view = null; app.viewCache = null; };
+$('tlEnd').onclick = () => {
+  stopSweep(); app.view = null; app.viewCache = null;
+  if (!app.camUser && app.exp.follow && app.sim.t > 0) {
+    cam.stop(); app._followRefit = false; app._followSettle = true;
+  }
+};
 document.querySelectorAll('#toolSeg button').forEach(b => b.onclick = () => setTool(b.dataset.tool));
 document.querySelectorAll('#swatches button').forEach(b => b.onclick = () => setInkColor(b.dataset.color));
 
@@ -1584,7 +1653,7 @@ addEventListener('keydown', e => {
   else if (k === 'y' && e.ctrlKey) { e.preventDefault(); redo(); }
   else if (!mod && e.key === '?') tour.toggle();
   else if (!mod && e.key === ' ') { if (!app.exp.noSim) { e.preventDefault(); togglePlay(); } }
-  else if (!mod && k === 'r') { if (!app.exp.noSim) { stopSweep(); resetSim(); } }
+  else if (!mod && k === 'r') { if (!app.exp.noSim) { stopSweep(); resetSim({ fit: true }); } }
   else if (!mod && k === 'h') setTool('hand');
   else if (!mod && k === 'p') setTool('pen');
   else if (!mod && k === 'e') setTool('eraser');
@@ -1592,8 +1661,8 @@ addEventListener('keydown', e => {
   else if (!mod && (e.key === 'Backspace' || e.key === 'Delete') && lasso.active) { lasso.remove(app.exp); recordInk(); }
   else if (!mod && e.key === 'ArrowLeft') { if (!app.exp.noSim) scrubTo((app.view ?? app.history.length - 1) - 1); }
   else if (!mod && e.key === 'ArrowRight') { if (!app.exp.noSim) stepFrame(); }
-  else if (!mod && (e.key === '+' || e.key === '=')) cam.zoomAt(cam.w / 2, cam.h / 2, 1.25);
-  else if (!mod && e.key === '-') cam.zoomAt(cam.w / 2, cam.h / 2, 0.8);
+  else if (!mod && (e.key === '+' || e.key === '=')) { app.camUser = true; app._followSettle = false; app._followRefit = false; cam.zoomAt(cam.w / 2, cam.h / 2, 1.25); }
+  else if (!mod && e.key === '-') { app.camUser = true; app._followSettle = false; app._followRefit = false; cam.zoomAt(cam.w / 2, cam.h / 2, 0.8); }
   else if (!mod && e.key === '0') fitView();
   else app.exp.onKey?.(e, api);
 });

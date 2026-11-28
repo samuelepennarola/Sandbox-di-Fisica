@@ -79,6 +79,29 @@ export default {
     return { xmin: -R, xmax: R, ymin: -R, ymax: R };
   },
 
+  // Contiene i tre corpi fino a 4,5×; se uno viene espulso oltre 4× la distanza della coppia legata, segue la coppia.
+  follow(s, p) {
+    const pos = [];
+    for (let i = 0; i < 3; i++) if (p['m' + (i + 1)] > 0) pos.push([s.st[4 * i], s.st[4 * i + 1]]);
+    if (!pos.length) return null;
+    let pts = pos, focus = pos;
+    if (pos.length === 3) {
+      const d01 = Math.hypot(pos[0][0] - pos[1][0], pos[0][1] - pos[1][1]);
+      const d12 = Math.hypot(pos[1][0] - pos[2][0], pos[1][1] - pos[2][1]);
+      const d02 = Math.hypot(pos[0][0] - pos[2][0], pos[0][1] - pos[2][1]);
+      const pairs = [
+        { pair: [pos[0], pos[1]], dp: d01, do: Math.min(d02, d12) },
+        { pair: [pos[1], pos[2]], dp: d12, do: Math.min(d01, d02) },
+        { pair: [pos[0], pos[2]], dp: d02, do: Math.min(d01, d12) },
+      ].sort((a, b) => a.dp - b.dp);
+      const best = pairs[0];
+      const R0 = Math.max(1, ...bodiesOf(p).filter(b => b.m > 0).map(b => Math.hypot(b.x, b.y)));
+      focus = best.pair;
+      if (best.do > 4 * Math.max(best.dp, 0.25 * R0) && best.do > 2 * R0) pts = best.pair;
+    }
+    return { mode: 'contain', pts, focus, maxOut: 4.5, panOnMaxOut: true, padPx: 20 };
+  },
+
   init(p) {
     const bs = bodiesOf(p);
     return { t: 0, st: bs.flatMap(b => [b.x, b.y, b.vx, b.vy]), trails: bs.map(b => [[b.x, b.y]]), tEnd: p.tMax };

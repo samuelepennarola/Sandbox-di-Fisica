@@ -228,6 +228,18 @@ export default {
     return { xmin: b.xmin, xmax: b.xmax + 0.6 * w, ymin: b.ymin - Math.max(1.2 * h, 0.45 * w), ymax: b.ymax };
   },
 
+  // Carrellata a scala costante sul corpo principale (barca o pallina) nel sistema di riferimento mostrato.
+  follow(s, p) {
+    const sp = p.view === 'Sp';
+    const bx = sp ? s.xp : s.x, by = sp ? s.yp : s.y;
+    return {
+      mode: 'pan',
+      pts: [[bx, by]],
+      padPx: p.showTrace ? 8 : 24,
+      margin: p.showTrace ? 0.045 : 0.09,
+    };
+  },
+
   init(p) {
     const m = model(p), c = stateAt(p, m, 0);
     return { t: 0, tEnd: m.tEnd, ...c, trailS: [[c.x, c.y]], trailP: [[c.xp, c.yp]], trX: [[0, c.x]], trXp: [[0, c.xp]], trY: [[0, c.y]] };

@@ -58,6 +58,20 @@ export default {
 
   view() { return { xmin: -5, xmax: 5, ymin: -0.8, ymax: 3.4 }; },
 
+  // Contiene entrambi i carrelli allargando dolcemente la vista fino a 5× quando divergono.
+  follow(s, p) {
+    const w1 = width(p.m1) / 2, w2 = width(p.m2) / 2;
+    return {
+      mode: 'contain',
+      pts: [
+        [s.x1 - w1, 0], [s.x1 + w1, height(p.m1)],
+        [s.x2 - w2, 0], [s.x2 + w2, height(p.m2)],
+      ],
+      padPx: 14,
+      maxOut: 5,
+    };
+  },
+
   // Con masse grandi i carrelli si allargano: se partirebbero sovrapposti, il secondo si sposta a destra.
   init(p) { const x2 = Math.max(p.x2, p.x1 + (width(p.m1) + width(p.m2)) / 2 + 0.05); return { t: 0, x1: p.x1, v1: p.v1, x2, v2: p.v2, tc0: null, tEnd: p.tMax }; },
 
