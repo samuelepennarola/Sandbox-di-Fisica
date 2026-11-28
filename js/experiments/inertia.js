@@ -171,9 +171,9 @@ export default {
     const Iw = 0.5 * MW * RW * RW;
     return [
       { h: 'Momento d\'inerzia' },
-      { key: true, tex: `I=I_{\\text{ruota}}+4\\,m_r r^2=${tn(Iw, 3)}+4\\cdot${tn(p.mm, 2)}\\cdot${tn(p.r, 2)}^2=${uq('kg·m²', I, 3)}` },
+      { key: true, tex: `I=I_{\\text{ruota}}+4\\,${C('vel', 'm_r')}r^2=${tn(Iw, 3)}+4\\cdot${tn(p.mm, 2)}\\cdot${tn(p.r, 2)}^2=${uq('kg·m²', I, 3)}` },
       { h: 'Secondo principio per le rotazioni' },
-      { key: true, tex: `\\tau=I\\alpha\\qquad ${C('tension', 'T')}\\,r_h=I\\,\\dfrac{a}{r_h}` },
+      { key: true, tex: `${C('tension', '\\tau')}=I${C('vel', '\\alpha')}\\qquad ${C('tension', 'T')}\\,r_h=I\\,\\dfrac{${C('weight', 'a')}}{r_h}` },
       { tex: `m g-${C('tension', 'T')}=m a\\ \\Rightarrow\\ a=\\dfrac{m g}{m+I/r_h^2}=${uq('m/s²', a, 3)}` },
       { tex: `\\alpha=\\dfrac{a}{r_h}=${uq('rad/s²', al, 2)}\\qquad ${C('tension', 'T')}=${uq('N', T, 2)}` },
       { h: k.taut ? 'Istante attuale' : 'Il peso ha toccato terra' },

@@ -1,7 +1,7 @@
 import { tn, clamp } from '../core/math.js';
 import { tex } from '../core/manim.js';
 import { uq } from '../core/units.js';
-import { Stage, arrowPx, arrowMag, symVal } from '../core/annot.js';
+import { Stage, C, arrowPx, arrowMag, symVal } from '../core/annot.js';
 import { scaleOf, scaleParam, planet, star } from '../core/grav.js';
 
 // Il problema dei tre corpi: tre masse che si attraggono a vicenda. Nessuna formula chiusa: solo il calcolo passo
@@ -211,9 +211,9 @@ export default {
     const dE = Math.abs(sm.E - s0.E) / Math.max(Math.abs(s0.E), 1e-12);
     return [
       { h: 'Gravitazione tra ogni coppia' },
-      { key: true, tex: `F_{ij}=\\dfrac{G\\,m_i\\,m_j}{r_{ij}^2}\\qquad G=${p.scale === 'solar' ? '4\\pi^2' : '1'}` },
+      { key: true, tex: `${C('weight', 'F_{ij}')}=\\dfrac{G\\,m_i\\,m_j}{r_{ij}^2}\\qquad G=${p.scale === 'solar' ? '4\\pi^2' : '1'}` },
       { h: 'Cosa si conserva' },
-      { key: true, tex: `E=K+U=${tn(sm.E, 4)}\\qquad L=${tn(sm.L, 4)}` },
+      { key: true, tex: `${C('acc', 'E')}=K+U=${tn(sm.E, 4)}\\qquad ${C('friction', 'L')}=${tn(sm.L, 4)}` },
       { tex: `\\text{scarto numerico dell'energia: } ${tn(100 * dE, 4)}\\%` },
       { tex: `\\text{il centro di massa si muove di moto rettilineo uniforme}` },
       { h: 'Istante attuale' },

@@ -196,11 +196,11 @@ export default {
     const g = gAt(p, s.x, s.y), ms = masses(p);
     return [
       { h: 'Campo di una massa puntiforme' },
-      { key: true, tex: `g=\\dfrac{G M}{r^2}\\qquad \\varphi=-\\dfrac{G M}{r}\\qquad (G=1)` },
+      { key: true, tex: `${C('weight', 'g')}=\\dfrac{G M}{r^2}\\qquad ${C('acc', '\\varphi')}=-\\dfrac{G M}{r}\\qquad (G=1)` },
       { h: 'Sovrapposizione' },
       { tex: `\\vec g=${ms.map(q => `\\vec g_{${q.i}}`).join('+') || '\\vec 0'}` },
       { h: 'Nella posizione della massa di prova' },
-      { key: true, tex: `${C('weight', '|\\vec g|')}=${uq('N/kg', g.g, 3)}\\qquad \\varphi=${uq('J/kg', g.phi, 3)}` },
+      { key: true, tex: `${C('weight', '|\\vec g|')}=${uq('N/kg', g.g, 3)}\\qquad ${C('acc', '\\varphi')}=${uq('J/kg', g.phi, 3)}` },
       { tex: `\\vec g=(${tn(g.gx, 3)};\\ ${tn(g.gy, 3)})\\ \\mathrm{N/kg}` },
       s.hit && { tex: `\\text{la massa di prova è caduta su una massa (o è uscita dalla scena)}`, cls: 'warn' },
     ].filter(Boolean);

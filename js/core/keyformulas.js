@@ -13,20 +13,25 @@ const IND_S = 0.75;       // durata Indicate quando si muove uno slider o una ma
 
 // Mappa chiave parametro / maniglia → possibili simboli TeX da evidenziare con Indicate.
 const PARAM_SYM = {
-  m: ['m'], m1: ['m_1', '\\tau_1'], m2: ['m_2', '\\tau_2'], m3: ['m_3'], M: ['M'], Mp: ['M', 'I', '\\omega'],
-  mh: ['m', 'a'], mm: ['m_r', 'I'], mb: ['I', '\\tau_a'],
-  v: ['v', '\\vec v'], v0: ['v_0', 'v'], v1: ['v_1'], v2: ['v_2'], vp: ["v'", 'v'], vs: ['v_s'], V: ['V'],
-  a: ['a'], A: ['A'], g: ['g'], G: ['G'],
-  theta: ['\\theta'], th0: ['\\theta_0', '\\theta'], alpha: ['\\alpha', 'a'], phi: ['\\varphi', '\\phi'],
-  x0: ['x_0'], y0: ['y_0'], h0: ['h_0'], s0: ['s_0'], L: ['L', 'T', '\\omega'], r: ['r', 'I', '\\omega'], r0: ['r_0', 'r'], R: ['R'],
-  k: ['k', '\\omega'], b: ['b'], gam: ['\\gamma'], mus: ['\\mu_s'], muk: ['\\mu_d', '\\mu_k'], e: ['e'],
-  q: ['q'], q1: ['q_1'], q2: ['q_2'], Q: ['Q'], sigma: ['\\sigma'], E: ['E', '\\vec E'], B: ['B', 'B_z', '\\vec B'],
-  f: ['f'], f1: ['f_1'], f2: ['f_2'], ff: ['f_F'], F0: ['F_0'],
-  T: ['T'], omega: ['\\omega'], w0: ['\\omega_0', '\\omega', 'L'], lambda: ['\\lambda'],
-  F: ['F', '\\tau_F'], d: ['d'], dF: ['\\tau_F', 'b'], xf: ['\\tau', 'I'], tMax: ['t'],
-  rho: ['\\rho'], rhoc: ['\\rho_c'], rhof: ['\\rho_f'],
-  H: ['H'], h: ['h'], H0: ['H_0'], h1: ['h_1'], h2: ['h_2'],
-  d1: ['d_1', 'A_1', '\\tau_1', 'b'], d2: ['d_2', 'A_2', '\\tau_2', 'b'], p0: ['p_0'], p1: ['p_1'],
+  m: ['m', 'T'], m1: ['m_1', '\\tau_1', '\\sum\\tau', '|\\vec g|'], m2: ['m_2', '\\tau_2', '\\sum\\tau', '|\\vec g|'], m3: ['m_3', '|\\vec g|'],
+  M: ['M', 'E', 'T'], Mp: ['M', 'I', '\\omega'],
+  mh: ['m', 'a', 'T'], mm: ['m_r', 'I'], mb: ['I', '\\tau_a', '\\sum\\tau'],
+  v: ['v', '\\vec v', 'v_c', 'v_f', '\\lambda'], v0: ['v_0', 'v_{0x}', 'v_{0y}', 'R', 'v', '|\\vec g|'],
+  v1: ['v_1', "v_1'"], v2: ['v_2', "v_2'"], vp: ["v'", "\\vec{v}'", "v'_x", 'v'], vs: ['v_s', 'f_{\\text{davanti}}'], V: ['V', '\\vec V'],
+  a: ['a'], A: ['A', '\\vec A'], g: ['g', 'T_0', 'P_{\\parallel}', 'P_{\\perp}'], G: ['G'],
+  theta: ['\\theta', 'v_{0x}', 'v_{0y}', 'R'], th0: ['\\theta_0', '\\theta', 'T'], alpha: ['\\alpha', 'a', 'P_{\\parallel}', 'P_{\\perp}'],
+  phi: ['\\varphi', '\\phi', '\\sum\\tau'],
+  x0: ['x_0', 'x(t)'], y0: ['y_0', 'y(t)'], h0: ['h_0', 'y(t)', 'R'], s0: ['s_0'],
+  L: ['L', 'T_0', 'T', '\\lambda', '\\omega'], r: ['r', 'I', '\\omega', 'R'], r0: ['r_0', 'r', 'a', 'E', 'T'], R: ['R', 'v', 'a_c'],
+  k: ['k', 'T', 'f', 'E', 'I', 'a'], b: ['b'], gam: ['\\gamma'], mus: ['\\mu_s'], muk: ['\\mu_d', '\\mu_k'], e: ['e', "v_1'", "v_2'"],
+  q: ['q', 'R', 'T'], q1: ['q_1'], q2: ['q_2'], Q: ['Q'], sigma: ['\\sigma'], E: ['E', '\\vec E'], B: ['B', 'B_z', '\\vec B', 'R', 'T'],
+  f: ['f', '\\lambda', 'T'], f1: ['f_1', '\\lambda', 'f_b'], f2: ['f_2', '\\lambda_2', 'f_b'], ff: ['f_F', '\\Omega'], F0: ['F_0', 'A_F'],
+  T: ['T'], omega: ['\\omega', 'v', 'a_c'], w0: ['\\omega_0', '\\omega', 'L'], lambda: ['\\lambda'],
+  F: ['F', '\\vec F', '\\tau_F', '\\sum\\tau'], d: ['d', 'r_1', 'r_2'], dF: ['\\tau_F', 'b', '\\sum\\tau'], xf: ['\\sum\\tau', '\\tau', 'I'],
+  xp: ['y'], probe: ['|\\vec g|', '\\varphi', 'r_1', 'r_2'], tMax: ['t'],
+  rho: ['\\rho'], rhoc: ['\\rho_c', 'P'], rhof: ['\\rho_f', 'S_A'],
+  H: ['H'], h: ['h', 'v_c', 'v_f', 'p', '\\Delta p', 'v'], H0: ['H_0'], h1: ['h_1'], h2: ['h_2'],
+  d1: ['d_1', 'A_1', '\\tau_1', 'b', '\\sum\\tau'], d2: ['d_2', 'A_2', '\\tau_2', 'b', '\\sum\\tau'], p0: ['p_0', 'p'], p1: ['p_1'],
 };
 
 // Normalizza macro KaTeX non presenti nel mini-LaTeX di manim.js, mantenendo colori e struttura.
@@ -105,7 +110,9 @@ export class KeyFormulas {
       }));
       return;
     }
-    const skel = s => s.replace(/[−-]?\d+(?:[.,]\d+)?/g, '#');
+    const numRe = /[−-]?\d+(?:[.,]\d+)?/g;
+    const skel = s => s.replace(numRe, '#');
+    const changedNums = [];
     const next = [];
     for (let i = 0; i < rawLines.length; i++) {
       const r = rawLines[i], cur = this.lines[i];
@@ -114,7 +121,14 @@ export class KeyFormulas {
       } else if (cur.tex === r.tex) {
         next.push({ ...cur, cls: r.cls || '' });
       } else if (skel(cur.tex) === skel(r.tex)) {
-        // Stessa struttura simbolica (cambiano solo le cifre, in Play o trascinando uno slider): aggiorna subito così Indicate si vede subito
+        // Stessa struttura simbolica (cambiano solo le cifre): se non siamo in Play, raccoglie anche i numeri appena cambiati
+        // così Indicate illumina il valore aggiornato anche quando il simbolo del parametro non compare esplicitamente!
+        if (!playing) {
+          const oldN = cur.tex.match(numRe) ?? [], newN = r.tex.match(numRe) ?? [];
+          for (let k = 0; k < newN.length; k++) {
+            if (newN[k] !== oldN[k] && newN[k].length >= 2) changedNums.push(newN[k].replace(/^[−-]/, ''));
+          }
+        }
         next.push({ tex: r.tex, cls: r.cls || '', prev: null, t0: now, mode: 'idle' });
       } else {
         next.push({
@@ -122,6 +136,9 @@ export class KeyFormulas {
           t0: now, mode: still ? 'idle' : 'morph',
         });
       }
+    }
+    if (changedNums.length && this.indTerm && now - this.indT0 < 0.25) {
+      this.indTerm = [...new Set([...this.indTerm, ...changedNums.slice(0, 3)])];
     }
     this.lines = next;
   }

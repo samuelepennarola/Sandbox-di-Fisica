@@ -45,6 +45,7 @@ const st = {
   surfMatCache: new Map(),
   flatMatCache: new Map(),
   glowTexCache: new Map(),
+  latticeCache: new Map(),
   unitSphere: null,
   sphereWireSegs: null,
   unitCyl: null,
@@ -604,31 +605,68 @@ function drawSegments3d(flatPairs, { color = '#dddddd', widthPx = 1.6, alpha = 1
 
 /* ---------------- Primitive 3D ManimGL ---------------- */
 
-// Pavimento NumberPlane GLSL esteso e immersivo.
-export function floor({ origin = [0, 0, 0], up = 'y', step = 1, n = 36, alpha = 1 } = {}) {
-  if (!st.active || !st.floorMesh) return;
-  const k = st.V.tilt(0.1) * alpha;
+// Registra passo e orientamento dello spazio 3D senza disegnare alcun pavimento/griglia piana:
+// lo spazio 3D resta puro (#0B0B0D / #f6f3ea) con i soli ThreeDAxes ortogonali, come nei video 3D di 3Blue1Brown.
+export function floor({ up = 'y', step = 1 } = {}) {
+  if (!st.active) return;
   st.lastFloorStep = step;
   st.lastFloorUp = up;
-  if (k <= 0.002) { st.floorMesh.visible = false; return; }
-  const R = n * step;
-  const fm = st.floorMesh, u = st.floorMat.uniforms;
-  fm.visible = true;
-  fm.scale.set(R, R, 1);
-  if (up === 'z') {
-    fm.rotation.set(0, 0, 0);
-    fm.position.set(origin[0], origin[1], origin[2]);
-  } else {
-    fm.rotation.set(-Math.PI / 2, 0, 0);
-    fm.position.set(origin[0], origin[1], origin[2]);
+  if (st.floorMesh) st.floorMesh.visible = false;
+}
+
+// Reticolo volumetrico 3D isotropo (x, y, z) stile 3Blue1Brown: avvolge l'intera inquadratura 3D con celle ariose
+// e dissolvenza sferica morbida, dando la sensazione di essere immersi nello spazio tridimensionale senza pavimento.
+export function lattice3d({ origin = [0, 0, 0], step = 1, rings = 4, alpha = 1 } = {}) {
+  if (!st.active) return;
+  const k = st.V.tilt(0.1) * alpha;
+  if (k <= 0.005) return;
+
+  let cached = st.latticeCache.get(rings);
+  if (!cached) {
+    const segs = [];
+    const alphas = [];
+    const radius = rings * 1.38;
+    const alphaAt = (x, y, z) => {
+      const r3 = Math.hypot(x, y, z) / radius;
+      const fade = Math.max(0, 1 - r3);
+      return fade * fade;
+    };
+    const sub = 1.0;
+    const steps = Math.round((2 * rings) / sub);
+    for (let axis = 0; axis < 3; axis++) {
+      for (let a = -rings; a <= rings; a++) {
+        for (let b = -rings; b <= rings; b++) {
+          if (a === 0 && b === 0) continue; // gli assi principali sono già disegnati da ThreeDAxes
+          for (let i = 0; i < steps; i++) {
+            const t0 = -rings + i * sub;
+            const t1 = t0 + sub;
+            const x0 = axis === 0 ? t0 : a, y0 = axis === 1 ? t0 : (axis === 0 ? a : b), z0 = axis === 2 ? t0 : b;
+            const x1 = axis === 0 ? t1 : a, y1 = axis === 1 ? t1 : (axis === 0 ? a : b), z1 = axis === 2 ? t1 : b;
+            const a0 = alphaAt(x0, y0, z0);
+            const a1 = alphaAt(x1, y1, z1);
+            if (a0 < 0.025 && a1 < 0.025) continue;
+            segs.push(x0, y0, z0, x1, y1, z1);
+            alphas.push(a0, a1);
+          }
+        }
+      }
+    }
+    cached = {
+      pairs: new Float32Array(segs),
+      alphas: new Float32Array(alphas),
+    };
+    st.latticeCache.set(rings, cached);
   }
-  u.uOrigin.value.set(0, 0);
-  u.uStep.value = Math.max(1e-6, step);
-  u.uColor.value.set(...srgbArr(st.dark ? '#29ABCA' : '#236B8E'));
-  u.uMajorA.value = st.dark ? 0.62 : 0.30;
-  u.uMinorA.value = st.dark ? 0.19 : 0.09;
-  u.uRadius.value = R;
-  u.uFade.value = k;
+
+  const [ox = 0, oy = 0, oz = 0] = origin;
+  const stp = Math.max(step || st.lastFloorStep || 1, niceStep(135 / st.P.cam.scale));
+  drawSegments3d(cached.pairs, {
+    color: st.dark ? '#29ABCA' : '#236B8E',
+    widthPx: 1.25,
+    alpha: k * (st.dark ? 0.44 : 0.28),
+    alphas: cached.alphas,
+    transform: (x, y, z) => [ox + x * stp, oy + y * stp, oz + z * stp],
+  });
 }
 
 // Sfera ManimGL con shader add_light, reticolo SurfaceMesh nitido in GREY_A e glow opzionale.

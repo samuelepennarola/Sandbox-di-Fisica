@@ -180,8 +180,8 @@ export default {
     return [
       { h: 'Onda' },
       { tex: `v=${uq('m/s', p.v)}\\qquad f=${uq('Hz', p.f)}\\qquad T=\\dfrac1f=${uq('s', T)}` },
-      { key: true, tex: `\\lambda=\\dfrac{v}{f}=${uq('m', lam)}` },
-      p.mode === 'pulse' && { key: true, tex: `t_{\\text{andata e ritorno}}=\\dfrac{2L}{v}=${uq('s', 2 * p.L / p.v)}` },
+      { key: true, tex: `${W('\\lambda')}=\\dfrac{v}{${C('acc', 'f')}}=${uq('m', lam)}` },
+      p.mode === 'pulse' && { key: true, tex: `${W('t_{\\text{andata e ritorno}}')}=\\dfrac{2L}{v}=${uq('s', 2 * p.L / p.v)}` },
       { h: fixed ? 'Onde stazionarie (estremi fissi)' : 'Onde stazionarie (un estremo libero)' },
       fixed
         ? { key: p.mode === 'wave', tex: `f_n=n\\,\\dfrac{v}{2L}=n\\cdot${uq('Hz', f1, 3)}\\qquad L=n\\,\\dfrac{\\lambda}{2}` }

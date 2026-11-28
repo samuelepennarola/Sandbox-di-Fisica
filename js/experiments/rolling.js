@@ -200,8 +200,8 @@ export default {
     const rows = BODIES.filter(b => on(p, b)).map(b => ({ tex: `${b.name === 'Blocco che scivola' ? '\\text{blocco}' : `\\text{${b.name.split(' ')[0].toLowerCase()}}`}:\\ a=\\dfrac{g\\sin\\alpha}{1+${b.kTeX}}=${uq('m/s²', acc(p, b))}\\quad t=${uq('s', tFinish(p, b))}` }));
     return [
       { h: 'Rotolamento senza strisciare' },
-      { key: true, tex: `v=\\omega R\\qquad I=k\\,mR^2` },
-      { key: true, tex: `a=\\dfrac{g\\sin\\alpha}{1+k}` },
+      { key: true, tex: `${C('vel', 'v')}=${C('vel', '\\omega')}R\\qquad I=${C('friction', 'k')}\\,mR^2` },
+      { key: true, tex: `${C('acc', 'a')}=\\dfrac{${C('weight', 'g')}\\sin\\alpha}{1+${C('friction', 'k')}}` },
       { h: 'Energia' },
       { tex: `m g h=\\tfrac12 m v^2+\\tfrac12 I\\omega^2=\\tfrac12 m v^2\\,(1+k)` },
       { tex: `h=${uq('m', h)}` },

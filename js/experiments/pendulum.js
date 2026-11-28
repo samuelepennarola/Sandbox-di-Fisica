@@ -169,11 +169,11 @@ export default {
     const big = Math.abs(p.th0) > 15;
     return [
       { h: 'Piccole oscillazioni' },
-      { key: true, tex: `T_0=2\\pi\\sqrt{\\dfrac{L}{g}}=${uq('s', T0)}` },
+      { key: true, tex: `${C('vel', 'T_0')}=2\\pi\\sqrt{\\dfrac{L}{${C('weight', 'g')}}}=${uq('s', T0)}` },
       { tex: `\\omega=\\sqrt{\\dfrac{g}{L}}=${uq('rad/s', w)}\\qquad f=${uq('Hz', 1 / T0)}` },
       { tex: `\\theta(t)\\approx\\theta_0\\cos(\\omega t)` },
       { h: 'Periodo misurato' },
-      { key: true, tex: s.Tm ? `T=${uq('s', s.Tm)}\\quad(${tn(100 * (s.Tm / T0 - 1), 1)}\\%\\ \\text{rispetto a } T_0)` : `T=\\ ?\\quad\\text{(avvia la simulazione)}` },
+      { key: true, tex: s.Tm ? `${C('acc', 'T')}=${uq('s', s.Tm)}\\quad(${tn(100 * (s.Tm / T0 - 1), 1)}\\%\\ \\text{rispetto a } T_0)` : `${C('acc', 'T')}=\\ ?\\quad\\text{(avvia la simulazione)}` },
       big && { tex: `T\\approx T_0\\left(1+\\dfrac{\\theta_0^2}{16}\\right)=${uq('s', Tapprox)}` },
       { h: 'Istante attuale' },
       { tex: `t=${uq('s', s.t)}\\qquad \\theta=${tn(s.th / deg, 1)}°` },

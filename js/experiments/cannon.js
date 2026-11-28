@@ -1,7 +1,7 @@
 import { tn, clamp } from '../core/math.js';
 import { tex, mixHex } from '../core/manim.js';
 import { uq } from '../core/units.js';
-import { Stage, arrowPx, arrowMag, symVal } from '../core/annot.js';
+import { Stage, C, arrowPx, arrowMag, symVal } from '../core/annot.js';
 import { elements, conicPts } from '../core/grav.js';
 
 // Il cannone di Newton (Principia, libro III): dalla cima di una montagna altissima si spara in orizzontale.
@@ -187,8 +187,8 @@ export default {
     const r = Math.hypot(s.x, s.y);
     return [
       { h: 'Velocità caratteristiche a quota h' },
-      { key: true, tex: `v_c=\\sqrt{\\dfrac{GM}{R+h}}=${uq('km/s', vc, 2)}` },
-      { key: true, tex: `v_f=\\sqrt{\\dfrac{2GM}{R+h}}=${uq('km/s', vf, 2)}` },
+      { key: true, tex: `${C('vel', 'v_c')}=\\sqrt{\\dfrac{GM}{R+h}}=${uq('km/s', vc, 2)}` },
+      { key: true, tex: `${C('acc', 'v_f')}=\\sqrt{\\dfrac{2GM}{R+h}}=${uq('km/s', vf, 2)}` },
       { tex: `R=${uq('km', RE, 0)}\\qquad GM=3{,}986\\cdot10^{5}\\ \\mathrm{km^3/s^2}` },
       { h: `Questo colpo: ${kind}` },
       { tex: `v=${uq('km/s', p.v, 2)}=${tn(p.v / vc, 3)}\\,v_c` },

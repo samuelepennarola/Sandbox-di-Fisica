@@ -247,11 +247,11 @@ export default {
     const net = fs.reduce((a, f) => a + torque(p, f, th), 0), eq = Math.abs(net) < 0.05;
     return [
       { h: 'Momento di una forza' },
-      { key: true, tex: `\\tau=F\\,b\\qquad \\vec\\tau=\\vec r\\times\\vec F` },
+      { key: true, tex: `\\tau=${C('applied', 'F')}\\,b\\qquad \\vec\\tau=\\vec r\\times${C('applied', '\\vec F')}` },
       { tex: `\\text{positivo se fa ruotare in verso antiorario}` },
       { h: 'Momenti rispetto al fulcro' },
       ...rows.map(r => ({ tex: r })),
-      { key: true, tex: `\\sum\\tau=${uq('N·m', net, 2)}` },
+      { key: true, tex: `${eq ? '\\sum\\tau' : C(net > 0 ? 'vel' : 'weight', '\\sum\\tau')}=${uq('N·m', net, 2)}` },
       { tex: eq ? `\\sum\\tau=0:\\ \\text{equilibrio di rotazione}` : `\\sum\\tau\\neq0:\\ \\text{l'asta ruota}`, cls: eq ? 'warn' : '' },
       { h: 'Dinamica della rotazione' },
       { tex: `I=${uq('kg·m²', I, 2)}\\qquad \\alpha=\\dfrac{\\sum\\tau}{I}=${uq('rad/s²', net / I, 2)}` },

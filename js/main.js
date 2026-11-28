@@ -20,6 +20,8 @@ import { DerivationOverlay } from './core/derive.js';
 import { pickKeyParams, buildKeyParams, openParamPopover, closeParamPopover, shortParamName } from './core/keyparams.js';
 import { QuickNav, appendPresetPill } from './core/navpop.js';
 import { resize3d, begin3dFrame, end3dFrame, hide3d } from './core/manim3d.js';
+import { isLattice3d, setLattice3d } from './core/space3d.js';
+import { Tour } from './core/tour.js';
 import { AREAS, findExperiment } from './experiments/registry.js';
 
 const H = 1 / 480;            // passo di integrazione predefinito (s); un esperimento può dichiarare il suo (exp.dt)
@@ -72,6 +74,9 @@ insp.onSection = sec => { app.formulasDirty = true; if (sec === 'formulas') { re
 const keyFormulas = new KeyFormulas();
 const derive = new DerivationOverlay();
 const quickNav = new QuickNav({ areas: AREAS, onPickExp: id => loadExperiment(id), onPickPreset: pr => applyPreset(pr) });
+const tour = new Tour({
+  onToggle: open => $('helpBtn')?.classList.toggle('on', open),
+});
 
 /* ---------------- Annulla e ripeti ---------------- */
 // Un'unica cronologia per l'inchiostro e la scena dell'esperimento, nell'ordine in cui sono avvenute le modifiche.
@@ -274,7 +279,10 @@ function buildParams() {
   // Gli interruttori (sì/no) della scena stanno nella barra sulla scena, non tra i Parametri.
   // Un esperimento con un pannello suo (exp.buildPanel) dichiara i suoi interruttori con exp.toggles(api):
   // [{ key, label, short?, icon?, get(), set(v) }].
-  const toggles = exp.toggles ? exp.toggles(api) : exp.buildPanel ? [] : (exp.params ?? []).filter(d => d.type === 'toggle' && !d.hidden);
+  const baseToggles = exp.toggles ? exp.toggles(api) : exp.buildPanel ? [] : (exp.params ?? []).filter(d => d.type === 'toggle' && !d.hidden);
+  const toggles = typeof exp.orbit === 'function'
+    ? [...baseToggles, { key: 'lattice3d', label: 'Reticolo spaziale 3D', short: 'Reticolo 3D', icon: 'lattice3d', get: isLattice3d, set: v => setLattice3d(v) }]
+    : baseToggles;
   app.syncs.push(...buildQuickbar($('quickbar'), toggles, d => (d.get ? d.get() : app.params[d.key]), (d, v) => (d.set ? d.set(v) : setParam(d, v))));
   document.body.classList.toggle('has-quick', toggles.length > 0);
   // Parametri più importanti subito a prima vista in alto a sinistra (trascinabili o toccabili per lo slider) + Casi notevoli.
@@ -326,6 +334,7 @@ function setParam(def, value) {
   if (def.refit || def.type === 'select') fitView();
   keyFormulas.indicate(def.key);
   app.formulasDirty = true;
+  tour.notify('param');
 }
 
 function timeUnit() { const u = app.exp.timeUnit; return (typeof u === 'function' ? u(app.params) : u) ?? 's'; }
@@ -399,6 +408,11 @@ function buildDrawer() {
   theme.innerHTML = `${icons.theme}<span>Tema chiaro / scuro</span>`;
   theme.onclick = toggleTheme;
   dr.appendChild(theme);
+  const tourBtn = document.createElement('button');
+  tourBtn.className = 'drawer-tour';
+  tourBtn.innerHTML = `${icons.help}<span>Prova in 60 secondi · Guida</span>`;
+  tourBtn.onclick = () => { toggleDrawer(false); tour.open(); };
+  dr.appendChild(tourBtn);
   dr.appendChild(unitsSection());
   for (const a of AREAS) {
     const h = document.createElement('h2');
@@ -677,6 +691,7 @@ function togglePlay() {
     commitView();
     if (isDone()) resetSim();
     app.running = true;
+    tour.notify('play');
   }
   updatePlayBtn();
 }
@@ -1188,6 +1203,7 @@ function onPointerDown(e) {
   if (g) { gesture = g; return; }
   // Un tocco su un oggetto ridimensionabile lo seleziona (compare la maniglia); altrove deseleziona.
   app.sizeSel = pickResizable(x, y)?.key ?? null;
+  if (app.sizeSel) tour.notify('scene');
   gesture = { type: 'pan', id: e.pointerId, lx: x, ly: y };
 }
 
@@ -1284,6 +1300,7 @@ canvas.addEventListener('pointermove', e => {
   } else if (gesture.type === 'drag') {
     if (!gesture.moved && Math.hypot(x - gesture.sx, y - gesture.sy) < 6) return;
     gesture.moved = true;
+    tour.notify('param');
     // Un esperimento può dichiarare "live" un trascinamento che non cambia il moto (per esempio una sonda).
     const live = app.exp.drag(gesture.handle, wx, wy, app.params) === 'live';
     keyFormulas.indicate(gesture.handle);
@@ -1291,7 +1308,8 @@ canvas.addEventListener('pointermove', e => {
     if (live) app.formulasDirty = true; else resetSim();
   } else if (gesture.type === 'pan') {
     // In vista 3D (exp.orbit) il trascinamento sullo spazio vuoto fa girare la camera; altrimenti sposta la scena.
-    if (!app.exp.orbit?.(x - gesture.lx, y - gesture.ly, app.params)) { cam.panBy(x - gesture.lx, y - gesture.ly); app.camUser = true; }
+    if (app.exp.orbit?.(x - gesture.lx, y - gesture.ly, app.params)) tour.notify('scene');
+    else { cam.panBy(x - gesture.lx, y - gesture.ly); app.camUser = true; }
     gesture.lx = x; gesture.ly = y;
   }
 });
@@ -1303,13 +1321,16 @@ function endPointer(e) {
   if (!gesture) return;
   if (gesture.type === 'pinch') { if (touches.size < 2) gesture = null; return; }
   if (e.pointerId !== gesture.id) return;
-  if (gesture.type === 'ink') { ink.end(); recordInk(); }
+  if (gesture.type === 'ink') { ink.end(); recordInk(); tour.notify('scene'); }
   if (gesture.type === 'erase') recordInk();
   if (gesture.type === 'lasso') lasso.finish(app.exp);
   if (gesture.type === 'lassoMove' || gesture.type === 'lassoScale') { lasso.save(app.exp); recordInk(); }
   if (gesture.type === 'size') store.set('sizes.' + app.exp.id, app.sizes);
   // Tocco senza trascinare su una maniglia che coincide con un oggetto: lo seleziona per ridimensionarlo.
-  if (gesture.type === 'drag' && !gesture.moved) app.sizeSel = pickResizable(gesture.sx, gesture.sy)?.key ?? null;
+  if (gesture.type === 'drag' && !gesture.moved) {
+    app.sizeSel = pickResizable(gesture.sx, gesture.sy)?.key ?? null;
+    if (app.sizeSel) tour.notify('scene');
+  }
   if (gesture.type === 'custom') {
     const [sx, sy] = pos(e), [wx, wy] = cam.toWorld(sx, sy);
     gesture.custom.up?.({ wx, wy, sx, sy, cancelled: e.type === 'pointercancel' });
@@ -1511,6 +1532,7 @@ function scrubTo(idx) {
   app.running = false; updatePlayBtn();
   const last = app.history.length - 1;
   app.view = idx >= last ? (app.view == null ? null : last) : Math.max(0, idx);
+  tour.notify('scrub');
 }
 
 function stepFrame() {
@@ -1528,6 +1550,7 @@ $('playBtn').onclick = togglePlay;
 $('resetBtn').onclick = () => { stopSweep(); resetSim(); };
 $('stepBtn').onclick = stepFrame;
 $('fitBtn').onclick = fitView;
+$('helpBtn').onclick = () => tour.toggle();
 $('inspBtn').onclick = () => { insp.toggle(); app.formulasDirty = true; };
 $('deriveBtn').onclick = () => {
   if (derive.active) { derive.close(); return; }
@@ -1556,9 +1579,10 @@ addEventListener('keydown', e => {
   if (derive.onKey(e)) return;
   const mod = e.metaKey || e.ctrlKey || e.altKey;
   const k = e.key.toLowerCase();
-  if (e.key === 'Escape') { toggleDrawer(false); togglePenPop(false); if (lasso.active) lasso.clear(); app.sizeSel = null; }
+  if (e.key === 'Escape') { toggleDrawer(false); togglePenPop(false); tour.close(); if (lasso.active) lasso.clear(); app.sizeSel = null; }
   else if (k === 'z' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.shiftKey ? redo() : undo(); }
   else if (k === 'y' && e.ctrlKey) { e.preventDefault(); redo(); }
+  else if (!mod && e.key === '?') tour.toggle();
   else if (!mod && e.key === ' ') { if (!app.exp.noSim) { e.preventDefault(); togglePlay(); } }
   else if (!mod && k === 'r') { if (!app.exp.noSim) { stopSweep(); resetSim(); } }
   else if (!mod && k === 'h') setTool('hand');

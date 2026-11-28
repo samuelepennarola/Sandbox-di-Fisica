@@ -41,6 +41,9 @@ export const icons = {
   pin: svg('<path d="M9 4h6l-1 6 3 3H7l3-3z"/><path d="M12 13v7"/>'),
   redo: svg('<path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 15-6.7L21 13"/>'),
   close: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
+  help: svg('<circle cx="12" cy="12" r="9"/><path d="M9.3 9a3 3 0 0 1 5.5 1c0 1.8-2.8 2.4-2.8 4"/><circle cx="12" cy="17.3" r=".6" fill="currentColor"/>'),
+  lattice3d: svg('<path d="M12 2l8.5 4.8v10.4L12 22l-8.5-4.8V6.8z"/><path d="M12 22V11.6M20.5 6.8L12 11.6 3.5 6.8"/><path d="M7.8 4.4l8.5 4.8M16.2 4.4L7.7 9.2" stroke-opacity=".55"/>'),
+  check: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
 };
 
 export function applyIcons(root = document) {

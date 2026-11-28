@@ -43,12 +43,13 @@ const ICONS = {
   cm: SVG('<circle cx="10" cy="10" r="5"/><path d="M10 5v10M5 10h10"/>'),
   cannon: SVG('<path d="M3 16h14"/><path d="M5 15l6-5" stroke-width="3"/><path d="M11 10q4-4 7 0" stroke-dasharray="1.5 2"/>'),
   flines: SVG('<circle cx="6" cy="10" r="2" fill="currentColor"/><path d="M8 10h9M8 8.5q5-6 9-5M8 11.5q5 6 9 5"/>'),
+  lattice3d: SVG('<path d="M3.5 6.5L10 3l6.5 3.5v7L10 17l-6.5-3.5z"/><path d="M3.5 6.5L10 10l6.5-3.5M10 10v7"/><path d="M6.8 4.8L13.2 8.2M13.2 4.8L6.8 8.2" stroke-opacity=".55"/>'),
   eye: SVG('<path d="M2 10s3-6 8-6 8 6 8 6-3 6-8 6-8-6-8-6z"/><circle cx="10" cy="10" r="2.5"/>'),
 };
 
 // Chiave del parametro → [etichetta breve, icona].
 const BY_KEY = {
-  show3d: ['Vista 3D', 'cube'], showProj: ['Proiezioni', 'axesProj'], strobe: ['Stroboscopio', 'dots'],
+  show3d: ['Vista 3D', 'cube'], lattice3d: ['Reticolo 3D', 'lattice3d'], showProj: ['Proiezioni', 'axesProj'], strobe: ['Stroboscopio', 'dots'],
   showAcc: ['Accelerazione', 'accel'], showVel: ['Velocità', 'vel'], showComp: ['Componenti', 'comp'],
   showIdeal: ['Traiettoria ideale', 'ideal'], slowmo: ['Rallentatore', 'slowmo'], showBal: ['Bilancio', 'balance'],
   showForce: ['Forze', 'force'], showArm: ['Bracci', 'arm'], showPhasor: ['Fasore', 'phasor'], showTrace: ['Traccia', 'trace'],

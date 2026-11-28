@@ -196,7 +196,7 @@ export default {
       { h: 'Legge di Hooke' },
       { tex: `${Fe}=-k\\,x\\qquad a=-\\dfrac{k}{m}\\,x` },
       { h: 'Periodo e frequenza' },
-      { key: true, tex: `T=2\\pi\\sqrt{\\dfrac{m}{k}}=${uq('s', T)}\\qquad f=\\dfrac1T=${uq('Hz', f)}` },
+      { key: true, tex: `${C('vel', 'T')}=2\\pi\\sqrt{\\dfrac{m}{${C('spring', 'k')}}}=${uq('s', T)}\\qquad ${C('vel', 'f')}=\\dfrac1T=${uq('Hz', f)}` },
       { tex: `\\omega=\\sqrt{\\dfrac{k}{m}}=${uq('rad/s', w)}` },
       { h: 'Legge oraria' },
       ...law,
