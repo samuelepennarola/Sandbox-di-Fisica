@@ -96,8 +96,8 @@ function viewBox(p) {
     let x0 = Math.min(sx, cx - Rcap) - pad, x1 = Math.max(sx, cx + Rcap) + pad;
     let y0 = Math.min(sy, cy - Rcap) - pad, y1 = Math.max(sy, cy + Rcap) + pad;
     if (p.show3d && Number.isFinite(an.pitch_cm) && Math.abs(an.pitch_cm) > 1e-5) {
-      // Proiezione della deriva elicoidale lungo z con l'inquadratura 3/4 (yaw = -34°, pitch = 22°).
-      const zSpan = clamp(an.pitch_cm * Math.min(p.cycles ?? 3, 2.2), -56, 56);
+      // Inquadratura iniziale sul primo giro (~1,3 giri): la camera segue poi l'elica in pan3d.
+      const zSpan = clamp(an.pitch_cm * Math.min(p.cycles ?? 3, 1.3), -22, 22);
       const dx = zSpan * Math.sin(-34 * deg), dy = -zSpan * Math.cos(-34 * deg) * Math.sin(22 * deg);
       x0 = Math.min(x0, cx - Rcap + dx - pad);
       x1 = Math.max(x1, cx + Rcap + dx + pad);
@@ -283,11 +283,57 @@ function drawFields2D(P, M, p, fade, ui) {
   if (eTag && !ui.snapshot) tex(P, eTag[0] + 15, eTag[1], '\\vec E', { size: 15, color: eCol, halo: M.bg, alpha: 0.85 * fade });
 }
 
-function drawFields3D(P, V, M, p, vbox, fade, ui, lab) {
+function drawFields3D(P, V, M, p, vbox, fade, ui, lab, s) {
   if (!p.showFields || fade <= 0.01) return;
   const bCol = M.vec.tension, eCol = M.field;
+  const cam = P.cam, sc = cam.scale;
   const span = Math.max(vbox.xmax - vbox.xmin, vbox.ymax - vbox.ymin, 1e-5);
-  const bLen = span * 0.16;
+  const pad = cam.padFn?.() ?? { top: 70, right: 20, bottom: 20, left: 20 };
+  const hasKp = typeof document !== 'undefined' && document.body.classList.contains('has-kp');
+
+  // Fascio di campo contenuto interamente nell'area visibile dello schermo, lontano da barra, ispettore e moviola.
+  const sMinX = pad.left + 24, sMaxX = cam.w - pad.right - 24;
+  const sMinY = pad.top + 36, sMaxY = cam.h - pad.bottom - 36;
+  const safeTopAt = sx => (hasKp && sx < 520 ? Math.max(sMinY, pad.top + 56) : sMinY);
+
+  const D = V.dist0(), rV = V.r, uV = V.u, fV = V.f;
+  const [px0, py0, sx0, sy0] = V.focusPt();
+  const pz0 = cam.cz || 0;
+  const dMin = 0.58 * D;
+  const depthCam = q => D - ((q[0] - px0) * fV[0] + (q[1] - py0) * fV[1] + (q[2] - pz0) * fV[2]);
+  const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+
+  // Ritaglio proiettivo esatto sul segmento 3D: impone d >= 0.58*D (niente distorsione grandangolare)
+  // e mantiene sia la coda sia la punta finale dentro [sMinX..sMaxX] × [sMinY..sMaxY].
+  const kL = (sMinX - sx0) / (D * sc), kR = (sMaxX - sx0) / (D * sc);
+  const kB = (sy0 - sMaxY) / (D * sc), kT = (sy0 - sMinY) / (D * sc);
+  const clipFrustumSafe = (a, b) => {
+    const viewCoords = q => {
+      const dx = q[0] - px0, dy = q[1] - py0, dz = q[2] - pz0;
+      return [
+        dx * rV[0] + dy * rV[1] + dz * rV[2],
+        dx * uV[0] + dy * uV[1] + dz * uV[2],
+        D - (dx * fV[0] + dy * fV[1] + dz * fV[2]),
+      ];
+    };
+    const [vx0, vy0, d0] = viewCoords(a), [vx1, vy1, d1] = viewCoords(b);
+    let t0 = 0, t1 = 1;
+    const clipPlane = (g0, g1) => {
+      const dg = g1 - g0;
+      if (Math.abs(dg) < 1e-9) return g0 >= 0;
+      const t = -g0 / dg;
+      if (dg > 0) { if (t > t1) return false; if (t > t0) t0 = t; }
+      else { if (t < t0) return false; if (t < t1) t1 = t; }
+      return true;
+    };
+    if (!clipPlane(d0 - dMin, d1 - dMin) ||
+        !clipPlane(vx0 - kL * d0, vx1 - kL * d1) ||
+        !clipPlane(kR * d0 - vx0, kR * d1 - vx1) ||
+        !clipPlane(vy0 - kB * d0, vy1 - kB * d1) ||
+        !clipPlane(kT * d0 - vy0, kT * d1 - vy1)) return null;
+    if (t1 <= t0 + 1e-4) return null;
+    return [lerp3(a, b, t0), lerp3(a, b, t1), t0, t1];
+  };
 
   const vec3 = (a, b, col, width, tip, alpha) => {
     if (m3.is3dActive()) {
@@ -298,110 +344,290 @@ function drawFields3D(P, V, M, p, vbox, fade, ui, lab) {
     arrowS(P.ctx, x0, y0, x1, y1, col, { width, tip, alpha });
   };
 
+  // Emette una singola linea di campo pulita, interamente contenuta nel quadro sicuro e con una sola punta finale.
+  const emitFieldLine = (a, b, col, width, tip, alpha, tips, periph) => {
+    if (alpha <= 0.02) return;
+    const clipped = clipFrustumSafe(a, b);
+    if (!clipped) return;
+    const [p0, p1] = clipped;
+    const [x0, y0] = V.S(P, ...p0), [x1, y1] = V.S(P, ...p1);
+    if (Math.hypot(x1 - x0, y1 - y0) < 38) return;
+    vec3(p0, p1, col, width, tip, alpha);
+    tips.push({ pt: p1, periph, isTip: true });
+    tips.push({ pt: lerp3(p0, p1, 0.55), periph, isTip: false });
+  };
+
+  // Distribuisce n coordinate in [a, b] tenendole lontane dagli assi cartesiani (x ≈ 0 o y ≈ 0).
+  const spreadCoords = (a, b, n, padFrac = 0.14) => {
+    const w = Math.max(b - a, 1e-5), out = [];
+    if (n <= 1) out.push(a + w * 0.5);
+    else for (let i = 0; i < n; i++) out.push(a + w * (padFrac + (1 - 2 * padFrac) * i / (n - 1)));
+    if (a < 0 && b > 0) {
+      const eps = 0.065 * w, push = 0.09 * w;
+      return out.map(v => (Math.abs(v) < eps ? (v >= 0 ? push : -push) : v));
+    }
+    return out;
+  };
+
+  const bTips = [], eTips = [];
+  const tb = trajBox(p);
+  const lx = clamp(Math.abs(vbox.xmax) * 0.85, span * 0.3, span * 0.55);
+  const ly = clamp(Math.abs(vbox.ymax) * 0.85, span * 0.3, span * 0.55);
+  const lz = Math.min(lx, ly) * 0.9;
+
   if (p.region === 'spectrometer') {
     const fSel = fieldAt(-SEL_L / 2, 0, 0, p);
     if (Math.hypot(fSel.Ex, fSel.Ey) > 1e-9) {
       const sy = Math.sign(fSel.Ey) || 1, h = SEL_H * 0.72;
       for (const x of [-8, -5, -2]) for (const z of [-1.8, 1.8]) {
-        vec3([x, -sy * h, z], [x, sy * h, z], eCol, 1.8, 8, 0.5 * fade);
-      }
-      if (!ui.snapshot) {
-        const [lx, ly] = V.S(P, -2, sy * h, 1.8);
-        tex(P, lx + 14, ly, '\\vec E', { size: 15, color: eCol, halo: M.bg, alpha: 0.9 * fade });
+        vec3([x, -sy * h, z], [x, sy * h, z], eCol, 1.8, 8.5, 0.46 * fade);
+        eTips.push({ pt: [x, sy * h, z], periph: (x === -2 || x === -8) ? 1 : 0.4, isTip: true });
       }
     }
     if (Math.abs(fSel.Bz) > 1e-12) {
-      const sz = Math.sign(fSel.Bz) * bLen * 0.45;
+      const sz = Math.sign(fSel.Bz) * Math.min(Z_APP * 0.9, span * 0.08);
       for (const x of [-6.5, -3.5]) for (const y of [-2.4, 2.4]) {
-        vec3([x, y, -sz], [x, y, sz], bCol, 1.6, 7.5, 0.36 * fade);
+        vec3([x, y, -sz], [x, y, sz], bCol, 1.6, 8, 0.36 * fade);
       }
     }
-    const cx0 = 2.5, cx1 = Math.max(cx0 + 4, Math.min(vbox.xmax - 1.5, 22));
-    const cy0 = Math.max(vbox.ymin + 1.8, -10), cy1 = Math.min(vbox.ymax - 1.8, 10);
-    let bTip = null;
-    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
-      const x = cx0 + (cx1 - cx0) * i / 2, y = cy0 + (cy1 - cy0) * j / 2;
+    const cx0 = 2.0, cx1 = Math.max(cx0 + 5, Math.min(Math.max(vbox.xmax - 1.5, tb.x1 + 1.5), 36));
+    const cy0 = Math.max(vbox.ymin + 1.6, Math.min(tb.y0 - 2, -9));
+    const cy1 = Math.min(vbox.ymax - 1.6, Math.max(tb.y1 + 2, 9));
+    const cz0 = Math.min(tb.z0, -Z_APP * 1.15) - 1.0, cz1 = Math.max(tb.z1, Z_APP * 1.15) + 1.0;
+    const cxs = spreadCoords(cx0, cx1, 3, 0.12), cys = spreadCoords(cy0, cy1, 3, 0.14);
+    cxs.forEach((x, ix) => cys.forEach((y, iy) => {
       const f = fieldAt(x, y, 0, p);
-      if (Math.abs(f.Bz) <= 1e-12) continue;
-      const sz = Math.sign(f.Bz) * bLen * 0.55;
-      vec3([x, y, -sz], [x, y, sz], bCol, 1.9, 8.5, 0.4 * fade);
-      if (i === 2 && j === 2) bTip = [x, y, sz];
+      if (Math.abs(f.Bz) <= 1e-12) return;
+      const szDir = Math.sign(f.Bz);
+      // Preferenza per il bordo esterno destro della camera magnetica (lontano dal muro x = 0 e dall'asse y).
+      const periph = (ix === 2 ? 1.2 : ix === 1 ? 0.5 : 0) + Math.abs(iy - 1) * 0.4;
+      emitFieldLine([x, y, szDir > 0 ? cz0 : cz1], [x, y, szDir > 0 ? cz1 : cz0], bCol, 1.8, 9, 0.4 * fade, bTips, periph);
+    }));
+  } else {
+    // Regimi 'all' e 'half': fascio compatto su reticolo fisso nello spazio mondo attorno al fuoco visibile
+    // [px0, py0, pz0] con dissolvenza morbida ai bordi, così avanzando lungo z lo spazio scorre intorno all'elica.
+    const stepX = Math.max(1e-4, niceStep(lx * 0.36));
+    const stepY = Math.max(1e-4, niceStep(ly * 0.38));
+    const stepZ = Math.max(1e-4, niceStep(lz * 0.44));
+    const stepBZ = stepZ * 4;
+
+    const winCx = p.region === 'half' ? Math.max(0.3 + 0.45 * lx, px0 + 0.25 * lx) : px0;
+    const winCy = py0 + 0.45 * ly * Math.sin(V.pitch ?? 0);
+    const winCz = pz0 + 0.18 * lz;
+    const winRx = 0.76 * lx, winRy = 0.66 * ly, winRz = 1.05 * lz;
+
+    const winFade = (v, c, hw) => {
+      const u = Math.abs(v - c) / Math.max(hw, 1e-5);
+      if (u >= 1) return 0;
+      if (u <= 0.55) return 1;
+      const t = (1 - u) / 0.45;
+      return t * t * (3 - 2 * t);
+    };
+
+    const xMin = p.region === 'half' ? 0.3 : winCx - winRx, xMax = winCx + winRx;
+    const yMin = winCy - winRy, yMax = winCy + winRy;
+    const zMin = winCz - winRz, zMax = winCz + winRz;
+
+    const fSample = fieldAt(p.region === 'half' ? Math.max(1, winCx) : winCx, winCy, winCz, p);
+    const hasB = Math.abs(fSample.Bz) > 1e-12;
+    const emSample = Math.hypot(fSample.Ex, fSample.Ey);
+    const hasE = emSample > 1e-9;
+
+    const qList = (lo, hi, stp, half) => {
+      const out = [];
+      const k0 = Math.floor(lo / stp - (half ? 0.5 : 0));
+      const k1 = Math.ceil(hi / stp - (half ? 0.5 : 0));
+      for (let k = k0; k <= k1; k++) {
+        const v = (k + (half ? 0.5 : 0)) * stp;
+        if (v >= lo && v <= hi) out.push([k, v]);
+      }
+      return out;
+    };
+
+    if (hasB) {
+      const bxs = qList(xMin, xMax, stepX, true);
+      const bys = qList(yMin, yMax, stepY, true);
+      const kBz0 = Math.floor((zMin - 0.45 * stepBZ) / stepBZ);
+      const kBz1 = Math.ceil((zMax + 0.45 * stepBZ) / stepBZ);
+      for (const [, x] of bxs) {
+        if (p.region === 'half' && x < 0.3) continue;
+        const fx = winFade(x, winCx, winRx);
+        if (fx <= 0.03) continue;
+        for (const [, y] of bys) {
+          const fy = winFade(y, winCy, winRy);
+          if (fx * fy <= 0.03) continue;
+          const periph = Math.max(Math.abs(x - winCx) / winRx, Math.abs(y - winCy) / winRy);
+          for (let kz = kBz0; kz <= kBz1; kz++) {
+            const zc = kz * stepBZ, fz = winFade(zc, winCz, winRz + 0.35 * stepBZ);
+            const alphaB = 0.40 * fade * fx * fy * fz;
+            if (alphaB <= 0.025) continue;
+            const f = fieldAt(x, y, zc, p);
+            if (Math.abs(f.Bz) <= 1e-12) continue;
+            const szDir = Math.sign(f.Bz);
+            const za = zc - 0.45 * stepBZ, zb = zc + 0.45 * stepBZ;
+            emitFieldLine([x, y, szDir > 0 ? za : zb], [x, y, szDir > 0 ? zb : za], bCol, 1.8, 9, alphaB, bTips, periph);
+          }
+        }
+      }
     }
-    if (bTip && !ui.snapshot) {
-      const [lx, ly] = V.S(P, ...bTip);
-      tex(P, lx + 14, ly, '\\vec B', { size: 16, color: bCol, halo: M.bg, alpha: 0.9 * fade });
+
+    if (hasE) {
+      const ux = fSample.Ex / emSample, uy = fSample.Ey / emSample;
+      const nx = -uy, ny = ux;
+      const eyLo = winCy - 0.48 * ly, eyHi = winCy + 0.48 * ly;
+      const ezs = qList(zMin, zMax, stepZ, true);
+      const sMin = Math.min(xMin * nx, xMax * nx) + Math.min(eyLo * ny, eyHi * ny);
+      const sMax = Math.max(xMin * nx, xMax * nx) + Math.max(eyLo * ny, eyHi * ny);
+      // Quando B è presente, E si sfalsa esattamente a metà tra le linee B ((i + 0.5)*stepX -> i*stepX).
+      const exs = Math.abs(ux) < 0.1
+        ? qList(xMin, xMax, stepX, !hasB).map(([k, xv]) => [k, xv * nx, xv])
+        : qList(sMin, sMax, stepX, true).map(([k, sv]) => [k, sv, null]);
+
+      const clipXY = (px, py) => {
+        let tMin = -Infinity, tMax = Infinity;
+        for (const [o, d, lo, hi] of [[px, ux, xMin, xMax], [py, uy, eyLo, eyHi]]) {
+          if (Math.abs(d) < 1e-9) {
+            if (o < lo || o > hi) return null;
+          } else {
+            const a = (lo - o) / d, b = (hi - o) / d;
+            tMin = Math.max(tMin, Math.min(a, b));
+            tMax = Math.min(tMax, Math.max(a, b));
+            if (tMin > tMax) return null;
+          }
+        }
+        return [tMin, tMax];
+      };
+
+      const dOf = ezs.map(([, z]) => V.depth(0, 0, z)), dMinE = Math.min(...dOf), dMaxE = Math.max(...dOf);
+      ezs.forEach(([, zc], idxZ) => {
+        const fz = winFade(zc, winCz, winRz);
+        if (fz <= 0.03) return;
+        const depth = dMaxE - dMinE > 1e-9 ? 0.78 + 0.22 * (dOf[idxZ] - dMinE) / (dMaxE - dMinE) : 1;
+        for (const [, sVal, xKnown] of exs) {
+          const px = sVal * nx, py = sVal * ny;
+          const spanT = clipXY(px, py);
+          if (!spanT) continue;
+          const [tA, tB] = spanT;
+          if (tB - tA <= 1e-4) continue;
+          const a = [px + tA * ux, py + tA * uy, zc], b = [px + tB * ux, py + tB * uy, zc];
+          const mx = (a[0] + b[0]) * 0.5, my = (a[1] + b[1]) * 0.5;
+          const fx = xKnown != null ? winFade(xKnown, winCx, winRx) : winFade(mx, winCx, winRx);
+          const alphaE = 0.44 * depth * fade * fx * fz;
+          if (alphaE <= 0.025) continue;
+          const fe = fieldAt(mx, my, zc, p);
+          if (Math.hypot(fe.Ex, fe.Ey) <= 1e-9) continue;
+          const periph = Math.max(Math.abs(mx - winCx) / winRx, Math.abs(zc - winCz) / winRz);
+          emitFieldLine(a, b, eCol, 1.8, 9, alphaE, eTips, periph);
+        }
+      });
     }
-    return;
   }
 
-  // Regimi 'all' e 'half': reticolo 3D regolare che copre tutto il volume della traiettoria
-  // (dalla partenza alla fine, deriva compresa) con un piccolo margine. I nodi stanno al centro
-  // delle celle (multipli dispari di g/2), così nessuna freccia tocca gli assi; le frecce di E sono
-  // sfalsate di mezzo passo in x rispetto a quelle di B, così le coppie non si confondono.
-  const tb = trajBox(p);
-  const ext = Math.max(tb.x1 - tb.x0, tb.y1 - tb.y0, tb.z1 - tb.z0, span * 0.25);
-  const nodes = (a, b, g) => {
-    const m = 0.55 * g, out = [];
-    for (let i = Math.ceil((a - m) / g - 0.5); i <= Math.floor((b + m) / g - 0.5); i++) out.push((i + 0.5) * g);
-    if (!out.length) out.push((Math.round((a + b) / 2 / g - 0.5) + 0.5) * g);
-    return out;
-  };
-  let g = ext / 3.2, xs, ys, zs;
-  for (let it = 0; it < 24; it++) {
-    xs = nodes(tb.x0, tb.x1, g); ys = nodes(tb.y0, tb.y1, g); zs = nodes(tb.z0, tb.z1, g);
-    if (Math.max(xs.length, ys.length, zs.length) <= 4 && xs.length * ys.length * zs.length <= 24) break;
-    g *= 1.12;
-  }
-  // Lunghezze legate al passo, ma entro una misura sobria sullo schermo.
-  const sc = P.cam.scale;
-  const bL = Math.min(0.5 * g, Math.max(34 / sc, Math.min(0.5 * g, 78 / sc)));
-  const eLen = Math.min(0.55 * g, Math.max(38 / sc, Math.min(0.55 * g, 86 / sc)));
-  // Profondità: gli strati più lontani dalla camera si attenuano appena.
-  const dOf = zs.map(z => V.depth(0, 0, z)), dMin = Math.min(...dOf), dMax = Math.max(...dOf);
-  const bTips = [], eTips = [];
-  zs.forEach((zc, k) => {
-    const depth = dMax - dMin > 1e-9 ? 0.75 + 0.25 * (dOf[k] - dMin) / (dMax - dMin) : 1;
-    for (const x of xs) for (const y of ys) {
-      const f = fieldAt(x, y, zc, p);
-      if (Math.abs(f.Bz) > 1e-12) {
-        const sz = Math.sign(f.Bz) * bL * 0.5;
-        vec3([x, y, zc - sz], [x, y, zc + sz], bCol, 1.9, 8.5, 0.4 * depth * fade);
-        bTips.push([x, y, zc + sz]);
-      }
-      const ex = x + g / 2, fe = fieldAt(ex, y, zc, p), em = Math.hypot(fe.Ex, fe.Ey);
-      if (em > 1e-9) {
-        const ux = fe.Ex / em * eLen * 0.5, uy = fe.Ey / em * eLen * 0.5;
-        vec3([ex - ux, y - uy, zc], [ex + ux, y + uy, zc], eCol, 1.9, 8.5, 0.46 * depth * fade);
-        eTips.push([ex + ux, y + uy, zc]);
-      }
-    }
-  });
-  if (ui.snapshot) return;
+  if (ui.snapshot) return null;
 
-  // Etichette: dentro l'area libera, lontane tra loro e dalla carica (le registra il labeler,
-  // così anche le etichette dei vettori le evitano).
-  const pad = P.cam.padFn?.() ?? { top: 70, right: 20, bottom: 20, left: 20 };
-  const placed = [];
-  const place = (tips, src, col) => {
-    const B = texBox(P, src, 16), hw = B.w / 2 + 4, hh = (B.bot - B.top) / 2 + 4;
-    let best = null;
-    for (const q of tips) {
-      const [tx, ty] = V.S(P, ...q);
-      const x = tx + 10 + hw, y = ty - 4;
-      if (x - hw < pad.left + 8 || x + hw > P.cam.w - pad.right - 8 || y - hh < pad.top + 8 || y + hh > P.cam.h - pad.bottom - 8) continue;
-      if (placed.some(r => Math.abs(r.x - x) < r.hw + hw + 24 && Math.abs(r.y - y) < r.hh + hh + 18)) continue;
-      if (lab?.hits?.(x, y, hw + 6, hh + 6)) continue;
-      // Preferenza: in alto e a sinistra nell'area libera (lontano dalla moviola e dall'ispettore).
-      const score = y + 0.35 * x;
-      if (!best || score < best.score) best = { x, y, score };
+  return () => {
+    // Esclusioni dinamiche attorno alla particella, ai vettori e agli assi cartesiani.
+    const partS = s ? V.S(P, s.x, s.y, s.z) : null;
+    const vecSegs = [];
+    if (s) {
+      const pos = [s.x, s.y, s.z], pS = partS;
+      const addVecSeg = end3 => vecSegs.push([pS, V.S(P, ...end3)]);
+      if (p.showVel !== false) {
+        const { maxV, maxMs } = v0Range(p);
+        if (s.t === 0) {
+          const th = ('theta' in p ? p.theta : Math.atan2(s.vy, s.vx) / deg) * deg;
+          const Lh = Math.max(p.v0 > 0 ? arrowPx(p.v0, maxV, V0_CFG) : 0, V0_CFG.min) / sc;
+          addVecSeg([pos[0] + Math.cos(th) * Lh, pos[1] + Math.sin(th) * Lh, pos[2]]);
+          const vMag = Math.hypot(s.vx, s.vy, s.vz);
+          if (p.v0 > 0 && Math.abs(s.vz) > 1e-6 && vMag > 1e-6) {
+            const L3 = arrowPx(vMag, Math.max(vMag, maxMs * 0.15), V_CFG) / sc;
+            addVecSeg([pos[0] + s.vx / vMag * L3, pos[1] + s.vy / vMag * L3, pos[2] + s.vz / vMag * L3]);
+          }
+        } else {
+          const vMag = Math.hypot(s.vx, s.vy, s.vz);
+          if (vMag > 1e-6) {
+            const q0 = init(p), v0Ms = Math.hypot(q0.vx, q0.vy, q0.vz);
+            const vRef = Math.max(v0Ms * 1.5, maxMs * 0.05, vMag, 1);
+            const Lv = arrowPx(vMag, vRef, V_CFG) / sc;
+            addVecSeg([pos[0] + s.vx / vMag * Lv, pos[1] + s.vy / vMag * Lv, pos[2] + s.vz / vMag * Lv]);
+          }
+        }
+      }
+      const showForces = p.showForces ?? p.showForce ?? true;
+      if (showForces && ui.sel !== 'particle') {
+        const { FE, FB, F } = lorentzForces(s.vx, s.vy, s.vz, s.x, s.y, s.z, p);
+        const feM = Math.hypot(...FE), fbM = Math.hypot(...FB), fM = Math.hypot(...F);
+        const fRef = Math.max(feM, fbM, fM), tol = fRef * 1e-3;
+        for (const [vec, mag] of [[FE, feM], [FB, fbM], [F, fM]]) {
+          if (fRef <= 1e-30 || mag <= tol) continue;
+          const Lf = arrowPx(mag, fRef, F_CFG) / sc;
+          addVecSeg([pos[0] + vec[0] / mag * Lf, pos[1] + vec[1] / mag * Lf, pos[2] + vec[2] / mag * Lf]);
+        }
+      }
     }
-    if (!best) return;
-    placed.push({ x: best.x, y: best.y, hw, hh });
-    lab?.blockS(best.x, best.y, hw, hh);
-    tex(P, best.x, best.y - (B.top + B.bot) / 2, src, { size: 16, color: col, halo: M.bg, alpha: 0.9 * fade });
+
+    const origFront = depthCam([0, 0, 0]) >= 0.20 * D;
+    const origS = origFront ? V.S(P, 0, 0, 0) : null;
+    const axSpan = span * 2.5 + Math.abs(cam.cz || 0) + Math.hypot(cam.cx || 0, cam.cy || 0);
+    const clipAxis = (a, b) => {
+      const da = depthCam(a), db = depthCam(b), dSafe = 0.20 * D;
+      if (da < dSafe && db < dSafe) return null;
+      const p0 = da < dSafe ? lerp3(a, b, (dSafe - da) / (db - da)) : a;
+      const p1 = db < dSafe ? lerp3(a, b, (dSafe - da) / (db - da)) : b;
+      return [V.S(P, ...p0), V.S(P, ...p1)];
+    };
+    const posAxisSegs = [[axSpan, 0, 0], [0, axSpan, 0], [0, 0, axSpan]].map(e => clipAxis([0, 0, 0], e)).filter(Boolean);
+    const negAxisSegs = [[-axSpan, 0, 0], [0, -axSpan, 0], [0, 0, -axSpan]].map(e => clipAxis([0, 0, 0], e)).filter(Boolean);
+    const trailS = [];
+    if (s?.trail?.length) {
+      const stride = Math.max(1, Math.floor(s.trail.length / 18));
+      for (let i = 0; i < s.trail.length; i += stride) trailS.push(V.S(P, ...s.trail[i]));
+    }
+
+    const distSeg = (px, py, a, b) => {
+      const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy;
+      const t = l2 > 1e-6 ? clamp(((px - a[0]) * dx + (py - a[1]) * dy) / l2, 0, 1) : 0;
+      return Math.hypot(px - (a[0] + t * dx), py - (a[1] + t * dy));
+    };
+    const placed = [];
+
+    const place = (cands, src, col) => {
+      if (!cands.length) return;
+      const B = texBox(P, src, 16), hw = B.w / 2 + 4, hh = (B.bot - B.top) / 2 + 4;
+      const rBox = Math.hypot(hw, hh);
+      const offsets = [[10 + hw, -4], [-10 - hw, -4], [10 + hw, 10 + hh * 0.5], [-10 - hw, 10 + hh * 0.5], [0, -12 - hh], [0, 12 + hh]];
+      let best = null;
+      for (const c of cands) {
+        if (depthCam(c.pt) < dMin * 0.98) continue;
+        const [tx, ty] = V.S(P, ...c.pt);
+        for (const [ox, oy] of offsets) {
+          const x = tx + ox, y = ty + oy;
+          if (x - hw < pad.left + 10 || x + hw > P.cam.w - pad.right - 10 || y - hh < safeTopAt(x) || y + hh > P.cam.h - pad.bottom - 10) continue;
+          if (placed.some(r => Math.abs(r.x - x) < r.hw + hw + 28 && Math.abs(r.y - y) < r.hh + hh + 20)) continue;
+          if (lab?.hits?.(x, y, hw + 8, hh + 8)) continue;
+          const dPart = partS ? Math.hypot(x - partS[0], y - partS[1]) : 999;
+          if (dPart < 65) continue;
+          const dVec = vecSegs.length ? Math.min(...vecSegs.map(seg => distSeg(x, y, seg[0], seg[1]))) - rBox : 999;
+          if (dVec < 24) continue;
+          const dOrig = origS ? Math.hypot(x - origS[0], y - origS[1]) : 999;
+          if (dOrig < 32) continue;
+          const dPosAx = posAxisSegs.length ? Math.min(...posAxisSegs.map(seg => distSeg(x, y, seg[0], seg[1]))) : 999;
+          if (dPosAx < 26) continue;
+          const dNegAx = negAxisSegs.length ? Math.min(...negAxisSegs.map(seg => distSeg(x, y, seg[0], seg[1]))) : 999;
+          const dTrail = trailS.length ? Math.min(...trailS.map(pt => Math.hypot(x - pt[0], y - pt[1]))) : 90;
+          const negAxPen = dNegAx < 20 ? 240 : 0;
+          const score = (c.isTip ? 0 : 900) + negAxPen + (y + 0.28 * x) - c.periph * 180 - Math.min(dPart, 170) * 0.45 - Math.min(dTrail, 80) * 0.9;
+          if (!best || score < best.score) best = { x, y, score };
+        }
+      }
+      if (!best) return;
+      placed.push({ x: best.x, y: best.y, hw, hh });
+      lab?.blockS(best.x, best.y, hw + 4, hh + 4);
+      tex(P, best.x, best.y - (B.top + B.bot) / 2, src, { size: 16, color: col, halo: M.bg, alpha: 0.92 * fade });
+    };
+    place(bTips, '\\vec B', bCol);
+    place(eTips, '\\vec E', eCol);
   };
-  place(bTips, '\\vec B', bCol);
-  place(eTips, '\\vec E', eCol);
 }
 
 // Riquadro 3D (cm) dell'intera traiettoria con i parametri correnti: la si simula una volta sola
@@ -604,8 +830,9 @@ function drawIdealGuide(P, V, S, M, p, an, tilt, ui, lab) {
     V.line(P, [[pxW, pyW, sz], [pxW, pyW, sz + pitch]], { color: 'tension', width: 1.4, dash: [3, 4], alpha: 0.8 * tilt * g });
     if (!ui.snapshot && g > 0.4) {
       const [px, py] = V.S(P, pxW, pyW, sz + pitch * 0.5);
-      const src = symVal(P, 'p', fmtCmTeX(Math.abs(pitch)));
+      const src = symVal(P, 'p', fmtCmTeX(Math.abs(pitch))), Bp = texBox(P, src, 14);
       tex(P, px + 14, py, src, { size: 14, color: M.vec.tension, halo: M.bg, align: 'left', alpha: 0.9 * tilt * g });
+      lab?.blockS(px + 14 + Bp.w / 2, py, Bp.w / 2 + 4, (Bp.bot - Bp.top) / 2 + 3);
     }
   }
 }
@@ -872,9 +1099,11 @@ export default {
   theory: THEORY,
 
   view(p) { return viewBox(p); },
-  // Solo in 2D: contiene la traiettoria fino a 2,2×, poi passa in carrellata sulla particella (deriva E×B / moto accelerato).
+  // Carrellata 3D lungo l'elica e la deriva E×B, oppure inquadratura 2D.
   follow(s, p) {
-    if (p.show3d) return null;
+    if (p.show3d) {
+      return CAM ? { mode: 'pan3d', point: [s.x, s.y, s.z], V: CAM, margin: 0.16, padPx: 32 } : null;
+    }
     const an = analytics(p);
     const [sx0, sy0] = ptOf(an.startCm ?? [0, 0, 0]);
     return {
@@ -997,13 +1226,14 @@ export default {
     const fade3d = clamp((tilt - 0.05) / 0.22, 0, 1);
     drawFields2D(P, M, p, fade2d, ui);
     const lab = labeler(S, P);
-    drawFields3D(P, V, M, p, vbox, fade3d, ui, lab);
+    const placeFieldLabels = drawFields3D(P, V, M, p, vbox, fade3d, ui, lab, s);
 
     if (p.region === 'half') drawBoundaryHalf(P, V, M, vbox, tilt);
     if (p.region === 'spectrometer') drawSpectrometer(P, V, M, p, vbox, s, tilt);
 
     const an = analytics(p);
     drawIdealGuide(P, V, S, M, p, an, tilt, ui, lab);
+    placeFieldLabels?.();
 
     const part = particleOf(p);
     const partCol = resolveCol(P, M, part.color ?? 'vel');

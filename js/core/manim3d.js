@@ -485,9 +485,10 @@ export function sync3d(P, V) {
 
   // Centro ottico sull'area libera della scena (identico a View3D.focusPt)
   const [px0, py0, sx0, sy0] = st.focus = V.focusPt();
+  const pz0 = P.cam.cz || 0;
   const D = st.D = V.dist0();
   const r = V.r, u = V.u, f = V.f;
-  const px = px0 + f[0] * D, py = py0 + f[1] * D, pz = f[2] * D;
+  const px = px0 + f[0] * D, py = py0 + f[1] * D, pz = pz0 + f[2] * D;
   st.camPos = [px, py, pz];
 
   // Sorgente luminosa in view space: in alto a sinistra davanti alla scena, come [-10, 10, 10] di ManimGL
@@ -1016,7 +1017,8 @@ export function axes({ origin = [0, 0, 0], lx = 3, ly = 3, lz = 2.5, step = null
 
   const stp = step ?? st.lastFloorStep ?? niceStep(85 / st.P.cam.scale);
   const [ox, oy, oz] = origin;
-  const R = Math.max(34 * stp, lx * 4, ly * 4, lz * 4);
+  const czAbs = Math.abs(st.P.cam.cz || 0) + Math.hypot(st.P.cam.cx || 0, st.P.cam.cy || 0);
+  const R = Math.max(34 * stp, lx * 4, ly * 4, lz * 4, czAbs * 2.2);
   const col = st.M.axis;
   const dirs = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
 

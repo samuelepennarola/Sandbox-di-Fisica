@@ -63,7 +63,7 @@ export class View3D {
     const r = this.r, u = this.u, cam = this.cam;
     if (cam && this.tilt(0.001) > 0) {
       const f = this.f, [px0, py0] = this.focusPt();
-      const dx = x - px0, dy = y - py0, dz = z;
+      const dx = x - px0, dy = y - py0, dz = z - (cam.cz || 0);
       const vx = dx * r[0] + dy * r[1] + dz * r[2];
       const vy = dx * u[0] + dy * u[1] + dz * u[2];
       const vz = dx * f[0] + dy * f[1] + dz * f[2];
@@ -84,7 +84,7 @@ export class View3D {
     const r = this.r, u = this.u, f = this.f, cam = this.cam;
     if (cam && this.tilt(0.001) > 0) {
       const [px0, py0] = this.focusPt(), D = this.dist0();
-      const ox = px0 + f[0] * D, oy = py0 + f[1] * D, oz = f[2] * D;
+      const ox = px0 + f[0] * D, oy = py0 + f[1] * D, oz = (cam.cz || 0) + f[2] * D;
       const sx = X - px0, sy = Y - py0;
       const dx = r[0] * sx + u[0] * sy - f[0] * D;
       const dy = r[1] * sx + u[1] * sy - f[1] * D;

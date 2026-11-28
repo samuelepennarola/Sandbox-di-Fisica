@@ -10,7 +10,7 @@ const reducedMotion = () => { try { return matchMedia('(prefers-reduced-motion: 
 
 export class Camera {
   constructor() {
-    this.cx = 0; this.cy = 0; this.scale = 40; // px per metro
+    this.cx = 0; this.cy = 0; this.cz = 0; this.scale = 40; // px per metro
     this.w = 1; this.h = 1;
     this.fly = null;       // scorrimento in corso { from, to, t0 }
     this.fitted = false;   // la prima inquadratura è sempre immediata
@@ -29,7 +29,7 @@ export class Camera {
 
   // Inquadra un rettangolo del mondo lasciando spazio per la barra in alto e i pannelli.
   // Inquadratura che contiene il rettangolo, senza applicarla.
-  target({ xmin, xmax, ymin, ymax }, pad) {
+  target({ xmin, xmax, ymin, ymax, cz = 0 }, pad) {
     // Margini predefiniti: quelli del layout (barra, ispettore, moviola) se l'app li fornisce.
     pad ??= this.padFn?.() ?? { top: 80, right: 20, bottom: 20, left: 20 };
     const aw = Math.max(100, this.w - pad.left - pad.right);
@@ -37,7 +37,7 @@ export class Camera {
     const scale = Math.min(aw / (xmax - xmin), ah / (ymax - ymin));
     // Centro del rettangolo disponibile, convertito in coordinate mondo.
     const sx = pad.left + aw / 2, sy = pad.top + ah / 2;
-    return { scale, cx: (xmin + xmax) / 2 - (sx - this.w / 2) / scale, cy: (ymin + ymax) / 2 + (sy - this.h / 2) / scale };
+    return { scale, cx: (xmin + xmax) / 2 - (sx - this.w / 2) / scale, cy: (ymin + ymax) / 2 + (sy - this.h / 2) / scale, cz };
   }
 
   // Rettangolo sicuro sullo schermo (al netto dei pannelli e di una fascia cuscinetto interna, ~18% totale = 9% per lato).
@@ -80,12 +80,55 @@ export class Camera {
     return x0 <= x1 ? { x0, x1, y0, y1 } : null;
   }
 
-  // Calcola la posa obiettivo della camera per una specifica di follow ('pan', 'contain' o rettangolo).
+  // Calcola la posa obiettivo della camera per una specifica di follow ('pan', 'pan3d', 'contain' o rettangolo).
   followTarget(spec, from = this, { refit = false } = {}) {
     if (!spec) return null;
     if (!spec.mode && 'xmin' in spec) {
       const to = this.target(spec);
       return { ...to, overRatio: 0, moved: true };
+    }
+    if (spec.mode === 'pan3d') {
+      const pt = spec.point, V = spec.V;
+      if (!pt || !V) return null;
+      const baseScale = this.baseScale ?? from.scale;
+      const sc0 = refit ? baseScale : from.scale;
+      const pad = this.padFn?.() ?? { top: 76, right: 24, bottom: 72, left: 24 };
+      const sx0 = pad.left + Math.max(100, this.w - pad.left - pad.right) / 2;
+      const sy0 = pad.top + Math.max(100, this.h - pad.top - pad.bottom) / 2;
+      const px0 = (sx0 - this.w / 2) / sc0 + from.cx;
+      const py0 = (this.h / 2 - sy0) / sc0 + from.cy;
+      const pz0 = from.cz ?? 0;
+      const D = V.fov ? (this.h / (2 * sc0 * Math.tan(V.fov / 2))) : V.dist0();
+      const r = V.r, u = V.u, f = V.f;
+      const dx = pt[0] - px0, dy = pt[1] - py0, dz = (pt[2] ?? 0) - pz0;
+      const vx = dx * r[0] + dy * r[1] + dz * r[2];
+      const vy = dx * u[0] + dy * u[1] + dz * u[2];
+      const vz = dx * f[0] + dy * f[1] + dz * f[2];
+      const d = Math.max(0.08 * D, D - vz), persp = D / d;
+      const sx = sx0 + sc0 * vx * persp, sy = sy0 - sc0 * vy * persp;
+      const { sL, sR, sT, sB, bufX, bufY } = this._safeRect(spec.margin ?? 0.09, spec.padPx ?? 24);
+      const vzMin = -0.35 * D, vzMax = 0.28 * D;
+      const inSafe = sx >= sL && sx <= sR && sy >= sT && sy <= sB && vz >= vzMin && vz <= vzMax;
+      let toCx = from.cx, toCy = from.cy, toCz = pz0;
+      if (!inSafe) {
+        const vzTarget = Math.min(vzMax, Math.max(vzMin, vz));
+        const sxTarget = Math.min(sR, Math.max(sL, sx));
+        const syTarget = Math.min(sB, Math.max(sT, sy));
+        const dvz = vz - vzTarget;
+        const perspTarget = D / Math.max(0.08 * D, D - vzTarget);
+        const vxTarget = (sxTarget - sx0) / (sc0 * perspTarget);
+        const vyTarget = (sy0 - syTarget) / (sc0 * perspTarget);
+        const dvx = vx - vxTarget, dvy = vy - vyTarget;
+        toCx += dvx * r[0] + dvy * u[0] + dvz * f[0];
+        toCy += dvx * r[1] + dvy * u[1] + dvz * f[1];
+        toCz += dvx * r[2] + dvy * u[2] + dvz * f[2];
+      }
+      const overX = Math.max(0, sL - sx, sx - sR);
+      const overY = Math.max(0, sT - sy, sy - sB);
+      const overZ = Math.max(0, vzMin - vz, vz - vzMax) * sc0;
+      const overRatio = Math.max(overX / bufX, overY / bufY, overZ / Math.min(bufX, bufY));
+      const moved = Math.abs(Math.log(sc0 / this.scale)) >= 1e-5 || Math.hypot(toCx - this.cx, toCy - this.cy, toCz - (this.cz ?? 0)) * this.scale >= 0.05;
+      return { scale: sc0, cx: toCx, cy: toCy, cz: toCz, overRatio, moved };
     }
     const box = this._specBox(spec, 'pts');
     if (!box) return null;
@@ -165,7 +208,8 @@ export class Camera {
     this.scale = newScale;
     this.cx += (to.cx - this.cx) * u;
     this.cy += (to.cy - this.cy) * u;
-    return !reducedMotion() && (Math.abs(Math.log(s1 / this.scale)) >= 1e-4 || Math.hypot(to.cx - this.cx, to.cy - this.cy) * this.scale >= 0.25);
+    this.cz = (this.cz ?? 0) + ((to.cz ?? 0) - (this.cz ?? 0)) * u;
+    return !reducedMotion() && (Math.abs(Math.log(s1 / this.scale)) >= 1e-4 || Math.hypot(to.cx - this.cx, to.cy - this.cy, (to.cz ?? 0) - this.cz) * this.scale >= 0.25);
   }
 
   fit(rect, pad) {
@@ -182,9 +226,10 @@ export class Camera {
   // Scorrimento verso un'inquadratura: la scala varia in modo geometrico (lo zoom appare uniforme) e il centro
   // segue in modo che il punto fisso dello zoom resti coerente. Avanza sincronizzato con drawFrame tramite tick().
   flyTo(to, dur = FLY_S) {
-    const near = Math.abs(Math.log(to.scale / this.scale)) < 1e-3 && Math.hypot(to.cx - this.cx, to.cy - this.cy) * this.scale < 0.5;
-    if (near || reducedMotion()) { this.stop(); Object.assign(this, to); return; }
-    this.fly = { from: { scale: this.scale, cx: this.cx, cy: this.cy }, to, t0: performance.now(), dur };
+    const toCz = to.cz ?? this.cz ?? 0;
+    const near = Math.abs(Math.log(to.scale / this.scale)) < 1e-3 && Math.hypot(to.cx - this.cx, to.cy - this.cy, toCz - (this.cz ?? 0)) * this.scale < 0.5;
+    if (near || reducedMotion()) { this.stop(); Object.assign(this, { ...to, cz: toCz }); return; }
+    this.fly = { from: { scale: this.scale, cx: this.cx, cy: this.cy, cz: this.cz ?? 0 }, to: { ...to, cz: toCz }, t0: performance.now(), dur };
   }
 
   // Avanza l'eventuale volo della camera nel ciclo unico di rendering (chiamato da main.js prima di disegnare).
@@ -198,6 +243,7 @@ export class Camera {
     const w0 = 1 / f.from.scale, w1 = 1 / f.to.scale, wk = 1 / this.scale, u = Math.abs(w1 - w0) > 1e-12 ? (wk - w0) / (w1 - w0) : k;
     this.cx = f.from.cx + (f.to.cx - f.from.cx) * u;
     this.cy = f.from.cy + (f.to.cy - f.from.cy) * u;
+    this.cz = (f.from.cz ?? 0) + ((f.to.cz ?? 0) - (f.from.cz ?? 0)) * u;
     if (t >= 1) { Object.assign(this, f.to); this.fly = null; }
     return true;
   }
