@@ -6,7 +6,7 @@
 
 - **Vibe coding guidato.** L'utente decide struttura e stile; l'agente scrive, esegue e verifica il codice. Prima di ogni modulo nuovo o scelta di design proponi le opzioni come **domande a scelta multipla**. Non scegliere tu e non chiedere ciò che è già deciso qui.
 - **Lingua.** Rispondi in italiano, in modo conciso. Anche testi dell'interfaccia e commenti nel codice sono in italiano.
-- **Niente commit né push.** L'utente li fa da GitHub Desktop.
+- **Commit e push (autorizzati dall'utente il 2026-11-28).** Alla fine di un lavoro verificato fai commit (messaggio breve in italiano) e `git push` su `main`: le credenziali sono già nel Portachiavi del Mac. Prima del commit lancia `python3 tools/genera-sw.py`. Non pubblicare lavoro rotto o non verificato e non fare force push.
 - **Dopo ogni modifica** lancia `python3 tools/genera-sw.py`: rigenera `sw.js`, il service worker versionato. Senza, l'app installata non si aggiorna.
 - **Verifica sempre nel browser** prima di consegnare: tema chiaro e tema scuro, 1280×800 e 1024×768 (iPad), console senza errori. Dev server: `python3 .claude/devserver.py 5173` (senza cache); con `?debug` nell'URL c'è `window.fisica = { app, cam, api, ink }`. In localStorage `fs.lastExp` e `fs.theme` scelgono esperimento e tema.
 - **Altre sessioni lavorano sulla stessa cartella.** Rileggi un file prima di modificarlo e tocca solo ciò che serve.
